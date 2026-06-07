@@ -1,0 +1,86 @@
+# loro-go
+
+A pure-Go library for the [Loro](https://github.com/loro-dev/loro) CRDT wire format.
+
+[![CI](https://github.com/Deln0r/loro-go/actions/workflows/ci.yml/badge.svg)](https://github.com/Deln0r/loro-go/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Deln0r/loro-go.svg)](https://pkg.go.dev/github.com/Deln0r/loro-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Deln0r/loro-go)](https://goreportcard.com/report/github.com/Deln0r/loro-go)
+[![Go](https://img.shields.io/badge/go-1.26+-00ADD8.svg)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-alpha-orange)]()
+[![Byte-compat vs loro-crdt](https://img.shields.io/badge/byte--compat-loro--crdt%201.12.5-success)]()
+
+loro-go reads and writes the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) byte-for-byte, and reconstructs document state for Map, List, Text, MovableList and Tree containers. No cgo, single Go toolchain build.
+
+Bytes are verified against two independent ground truths: real `loro-crdt@1.12.5` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`.
+
+> Not affiliated with loro-dev. Loro is a separate project; this is an independent Go reading of its wire format.
+
+## Install
+
+```
+go get github.com/Deln0r/loro-go
+```
+
+## Quick start
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/Deln0r/loro-go/loro"
+)
+
+func main() {
+	// Decode a FastUpdates blob exported by loro-crdt and reconstruct state.
+	u, err := loro.DecodeUpdates(blob) // blob = doc.export({mode:"update"})
+	if err != nil {
+		panic(err)
+	}
+	state, _ := loro.MergeState(u)
+	fmt.Println(state) // map[string]any matching doc.toJSON()
+
+	// Or build a document in Go and export bytes loro-crdt can import.
+	d := loro.NewDoc(1)
+	d.TextInsert("title", 0, "hello")
+	d.MapSet("meta", "n", int64(7))
+	out := d.ExportUpdates()
+	_ = out
+}
+```
+
+`loro.DecodeSnapshot` reads the `FastSnapshot` format (oplog SSTable) the same way.
+
+## What works
+
+- Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
+- `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
+- Change blocks: all eight blobs decode and re-encode byte-identically
+- Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index)
+- Rich-text mark ops are parsed (plain-text state)
+- Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt
+- KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
+
+## Not yet
+
+- Deletes / tombstones
+- Rich-text style annotations in the output (`toDelta`); only plain text today
+- Tree node `meta` sub-containers and deep trees
+- LZ4-compressed SSTable blocks
+- Multiple changes packed in a single block (multi-peer as separate blocks works)
+- Counter container
+
+## Cross-language fixtures
+
+`testdata/gen` drives `loro-crdt` (npm) to emit binary + JSON fixtures, `testdata/rustgen` emits `serde_columnar` golden column vectors, and `testdata/gen/validate_go.mjs` imports a loro-go-produced blob back into `loro-crdt`. The Go tests assert byte-identity and state equality against these. Regenerate with:
+
+```
+cd testdata/gen && npm install && node gen.mjs
+cd ../rustgen && cargo run > ../columnar_golden.txt
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

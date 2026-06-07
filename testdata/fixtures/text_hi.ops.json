@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-t:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "hi"
+          },
+          "counter": 0
+        }
+      ]
+    }
+  ]
+}

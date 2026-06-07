@@ -1,0 +1,11 @@
+{
+  "name": "gen",
+  "version": "1.0.0",
+  "description": "Cross-language fixture generator for loro-go (drives loro-crdt).",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "loro-crdt": "^1.12.5"
+  }
+}

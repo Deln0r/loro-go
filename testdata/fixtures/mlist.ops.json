@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "a",
+              "b",
+              "c"
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "move",
+            "from": 2,
+            "to": 0,
+            "elem_id": "L2@0"
+          },
+          "counter": 3
+        }
+      ]
+    }
+  ]
+}

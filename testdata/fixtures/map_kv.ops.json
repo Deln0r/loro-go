@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "k",
+            "value": "v"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "n",
+            "value": 42
+          },
+          "counter": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "2",
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "k",
+            "value": "B"
+          },
+          "counter": 0
+        }
+      ]
+    },
+    {
+      "id": "0@1",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "k",
+            "value": "A"
+          },
+          "counter": 0
+        }
+      ]
+    }
+  ]
+}

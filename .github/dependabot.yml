@@ -1,0 +1,50 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      include: scope
+    labels:
+      - dependencies
+      - go
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+      - github-actions
+
+  - package-ecosystem: npm
+    directory: "/testdata/gen"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: testdata
+    labels:
+      - dependencies
+      - javascript
+
+  - package-ecosystem: cargo
+    directory: "/testdata/rustgen"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: testdata
+    labels:
+      - dependencies
+      - rust

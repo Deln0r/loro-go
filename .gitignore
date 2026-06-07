@@ -1,0 +1,19 @@
+# Go
+*.test
+*.out
+/coverage*
+
+# JS fixture generator
+testdata/gen/node_modules/
+
+# Rust golden-vector harness build output
+testdata/rustgen/target/
+
+# Go->JS cross-validation output
+testdata/go_out/
+
+# Internal reverse-engineering notes (not part of the release)
+docs/
+
+# OS
+.DS_Store

@@ -19,4 +19,4 @@ jobs:
         env:
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
         run: |
-          git push --force "https://Deln0r:${CODEBERG_TOKEN}@codeberg.org/Deln0r/loro-go.git" origin/main:main --tags
+          git push --force "https://Deln0r:${CODEBERG_TOKEN}@codeberg.org/Deln0r/loro-go.git" HEAD:refs/heads/main --tags

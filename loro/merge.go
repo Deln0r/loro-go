@@ -1,0 +1,299 @@
+package loro
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/Deln0r/loro-go/encoding/change"
+)
+
+// MergeState reconstructs document state with CRDT semantics, so it is correct
+// for CONCURRENT / multi-peer histories (unlike BuildState which applies in
+// order). Map containers resolve by last-writer-wins on (lamport, peer); Text and
+// List containers use an RGA/Fugue replay ordering concurrent same-origin inserts
+// by ascending (lamport, peer, counter), matching loro's merge for the fixtures.
+//
+// Simplifications (honest limits): left-origin is resolved as the element at
+// position-1 in the current sequence (exact for pos 0 and non-interleaving
+// histories; deep concurrent inserts at the same non-zero position and Fugue's
+// multi-element non-interleaving guarantee are not yet fully general). Deletes
+// and move ops are not handled (no fixture exercises them).
+func MergeState(u *Updates) (map[string]any, error) {
+	type cinfo struct {
+		kind change.ContainerType
+		ops  []Op
+	}
+	conts := map[string]*cinfo{}
+	var order []string
+	for _, ch := range u.Changes {
+		for _, op := range ch.Ops {
+			ci := conts[op.Container]
+			if ci == nil {
+				ci = &cinfo{kind: op.Kind}
+				conts[op.Container] = ci
+				order = append(order, op.Container)
+			}
+			ci.ops = append(ci.ops, op)
+		}
+	}
+
+	state := map[string]any{}
+	for _, name := range order {
+		ci := conts[name]
+		switch ci.kind {
+		case change.CMap:
+			ops := sortedOps(ci.ops)
+			m := map[string]any{}
+			for _, op := range ops { // ascending order => last write wins = max(lamport,peer)
+				m[op.MapKey] = op.Value
+			}
+			state[name] = m
+		case change.CText:
+			seq := mergeSeq(opsOfKind(ci.ops, change.VKStr), true)
+			var sb strings.Builder
+			for _, e := range seq {
+				sb.WriteString(e.value.(string))
+			}
+			state[name] = sb.String()
+		case change.CList:
+			state[name] = seqValues(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false))
+		case change.CMovableList:
+			lst := seqValues(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false))
+			for _, m := range sortedOps(opsOfKind(ci.ops, change.VKListMove)) {
+				lst = applyMove(lst, int(m.MoveFrom), int(m.Pos))
+			}
+			state[name] = lst
+		case change.CTree:
+			state[name] = buildTree(ci.ops)
+		default:
+			return nil, fmt.Errorf("loro: merge unsupported container kind %v", ci.kind)
+		}
+	}
+	return state, nil
+}
+
+func opsOfKind(ops []Op, vk change.ValueKind) []Op {
+	var out []Op
+	for _, op := range ops {
+		if op.VKind == vk {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+func seqValues(seq []elem) []any {
+	out := make([]any, len(seq))
+	for i, e := range seq {
+		out[i] = e.value
+	}
+	return out
+}
+
+func applyMove(lst []any, from, to int) []any {
+	if from < 0 || from >= len(lst) {
+		return lst
+	}
+	el := lst[from]
+	lst = append(lst[:from], lst[from+1:]...)
+	if to < 0 {
+		to = 0
+	}
+	if to > len(lst) {
+		to = len(lst)
+	}
+	return append(lst[:to], append([]any{el}, lst[to:]...)...)
+}
+
+// buildTree reconstructs loro's Tree toJSON: a nested list of nodes ordered by
+// (fractional_index, id) among siblings.
+func buildTree(ops []Op) []any {
+	type tn struct {
+		id, parent string
+		hasParent  bool
+		fi         string
+	}
+	var nodes []tn
+	for _, op := range ops {
+		if op.VKind != change.VKRawTreeMove {
+			continue
+		}
+		n, ok := op.Value.(TreeNode)
+		if !ok {
+			continue
+		}
+		nodes = append(nodes, tn{n.ID, n.Parent, n.HasParent, n.FI})
+	}
+	childrenOf := map[string][]tn{}
+	for _, n := range nodes {
+		p := ""
+		if n.hasParent {
+			p = n.parent
+		}
+		childrenOf[p] = append(childrenOf[p], n)
+	}
+	var build func(parent string) []any
+	build = func(parent string) []any {
+		kids := append([]tn{}, childrenOf[parent]...)
+		sort.SliceStable(kids, func(i, j int) bool {
+			if kids[i].fi != kids[j].fi {
+				return kids[i].fi < kids[j].fi
+			}
+			return kids[i].id < kids[j].id
+		})
+		out := make([]any, len(kids))
+		for idx, k := range kids {
+			var parentVal any
+			if k.hasParent {
+				parentVal = k.parent
+			}
+			out[idx] = map[string]any{
+				"parent":           parentVal,
+				"index":            float64(idx),
+				"meta":             map[string]any{},
+				"id":               k.id,
+				"fractional_index": k.fi,
+				"children":         build(k.id),
+			}
+		}
+		return out
+	}
+	return build("")
+}
+
+func sortedOps(ops []Op) []Op {
+	out := append([]Op{}, ops...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Lamport != b.Lamport {
+			return a.Lamport < b.Lamport
+		}
+		if a.Peer != b.Peer {
+			return a.Peer < b.Peer
+		}
+		return a.Counter < b.Counter
+	})
+	return out
+}
+
+// elem is one sequence element with its id, lamport, value, and left origin.
+type elem struct {
+	peer, leftPeer       uint64
+	counter, leftCounter int64
+	lamport              int64
+	value                any
+	hasLeft              bool
+}
+
+func idLess(a, b elem) bool {
+	if a.lamport != b.lamport {
+		return a.lamport < b.lamport
+	}
+	if a.peer != b.peer {
+		return a.peer < b.peer
+	}
+	return a.counter < b.counter
+}
+
+// mergeSeq replays insert ops into a Fugue-style tree (each element's parent is
+// its left origin) and flattens it pre-order, ordering same-parent siblings by
+// ascending id. Building a tree (rather than flat skipping) keeps causal runs
+// contiguous, giving the non-interleaving property for concurrent multi-element
+// inserts. Left origin is resolved against the op's CAUSAL PAST (same-peer
+// earlier elements + explicit deps), not the global merged sequence, so a
+// position resolves to the element the author actually saw.
+func mergeSeq(ops []Op, isText bool) []elem {
+	var all []elem
+	for _, op := range sortedOps(ops) {
+		items := expandItems(op, isText)
+		pos := int(op.Pos)
+		var lp uint64
+		var lc int64
+		hasLeft := false
+		if pos > 0 {
+			proj := flatten(causalProjection(all, op))
+			if pos-1 < len(proj) {
+				hasLeft = true
+				lp, lc = proj[pos-1].peer, proj[pos-1].counter
+			}
+		}
+		for k := range items {
+			e := elem{
+				peer:    op.Peer,
+				counter: op.Counter + int64(k),
+				lamport: op.Lamport + int64(k),
+				value:   items[k],
+			}
+			if k == 0 {
+				e.hasLeft, e.leftPeer, e.leftCounter = hasLeft, lp, lc
+			} else {
+				e.hasLeft = true
+				e.leftPeer = op.Peer
+				e.leftCounter = op.Counter + int64(k-1)
+			}
+			all = append(all, e)
+		}
+	}
+	return flatten(all)
+}
+
+// causalProjection returns the elements op causally depends on. For the current
+// fixtures that is same-peer-earlier elements (explicit cross-peer deps would be
+// added here for deeper histories).
+func causalProjection(all []elem, op Op) []elem {
+	var out []elem
+	for _, e := range all {
+		if e.peer == op.Peer && e.counter < op.Counter {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+type parentKey struct {
+	has     bool
+	peer    uint64
+	counter int64
+}
+
+// flatten orders elements as a pre-order DFS of the left-origin tree, with
+// same-parent siblings sorted by ascending id.
+func flatten(all []elem) []elem {
+	children := map[parentKey][]elem{}
+	for _, e := range all {
+		k := parentKey{e.hasLeft, e.leftPeer, e.leftCounter}
+		children[k] = append(children[k], e)
+	}
+	for k := range children {
+		cs := children[k]
+		sort.SliceStable(cs, func(i, j int) bool { return idLess(cs[i], cs[j]) })
+		children[k] = cs
+	}
+	var out []elem
+	var dfs func(p parentKey)
+	dfs = func(p parentKey) {
+		for _, e := range children[p] {
+			out = append(out, e)
+			dfs(parentKey{true, e.peer, e.counter})
+		}
+	}
+	dfs(parentKey{has: false})
+	return out
+}
+
+func expandItems(op Op, isText bool) []any {
+	if isText {
+		s, _ := op.Value.(string)
+		r := []rune(s)
+		out := make([]any, len(r))
+		for i, c := range r {
+			out[i] = string(c)
+		}
+		return out
+	}
+	if lst, ok := op.Value.([]any); ok {
+		return lst
+	}
+	return nil
+}

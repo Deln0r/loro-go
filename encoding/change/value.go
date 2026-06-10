@@ -263,8 +263,8 @@ func (w *ValueWriter) LoroValue(v any) error {
 // OpContent writes one op's value, dispatched by ValueKind (inverse of read).
 func (w *ValueWriter) OpContent(vk ValueKind, v any) error {
 	switch vk {
-	case VKNull, VKTrue, VKFalse:
-		return nil
+	case VKNull, VKTrue, VKFalse, VKDeleteOnce, VKDeleteSeq:
+		return nil // no inline bytes; delete targets live in delete_start_ids
 	case VKI64:
 		w.I64(v.(int64))
 	case VKF64:

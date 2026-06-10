@@ -17,11 +17,15 @@ func BuildState(u *Updates) (map[string]any, error) {
 		for _, op := range ch.Ops {
 			switch op.Kind {
 			case change.CText:
+				cur, _ := state[op.Container].(string)
+				if op.VKind == change.VKDeleteSeq {
+					state[op.Container] = deleteString(cur, int(op.Pos), int(op.Len))
+					continue
+				}
 				ins, ok := op.Value.(string)
 				if !ok {
 					return nil, fmt.Errorf("loro: text op value is %T, want string", op.Value)
 				}
-				cur, _ := state[op.Container].(string)
 				state[op.Container] = insertString(cur, int(op.Pos), ins)
 			case change.CMap:
 				m, ok := state[op.Container].(map[string]any)
@@ -29,13 +33,21 @@ func BuildState(u *Updates) (map[string]any, error) {
 					m = map[string]any{}
 					state[op.Container] = m
 				}
+				if op.VKind == change.VKDeleteOnce {
+					delete(m, op.MapKey)
+					continue
+				}
 				m[op.MapKey] = op.Value
 			case change.CList:
+				cur, _ := state[op.Container].([]any)
+				if op.VKind == change.VKDeleteSeq {
+					state[op.Container] = deleteList(cur, int(op.Pos), int(op.Len))
+					continue
+				}
 				elems, ok := op.Value.([]any)
 				if !ok {
 					return nil, fmt.Errorf("loro: list op value is %T, want []any", op.Value)
 				}
-				cur, _ := state[op.Container].([]any)
 				state[op.Container] = insertList(cur, int(op.Pos), elems)
 			default:
 				return nil, fmt.Errorf("loro: unsupported container kind %v", op.Kind)
@@ -55,6 +67,37 @@ func insertString(s string, pos int, ins string) string {
 		pos = len(r)
 	}
 	return string(r[:pos]) + ins + string(r[pos:])
+}
+
+// deleteString removes n runes starting at rune position pos.
+func deleteString(s string, pos, n int) string {
+	r := []rune(s)
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(r) {
+		pos = len(r)
+	}
+	end := pos + n
+	if end > len(r) {
+		end = len(r)
+	}
+	return string(r[:pos]) + string(r[end:])
+}
+
+// deleteList removes n elements starting at index pos.
+func deleteList(lst []any, pos, n int) []any {
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(lst) {
+		pos = len(lst)
+	}
+	end := pos + n
+	if end > len(lst) {
+		end = len(lst)
+	}
+	return append(lst[:pos], lst[end:]...)
 }
 
 // insertList inserts elems at index pos.

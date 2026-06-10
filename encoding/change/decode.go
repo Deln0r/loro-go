@@ -101,6 +101,50 @@ func DecodeKeys(keys []byte) ([]string, error) {
 	return out, nil
 }
 
+// DeleteID is one entry of the delete_start_ids blob: the id span a DeleteSeq
+// op targets. Len can be negative (reverse deletion, e.g. backspacing).
+type DeleteID struct {
+	PeerIdx int64
+	Counter int64
+	Len     int64
+}
+
+// DecodeDeleteIDs decodes the delete_start_ids blob (a serde_columnar 3-column
+// vec: peer_idx DeltaRle, counter DeltaRle, len DeltaRle). Entries are consumed
+// in op order by ops whose value kind is DeleteSeq. Empty blob means no deletes.
+func DecodeDeleteIDs(blob []byte) ([]DeleteID, error) {
+	if len(blob) == 0 {
+		return nil, nil
+	}
+	cols, err := columnar.Columns(blob)
+	if err != nil {
+		return nil, err
+	}
+	if len(cols) != 3 {
+		return nil, ErrBlock
+	}
+	peerIdx, err := columnar.DeltaRleI64(cols[0])
+	if err != nil {
+		return nil, err
+	}
+	counter, err := columnar.DeltaRleI64(cols[1])
+	if err != nil {
+		return nil, err
+	}
+	lens, err := columnar.DeltaRleI64(cols[2])
+	if err != nil {
+		return nil, err
+	}
+	if len(counter) != len(peerIdx) || len(lens) != len(peerIdx) {
+		return nil, ErrBlock
+	}
+	out := make([]DeleteID, len(peerIdx))
+	for i := range out {
+		out[i] = DeleteID{PeerIdx: peerIdx[i], Counter: counter[i], Len: lens[i]}
+	}
+	return out, nil
+}
+
 // Ops is the decoded ops blob: four parallel columns, one row per op.
 type Ops struct {
 	ContainerIdx []int64

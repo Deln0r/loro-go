@@ -15,7 +15,7 @@ import (
 // the original loro-crdt blob. header/change_meta/positions/delete_ids pass
 // through raw (their semantic encoders are the remaining gap).
 func TestFileRoundTrip(t *testing.T) {
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float"} {
+	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del"} {
 		orig, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", name, err)
@@ -106,7 +106,7 @@ func TestFileRoundTrip(t *testing.T) {
 // re-encodes it, asserting byte-identity against the original (covers the f64
 // BIG-endian path via map_float).
 func TestValuesRoundTrip(t *testing.T) {
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float"} {
+	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del"} {
 		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", name, err)

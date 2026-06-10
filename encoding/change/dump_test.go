@@ -12,7 +12,7 @@ import (
 // TestDumpBlocks is an exploratory dump (run with -v) used to pin the
 // ContainerType and ValueKind enums empirically against real fixtures.
 func TestDumpBlocks(t *testing.T) {
-	for _, name := range []string{"richtext", "mlist", "tree_simple"} {
+	for _, name := range []string{"text_del", "list_del", "map_del"} {
 		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", name, err)

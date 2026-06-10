@@ -38,14 +38,32 @@ type Op struct {
 	Container string               // root container name
 	Kind      change.ContainerType // Map / List / Text / ...
 	VKind     change.ValueKind     // op content kind (insert / mark / move / tree-move / ...)
-	Pos       int64                // List/Text insert position; move target
+	Pos       int64                // List/Text insert position; move target; delete position
 	MapKey    string               // Map key (empty for non-map)
-	Value     any                  // Text: string; Map: scalar; List: []any; Tree: TreeNode
+	Value     any                  // Text: string; Map: scalar; List: []any; Tree: TreeNode; DeleteSeq: DeleteSpan
 	MoveFrom  int64                // MovableList move source index
+	Len       int64                // atom length (delete ops: number of elements removed)
 
 	Peer    uint64 // op author
 	Counter int64  // op id counter (first element for multi-element ops)
 	Lamport int64  // op lamport (first element)
+}
+
+// DeleteSpan is the id range a text/list delete op removes: elements with the
+// same peer and counters [Counter, Counter+Len) (Len may be negative for
+// reverse deletion; Normalize resolves it).
+type DeleteSpan struct {
+	Peer    uint64
+	Counter int64
+	Len     int64
+}
+
+// Normalize returns the span as (first counter, count >= 0).
+func (d DeleteSpan) Normalize() (start, n int64) {
+	if d.Len >= 0 {
+		return d.Counter, d.Len
+	}
+	return d.Counter + d.Len + 1, -d.Len
 }
 
 // TreeNode is a decoded Tree create/move op target.
@@ -130,6 +148,10 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 	if err != nil {
 		return nil, err
 	}
+	deleteIDs, err := change.DecodeDeleteIDs(blk.DeleteIDs)
+	if err != nil {
+		return nil, err
+	}
 	if len(hdr.Peers) == 0 {
 		return nil, fmt.Errorf("loro: empty peer table")
 	}
@@ -140,7 +162,8 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		Timestamp: cm.Timestamps[0],
 	}
 	vr := change.NewValueReader(blk.Values)
-	cum := int64(0) // counter/lamport offset within the change
+	cum := int64(0)  // counter/lamport offset within the change
+	delConsumed := 0 // index into deleteIDs, consumed in op order
 	for i := 0; i < ops.N(); i++ {
 		ci := ops.ContainerIdx[i]
 		if ci < 0 || int(ci) >= len(conts) {
@@ -163,6 +186,18 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			Peer:      hdr.Peers[0],
 			Counter:   int64(blk.CounterStart) + cum,
 			Lamport:   int64(blk.LamportStart) + cum,
+			Len:       ops.Len[i],
+		}
+		if op.VKind == change.VKDeleteSeq {
+			if delConsumed >= len(deleteIDs) {
+				return nil, fmt.Errorf("loro: DeleteSeq op without delete_start_ids entry")
+			}
+			d := deleteIDs[delConsumed]
+			delConsumed++
+			if d.PeerIdx < 0 || int(d.PeerIdx) >= len(hdr.Peers) {
+				return nil, fmt.Errorf("loro: delete peer index %d out of range", d.PeerIdx)
+			}
+			op.Value = DeleteSpan{Peer: hdr.Peers[d.PeerIdx], Counter: d.Counter, Len: d.Len}
 		}
 		if c.Kind == change.CMap {
 			if p := ops.Prop[i]; p >= 0 && int(p) < len(keys) {

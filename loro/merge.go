@@ -46,20 +46,26 @@ func MergeState(u *Updates) (map[string]any, error) {
 			ops := sortedOps(ci.ops)
 			m := map[string]any{}
 			for _, op := range ops { // ascending order => last write wins = max(lamport,peer)
+				if op.VKind == change.VKDeleteOnce {
+					delete(m, op.MapKey)
+					continue
+				}
 				m[op.MapKey] = op.Value
 			}
 			state[name] = m
 		case change.CText:
-			seq := mergeSeq(opsOfKind(ci.ops, change.VKStr), true)
+			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKStr), true), deleteSpans(ci.ops))
 			var sb strings.Builder
 			for _, e := range seq {
 				sb.WriteString(e.value.(string))
 			}
 			state[name] = sb.String()
 		case change.CList:
-			state[name] = seqValues(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false))
+			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false), deleteSpans(ci.ops))
+			state[name] = seqValues(seq)
 		case change.CMovableList:
-			lst := seqValues(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false))
+			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false), deleteSpans(ci.ops))
+			lst := seqValues(seq)
 			for _, m := range sortedOps(opsOfKind(ci.ops, change.VKListMove)) {
 				lst = applyMove(lst, int(m.MoveFrom), int(m.Pos))
 			}
@@ -71,6 +77,44 @@ func MergeState(u *Updates) (map[string]any, error) {
 		}
 	}
 	return state, nil
+}
+
+// deleteSpans collects the id spans removed by the container's DeleteSeq ops.
+func deleteSpans(ops []Op) []DeleteSpan {
+	var out []DeleteSpan
+	for _, op := range ops {
+		if op.VKind != change.VKDeleteSeq {
+			continue
+		}
+		if d, ok := op.Value.(DeleteSpan); ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// tombstone drops sequence elements whose id falls inside any delete span.
+// Deletes are id-addressed, so this is order-independent and correct under
+// concurrent insert/delete (a delete never touches elements it has not seen).
+func tombstone(seq []elem, spans []DeleteSpan) []elem {
+	if len(spans) == 0 {
+		return seq
+	}
+	out := seq[:0]
+	for _, e := range seq {
+		dead := false
+		for _, d := range spans {
+			start, n := d.Normalize()
+			if e.peer == d.Peer && e.counter >= start && e.counter < start+n {
+				dead = true
+				break
+			}
+		}
+		if !dead {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func opsOfKind(ops []Op, vk change.ValueKind) []Op {

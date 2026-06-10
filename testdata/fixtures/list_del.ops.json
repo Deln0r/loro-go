@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "a",
+              "b",
+              "c"
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "delete",
+            "pos": 1,
+            "len": 1,
+            "start_id": "1@0"
+          },
+          "counter": 3
+        }
+      ]
+    }
+  ]
+}

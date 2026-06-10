@@ -62,13 +62,13 @@ func main() {
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
 - Change blocks: all eight blobs decode and re-encode byte-identically
 - Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index)
+- Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce)
 - Rich-text mark ops are parsed (plain-text state)
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 
 ## Not yet
 
-- Deletes / tombstones
 - Rich-text style annotations in the output (`toDelta`); only plain text today
 - Tree node `meta` sub-containers and deep trees
 - LZ4-compressed SSTable blocks

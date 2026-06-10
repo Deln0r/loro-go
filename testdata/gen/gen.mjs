@@ -99,6 +99,26 @@ emitMerged("conc_map", (d) => d.getMap("m").set("k", "A"), (d) => d.getMap("m").
 emitMerged("conc_list", (d) => d.getList("l").insert(0, "A"), (d) => d.getList("l").insert(0, "B"));
 // Multi-char concurrent runs: probe Fugue non-interleaving (runs stay contiguous).
 emitMerged("conc_text2", (d) => d.getText("t").insert(0, "AB"), (d) => d.getText("t").insert(0, "CD"));
+// Delete ops: DeleteSeq for text/list (id-span tombstones), map key deletion.
+emit("text_del", (doc) => {
+  const t = doc.getText("t");
+  t.insert(0, "hello");
+  t.delete(1, 2);
+});
+emit("list_del", (doc) => {
+  const l = doc.getList("l");
+  l.insert(0, "a");
+  l.insert(1, "b");
+  l.insert(2, "c");
+  l.delete(1, 1);
+});
+emit("map_del", (doc) => {
+  const m = doc.getMap("m");
+  m.set("k", "v");
+  m.set("x", 1);
+  m.delete("k");
+});
+
 // Chunk 3 probes: Tree, MovableList (fractional-index positions), rich text (Peritext marks).
 emit("mlist", (doc) => {
   const l = doc.getMovableList("ml");

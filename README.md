@@ -13,7 +13,7 @@ A pure-Go library for the [Loro](https://github.com/loro-dev/loro) CRDT wire for
 
 loro-go reads and writes the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) byte-for-byte, and reconstructs document state for Map, List, Text, MovableList and Tree containers. No cgo, single Go toolchain build.
 
-Bytes are verified against two independent ground truths: real `loro-crdt@1.12.5` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`.
+Bytes are verified against two independent ground truths: real `loro-crdt@1.12.5` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`. Upstream minors are re-checked against the committed fixtures; see [COMPAT.md](COMPAT.md) (1.13.1: byte-identical).
 
 > Not affiliated with loro-dev. Loro is a separate project; this is an independent Go reading of its wire format.
 

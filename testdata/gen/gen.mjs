@@ -119,6 +119,53 @@ emit("map_del", (doc) => {
   m.delete("k");
 });
 
+// Multi-change block: two commits with timestamps far enough apart that loro
+// keeps them as separate changes (default merge interval is 1000s) packed into
+// one block for the same peer.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  doc.getText("t").insert(0, "ab");
+  doc.commit({ timestamp: 1000 });
+  doc.getText("t").insert(2, "cd");
+  doc.commit({ timestamp: 5000 });
+  const update = doc.export({ mode: "update" });
+  const snapshot = doc.export({ mode: "snapshot" });
+  writeFileSync(join(outDir, "two_changes.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "two_changes.snapshot.bin"), Buffer.from(snapshot));
+  writeFileSync(join(outDir, "two_changes.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  writeFileSync(
+    join(outDir, "two_changes.ops.json"),
+    JSON.stringify(doc.exportJsonUpdates(), (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) + "\n",
+  );
+  console.log(`two_changes: update=${update.length}B`);
+}
+
+// Cross-peer delete: peer 2 deletes elements peer 1 inserted (real causal
+// dependency, delete span targets another peer's ids).
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  a.getText("t").insert(0, "abc");
+  a.commit();
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  b.import(a.export({ mode: "update" }));
+  b.getText("t").delete(1, 1);
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  const update = a.export({ mode: "update" });
+  const snapshot = a.export({ mode: "snapshot" });
+  writeFileSync(join(outDir, "cross_del.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "cross_del.snapshot.bin"), Buffer.from(snapshot));
+  writeFileSync(join(outDir, "cross_del.json"), JSON.stringify(a.toJSON(), null, 2) + "\n");
+  writeFileSync(
+    join(outDir, "cross_del.ops.json"),
+    JSON.stringify(a.exportJsonUpdates(), (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) + "\n",
+  );
+  console.log(`cross_del: update=${update.length}B merged=${JSON.stringify(a.toJSON())}`);
+}
+
 // Chunk 3 probes: Tree, MovableList (fractional-index positions), rich text (Peritext marks).
 emit("mlist", (doc) => {
   const l = doc.getMovableList("ml");

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Deln0r/loro-go/encoding/lz4"
 	"github.com/Deln0r/loro-go/encoding/xxh32"
 )
 
@@ -130,7 +131,16 @@ func decodeBlock(block []byte, m blockMeta) ([]Entry, error) {
 	if xxh32.Checksum(data, xxh32.Seed) != want {
 		return nil, fmt.Errorf("%w: block checksum", ErrSSTable)
 	}
-	if m.compression != 0 {
+	switch m.compression {
+	case 0:
+		// raw
+	case 1:
+		dec, err := lz4.DecompressFrame(data)
+		if err != nil {
+			return nil, err
+		}
+		data = dec
+	default:
 		return nil, fmt.Errorf("%w: compression %d not supported", ErrSSTable, m.compression)
 	}
 	if m.isLarge {

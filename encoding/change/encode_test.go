@@ -9,13 +9,17 @@ import (
 	"github.com/Deln0r/loro-go/encoding/fast"
 )
 
-// TestFileRoundTrip decodes ops/cids/keys/values to their semantic forms,
-// re-encodes them, reassembles the block + FastUpdates body + header (with a
+// TestFileRoundTrip decodes every block's blobs to their semantic forms,
+// re-encodes them, reassembles the blocks + FastUpdates body + header (with a
 // recomputed xxh32 checksum), and asserts the whole file is byte-identical to
-// the original loro-crdt blob. header/change_meta/positions/delete_ids pass
-// through raw (their semantic encoders are the remaining gap).
+// the original loro-crdt blob. positions/delete_ids pass through raw (their
+// semantic encoders are the remaining gap).
 func TestFileRoundTrip(t *testing.T) {
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del"} {
+	for _, name := range []string{
+		"text_hi", "map_kv", "list_abc", "map_float",
+		"text_del", "list_del", "map_del",
+		"two_changes", "cross_del",
+	} {
 		orig, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", name, err)
@@ -28,7 +32,24 @@ func TestFileRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		blk, err := ParseBlock(blocks[0])
+		reBlocks := make([][]byte, len(blocks))
+		for bi := range blocks {
+			reBlocks[bi] = roundTripBlock(t, name, blocks[bi])
+		}
+		body := EncodeFastUpdates(reBlocks)
+		file := fast.Encode(fast.ModeFastUpdates, body)
+		if !bytes.Equal(file, orig) {
+			t.Errorf("%s file round-trip mismatch:\n got  % x\n want % x", name, file, orig)
+		}
+	}
+}
+
+// roundTripBlock decodes one block's blobs semantically, re-encodes them, and
+// returns the reassembled block, asserting each blob is byte-identical.
+func roundTripBlock(t *testing.T, name string, raw []byte) []byte {
+	t.Helper()
+	{
+		blk, err := ParseBlock(raw)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,12 +114,7 @@ func TestFileRoundTrip(t *testing.T) {
 		blk2.CIDs = EncodeContainers(conts)
 		blk2.Keys = EncodeKeys(keys)
 		blk2.Values = vw.Bytes()
-
-		body := EncodeFastUpdates([][]byte{EncodeBlock(&blk2)})
-		file := fast.Encode(fast.ModeFastUpdates, body)
-		if !bytes.Equal(file, orig) {
-			t.Errorf("%s file round-trip mismatch:\n got  % x\n want % x", name, file, orig)
-		}
+		return EncodeBlock(&blk2)
 	}
 }
 

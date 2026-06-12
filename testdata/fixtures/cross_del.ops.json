@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1",
+    "2"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-t:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "abc"
+          },
+          "counter": 0
+        }
+      ]
+    },
+    {
+      "id": "0@1",
+      "timestamp": 0,
+      "deps": [
+        "2@0"
+      ],
+      "lamport": 3,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-t:Text",
+          "content": {
+            "type": "delete",
+            "pos": 1,
+            "len": 1,
+            "start_id": "1@0"
+          },
+          "counter": 0
+        }
+      ]
+    }
+  ]
+}

@@ -88,7 +88,8 @@ type Updates struct {
 }
 
 // DecodeUpdates decodes a loro-crdt FastUpdates export into semantic changes.
-// The checksum is verified. Multi-change blocks are not yet supported.
+// The checksum is verified. Blocks carrying multiple changes are partitioned
+// into their individual changes.
 func DecodeUpdates(blob []byte) (*Updates, error) {
 	h, err := fast.ParseHeader(blob)
 	if err != nil {
@@ -121,8 +122,8 @@ func DecodeUpdates(blob []byte) (*Updates, error) {
 
 func decodeBlock(blk *change.Block) ([]Change, error) {
 	n := int(blk.NChanges)
-	if n != 1 {
-		return nil, fmt.Errorf("loro: multi-change blocks not yet supported (n=%d)", n)
+	if n < 1 {
+		return nil, fmt.Errorf("loro: block with %d changes", n)
 	}
 	hdr, err := change.DecodeHeader(blk.Header, n)
 	if err != nil {
@@ -156,15 +157,48 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		return nil, fmt.Errorf("loro: empty peer table")
 	}
 
-	ch := Change{
-		ID:        ID{Peer: hdr.Peers[0], Counter: int64(blk.CounterStart)},
-		Lamport:   int64(blk.LamportStart),
-		Timestamp: cm.Timestamps[0],
+	// Partition the block's op stream into its n changes. Change i covers
+	// atomLens[i] atoms; atomLens[0..n-2] come from the header, the last is
+	// derived from counter_len. Change 0's lamport is the block's lamport_start;
+	// changes 1..n-1 carry theirs in the header lamports column (a later change
+	// may dep on another peer, so lamports are not simply cumulative).
+	atomLens := make([]int64, n)
+	var atomSum int64
+	for i := 0; i < n-1; i++ {
+		atomLens[i] = int64(hdr.AtomLens[i])
+		atomSum += atomLens[i]
 	}
+	atomLens[n-1] = int64(blk.CounterLen) - atomSum
+	if atomLens[n-1] < 0 {
+		return nil, fmt.Errorf("loro: atom lengths exceed counter_len")
+	}
+	starts := make([]int64, n) // change start offsets within the block
+	for i := 1; i < n; i++ {
+		starts[i] = starts[i-1] + atomLens[i-1]
+	}
+	lamportOf := func(i int) int64 {
+		if i == 0 {
+			return int64(blk.LamportStart)
+		}
+		return hdr.Lamports[i-1]
+	}
+	changes := make([]Change, n)
+	for i := range changes {
+		changes[i] = Change{
+			ID:        ID{Peer: hdr.Peers[0], Counter: int64(blk.CounterStart) + starts[i]},
+			Lamport:   lamportOf(i),
+			Timestamp: cm.Timestamps[i],
+		}
+	}
+
 	vr := change.NewValueReader(blk.Values)
-	cum := int64(0)  // counter/lamport offset within the change
+	cum := int64(0)  // counter offset within the block
+	chIdx := 0       // which change the current op belongs to
 	delConsumed := 0 // index into deleteIDs, consumed in op order
 	for i := 0; i < ops.N(); i++ {
+		for chIdx+1 < n && cum >= starts[chIdx+1] {
+			chIdx++
+		}
 		ci := ops.ContainerIdx[i]
 		if ci < 0 || int(ci) >= len(conts) {
 			return nil, fmt.Errorf("loro: container index %d out of range", ci)
@@ -185,7 +219,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			Value:     val,
 			Peer:      hdr.Peers[0],
 			Counter:   int64(blk.CounterStart) + cum,
-			Lamport:   int64(blk.LamportStart) + cum,
+			Lamport:   lamportOf(chIdx) + (cum - starts[chIdx]),
 			Len:       ops.Len[i],
 		}
 		if op.VKind == change.VKDeleteSeq {
@@ -219,7 +253,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			op.Value = nil
 		}
 		cum += ops.Len[i]
-		ch.Ops = append(ch.Ops, op)
+		changes[chIdx].Ops = append(changes[chIdx].Ops, op)
 	}
-	return []Change{ch}, nil
+	return changes, nil
 }

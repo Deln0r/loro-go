@@ -27,6 +27,14 @@ func fiHex(positions [][]byte, idx int64) string {
 	return hex.EncodeToString(positions[idx])
 }
 
+// markKey resolves a mark's style-key index against the key pool.
+func markKey(keys []string, idx int64) string {
+	if idx >= 0 && int(idx) < len(keys) {
+		return keys[idx]
+	}
+	return ""
+}
+
 // ID identifies an operation/change by its originating peer and counter.
 type ID struct {
 	Peer    uint64
@@ -72,6 +80,17 @@ type TreeNode struct {
 	HasParent bool
 	Parent    string // "counter@peer" when HasParent
 	FI        string // fractional index, hex
+}
+
+// MarkInfo is a decoded rich-text mark: the style key/value applied over the
+// visible range [Start, Start+Len). Info holds loro's expand flags (anchor
+// behavior), not yet interpreted.
+type MarkInfo struct {
+	Start int64
+	Len   int64
+	Key   string
+	Value any
+	Info  uint8
 }
 
 // Change is one decoded change (a batch of ops from one peer).
@@ -251,6 +270,8 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		case change.ListMove:
 			op.MoveFrom = tv.From
 			op.Value = nil
+		case change.Mark:
+			op.Value = MarkInfo{Start: op.Pos, Len: tv.Len, Info: tv.Info, Key: markKey(keys, tv.KeyIdx), Value: tv.Value}
 		}
 		cum += ops.Len[i]
 		changes[chIdx].Ops = append(changes[chIdx].Ops, op)

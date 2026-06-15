@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-rt:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "hello world"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-rt:Text",
+          "content": {
+            "type": "mark",
+            "start": 0,
+            "end": 5,
+            "style_key": "bold",
+            "style_value": true,
+            "info": 132
+          },
+          "counter": 11
+        },
+        {
+          "container": "cid:root-rt:Text",
+          "content": {
+            "type": "mark_end"
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:root-rt:Text",
+          "content": {
+            "type": "mark",
+            "start": 8,
+            "end": 13,
+            "style_key": "italic",
+            "style_value": true,
+            "info": 132
+          },
+          "counter": 13
+        },
+        {
+          "container": "cid:root-rt:Text",
+          "content": {
+            "type": "mark_end"
+          },
+          "counter": 14
+        }
+      ]
+    }
+  ]
+}

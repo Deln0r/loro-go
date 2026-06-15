@@ -185,6 +185,40 @@ emit("richtext", (doc) => {
   t.mark({ start: 0, end: 3 }, "bold", true);
 });
 
+// Rich-text toDelta cases: capture the styled delta (toJSON only gives plain
+// text). One mark, two disjoint marks, overlapping marks.
+function emitDelta(name, build) {
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  const t = doc.getText("rt");
+  build(t);
+  doc.commit();
+  const update = doc.export({ mode: "update" });
+  writeFileSync(join(outDir, `${name}.update.bin`), Buffer.from(update));
+  writeFileSync(join(outDir, `${name}.snapshot.bin`), Buffer.from(doc.export({ mode: "snapshot" })));
+  writeFileSync(join(outDir, `${name}.json`), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  writeFileSync(join(outDir, `${name}.delta.json`), JSON.stringify(t.toDelta(), null, 2) + "\n");
+  writeFileSync(
+    join(outDir, `${name}.ops.json`),
+    JSON.stringify(doc.exportJsonUpdates(), (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) + "\n",
+  );
+  console.log(`${name}: update=${update.length}B delta=${JSON.stringify(t.toDelta())}`);
+}
+emitDelta("rt_one", (t) => {
+  t.insert(0, "hello");
+  t.mark({ start: 0, end: 3 }, "bold", true);
+});
+emitDelta("rt_two", (t) => {
+  t.insert(0, "hello world");
+  t.mark({ start: 0, end: 5 }, "bold", true);
+  t.mark({ start: 6, end: 11 }, "italic", true);
+});
+emitDelta("rt_overlap", (t) => {
+  t.insert(0, "abcde");
+  t.mark({ start: 0, end: 4 }, "bold", true);
+  t.mark({ start: 2, end: 5 }, "italic", true);
+});
+
 emitMerged(
   "conc_list2",
   (d) => {

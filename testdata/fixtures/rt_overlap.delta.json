@@ -1,0 +1,21 @@
+[
+  {
+    "insert": "ab",
+    "attributes": {
+      "bold": true
+    }
+  },
+  {
+    "insert": "cd",
+    "attributes": {
+      "italic": true,
+      "bold": true
+    }
+  },
+  {
+    "insert": "e",
+    "attributes": {
+      "italic": true
+    }
+  }
+]

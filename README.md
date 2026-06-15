@@ -65,13 +65,13 @@ func main() {
 - Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce), including deletes targeting another peer's elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
-- Rich-text mark ops are parsed (plain-text state)
+- Rich-text `toDelta`: styled runs reconstructed via the mark anchor model (`loro.TextDelta`)
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 
 ## Not yet
 
-- Rich-text style annotations in the output (`toDelta`); only plain text today
+- Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
 - Tree node `meta` sub-containers and deep trees
 - Counter container
 

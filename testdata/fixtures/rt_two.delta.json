@@ -1,0 +1,17 @@
+[
+  {
+    "insert": "hello",
+    "attributes": {
+      "bold": true
+    }
+  },
+  {
+    "insert": " "
+  },
+  {
+    "insert": "world",
+    "attributes": {
+      "italic": true
+    }
+  }
+]

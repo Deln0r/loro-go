@@ -49,6 +49,19 @@ func BuildState(u *Updates) (map[string]any, error) {
 					return nil, fmt.Errorf("loro: list op value is %T, want []any", op.Value)
 				}
 				state[op.Container] = insertList(cur, int(op.Pos), elems)
+			case change.CCounter:
+				inc, ok := counterIncrement(op)
+				if !ok {
+					return nil, fmt.Errorf("loro: counter op value is %T, want int64 or float64", op.Value)
+				}
+				cur := 0.0
+				switch x := state[op.Container].(type) {
+				case int64:
+					cur = float64(x)
+				case float64:
+					cur = x
+				}
+				state[op.Container] = numFromF64(cur + inc)
 			default:
 				return nil, fmt.Errorf("loro: unsupported container kind %v", op.Kind)
 			}

@@ -11,7 +11,7 @@ A pure-Go library for the [Loro](https://github.com/loro-dev/loro) CRDT wire for
 [![Byte-compat vs loro-crdt](https://img.shields.io/badge/byte--compat-loro--crdt%201.12.5-success)]()
 [![Codeberg mirror](https://img.shields.io/badge/mirror-codeberg.org-2185d0)](https://codeberg.org/Deln0r/loro-go)
 
-loro-go reads and writes the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) byte-for-byte, and reconstructs document state for Map, List, Text, MovableList and Tree containers. No cgo, single Go toolchain build.
+loro-go reads and writes the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) byte-for-byte, and reconstructs document state for Map, List, Text, MovableList, Tree and Counter containers. No cgo, single Go toolchain build.
 
 Bytes are verified against two independent ground truths: real `loro-crdt@1.12.5` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`. Upstream minors are re-checked against the committed fixtures; see [COMPAT.md](COMPAT.md) (1.13.1: byte-identical).
 
@@ -61,7 +61,7 @@ func main() {
 - Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
 - Change blocks: all eight blobs decode and re-encode byte-identically
-- Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index)
+- Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index), Counter (summed increments)
 - Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce), including deletes targeting another peer's elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
@@ -73,7 +73,6 @@ func main() {
 
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
 - Tree node `meta` sub-containers and deep trees
-- Counter container
 
 ## Cross-language fixtures
 

@@ -33,7 +33,7 @@ func normalize(v any) any {
 
 func TestBuildStateMatchesToJSON(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del"} {
+	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter"} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", name, err)
@@ -63,7 +63,7 @@ func TestBuildStateMatchesToJSON(t *testing.T) {
 
 func TestDecodeSnapshotMatchesToJSON(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del"} {
+	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter"} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".snapshot.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", name, err)
@@ -95,7 +95,7 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 	// includes concurrent / multi-peer fixtures
 	for _, name := range []string{
 		"text_hi", "map_kv", "list_abc", "map_float",
-		"conc_text", "conc_map", "conc_list", "conc_text2", "conc_list2", "richtext", "mlist", "tree_simple", "text_del", "list_del", "map_del", "two_changes", "cross_del", "rt_one", "rt_two", "rt_overlap",
+		"conc_text", "conc_map", "conc_list", "conc_text2", "conc_list2", "richtext", "mlist", "tree_simple", "text_del", "list_del", "map_del", "two_changes", "cross_del", "rt_one", "rt_two", "rt_overlap", "counter",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

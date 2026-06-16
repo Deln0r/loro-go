@@ -2,11 +2,51 @@ package loro
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 )
+
+// counterIncrement extracts the numeric increment from a Counter op. Loro encodes
+// counter increments in the VALUES stream as I64 for whole numbers and F64 for
+// fractional ones, so an op value is either int64 or float64 here. Returns false
+// for any other op kind so non-increment ops are skipped.
+func counterIncrement(op Op) (float64, bool) {
+	switch v := op.Value.(type) {
+	case int64:
+		return float64(v), true
+	case float64:
+		return v, true
+	default:
+		return 0, false
+	}
+}
+
+// counterValue sums a Counter container's increments. Counter is a commutative
+// CRDT (the value is the order-independent sum of all increments), so this is
+// exact regardless of merge order. The result is int64 when integral (matching
+// loro's toJSON, which prints whole counters without a fractional part) and
+// float64 otherwise.
+func counterValue(ops []Op) any {
+	var sum float64
+	for _, op := range ops {
+		if inc, ok := counterIncrement(op); ok {
+			sum += inc
+		}
+	}
+	return numFromF64(sum)
+}
+
+// numFromF64 narrows an accumulated counter sum back to int64 when it has no
+// fractional part, keeping float64 only for genuinely fractional counters.
+func numFromF64(f float64) any {
+	if !math.IsInf(f, 0) && !math.IsNaN(f) && f == math.Trunc(f) {
+		return int64(f)
+	}
+	return f
+}
 
 // MergeState reconstructs document state with CRDT semantics, so it is correct
 // for CONCURRENT / multi-peer histories (unlike BuildState which applies in
@@ -72,6 +112,8 @@ func MergeState(u *Updates) (map[string]any, error) {
 			state[name] = lst
 		case change.CTree:
 			state[name] = buildTree(ci.ops)
+		case change.CCounter:
+			state[name] = counterValue(ci.ops)
 		default:
 			return nil, fmt.Errorf("loro: merge unsupported container kind %v", ci.kind)
 		}

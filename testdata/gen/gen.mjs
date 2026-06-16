@@ -119,6 +119,16 @@ emit("map_del", (doc) => {
   m.delete("k");
 });
 
+// Counter container: increments accumulate (incl. a negative one). toJSON gives
+// the summed numeric value. Probes how loro encodes counter ops in the VALUES
+// stream (no dedicated ValueKind; observed empirically).
+emit("counter", (doc) => {
+  const c = doc.getCounter("c");
+  c.increment(5);
+  c.increment(3);
+  c.increment(-2);
+});
+
 // Multi-change block: two commits with timestamps far enough apart that loro
 // keeps them as separate changes (default merge interval is 1000s) packed into
 // one block for the same peer.

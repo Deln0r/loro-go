@@ -16,6 +16,14 @@ import (
 // ErrColumnar marks a malformed column.
 var ErrColumnar = errors.New("loro/columnar: malformed column")
 
+// maxColRows caps how many rows a single column may decode to. A positive RLE
+// run repeats one content value an arbitrary number of times, so without a cap a
+// ~10-byte column could drive an exabyte of appends (decode-bomb). Real Loro
+// blocks hold far fewer ops than this (the change store chunks long histories
+// into many small blocks), so the ceiling only rejects hostile input while
+// keeping a malformed column's work and memory bounded.
+const maxColRows = 1 << 20
+
 // anyRle decodes an AnyRle/Rle column. The length token is a zigzag varint:
 // positive n repeats the next content value n times; negative n is a literal run
 // of |n| distinct content values.
@@ -29,6 +37,9 @@ func anyRle[T any](col []byte, content func(*postcard.Reader) (T, error)) ([]T, 
 		}
 		switch {
 		case tok > 0:
+			if tok > int64(maxColRows) || len(out)+int(tok) > maxColRows {
+				return nil, ErrColumnar
+			}
 			v, err := content(r)
 			if err != nil {
 				return nil, err
@@ -74,6 +85,9 @@ func BoolRle(col []byte) ([]bool, error) {
 		n, err := r.Uvarint()
 		if err != nil {
 			return nil, err
+		}
+		if n > uint64(maxColRows) || len(out)+int(n) > maxColRows {
+			return nil, ErrColumnar
 		}
 		for i := uint64(0); i < n; i++ {
 			out = append(out, cur)
@@ -207,6 +221,12 @@ func Columns(b []byte) ([][]byte, error) {
 	cc, err := r.Uvarint()
 	if err != nil {
 		return nil, err
+	}
+	// Each column carries at least a 1-byte length varint, so a column count
+	// greater than the unread remainder is impossible and the make hint cannot be
+	// driven huge.
+	if cc > uint64(r.Remaining()) {
+		return nil, ErrColumnar
 	}
 	cols := make([][]byte, 0, cc)
 	for i := uint64(0); i < cc; i++ {

@@ -68,6 +68,7 @@ func main() {
 - Rich-text `toDelta`: styled runs reconstructed via the mark anchor model (`loro.TextDelta`)
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
+- Malformed-input hardening: the decoders are fuzzed and bound every attacker-controlled length and RLE run count, so a hostile blob errors out instead of panicking, hanging, or allocating without bound
 
 ## Not yet
 

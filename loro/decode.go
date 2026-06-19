@@ -140,10 +140,16 @@ func DecodeUpdates(blob []byte) (*Updates, error) {
 }
 
 func decodeBlock(blk *change.Block) ([]Change, error) {
-	n := int(blk.NChanges)
-	if n < 1 {
-		return nil, fmt.Errorf("loro: block with %d changes", n)
+	// Every change but the last contributes at least one byte to the header
+	// columns, so NChanges cannot exceed the block's total payload. Bounding it on
+	// the raw uint64 (before the int conversion) stops a huge count from driving
+	// the n-sized allocations below.
+	avail := len(blk.Header) + len(blk.ChangeMeta) + len(blk.CIDs) + len(blk.Keys) +
+		len(blk.Positions) + len(blk.Ops) + len(blk.DeleteIDs) + len(blk.Values)
+	if blk.NChanges < 1 || blk.NChanges > uint64(avail)+1 {
+		return nil, fmt.Errorf("loro: implausible change count %d", blk.NChanges)
 	}
+	n := int(blk.NChanges)
 	hdr, err := change.DecodeHeader(blk.Header, n)
 	if err != nil {
 		return nil, err

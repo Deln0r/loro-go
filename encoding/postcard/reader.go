@@ -48,9 +48,11 @@ func (r *Reader) Varint() (int64, error) {
 	return v, nil
 }
 
-// Bytes reads n raw bytes (a sub-slice that aliases the buffer).
+// Bytes reads n raw bytes (a sub-slice that aliases the buffer). The bound is
+// written as n > len(r.B)-r.I rather than r.I+n > len(r.B) so a hostile length
+// near math.MaxInt cannot overflow the addition and slip past the check.
 func (r *Reader) Bytes(n int) ([]byte, error) {
-	if n < 0 || r.I+n > len(r.B) {
+	if n < 0 || n > len(r.B)-r.I {
 		return nil, ErrTruncated
 	}
 	b := r.B[r.I : r.I+n]
@@ -58,11 +60,17 @@ func (r *Reader) Bytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-// String reads a varint-length-prefixed UTF-8 string.
+// String reads a varint-length-prefixed UTF-8 string. The declared length is
+// checked against the unread remainder on the raw uint64 before the int
+// conversion, so a value above the buffer size (or one that would truncate on a
+// 32-bit int) is rejected rather than driving a bad allocation or read.
 func (r *Reader) String() (string, error) {
 	n, err := r.Uvarint()
 	if err != nil {
 		return "", err
+	}
+	if n > uint64(r.Remaining()) {
+		return "", ErrTruncated
 	}
 	b, err := r.Bytes(int(n))
 	if err != nil {

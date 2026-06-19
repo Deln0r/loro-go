@@ -101,17 +101,31 @@ func (v *ValueReader) F64() (float64, error) {
 // Str reads a LEB128-length-prefixed UTF-8 string.
 func (v *ValueReader) Str() (string, error) { return v.r.String() }
 
-// Binary reads a LEB128-length-prefixed byte slice.
+// Binary reads a LEB128-length-prefixed byte slice. The length is checked
+// against the unread remainder before the int conversion so a hostile value
+// cannot truncate on a 32-bit int or drive an over-large read.
 func (v *ValueReader) Binary() ([]byte, error) {
 	n, err := v.r.Uvarint()
 	if err != nil {
 		return nil, err
 	}
+	if n > uint64(v.r.Remaining()) {
+		return nil, fmt.Errorf("loro/change: binary length %d exceeds remaining %d", n, v.r.Remaining())
+	}
 	return v.r.Bytes(int(n))
 }
 
+// maxLoroValueDepth bounds nested LoroValue recursion so a crafted chain of
+// nested lists/maps cannot overflow the stack. Loro itself uses 128.
+const maxLoroValueDepth = 128
+
 // LoroValue reads one self-describing nested value (kind byte + content).
-func (v *ValueReader) LoroValue() (any, error) {
+func (v *ValueReader) LoroValue() (any, error) { return v.loroValue(0) }
+
+func (v *ValueReader) loroValue(depth int) (any, error) {
+	if depth > maxLoroValueDepth {
+		return nil, fmt.Errorf("loro/change: LoroValue nested deeper than %d", maxLoroValueDepth)
+	}
 	kb, err := v.r.Byte()
 	if err != nil {
 		return nil, err
@@ -136,9 +150,12 @@ func (v *ValueReader) LoroValue() (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if n > uint64(v.r.Remaining()) { // each element costs at least a kind byte
+			return nil, fmt.Errorf("loro/change: list length %d exceeds remaining %d", n, v.r.Remaining())
+		}
 		out := make([]any, n)
 		for i := range out {
-			if out[i], err = v.LoroValue(); err != nil {
+			if out[i], err = v.loroValue(depth + 1); err != nil {
 				return nil, err
 			}
 		}
@@ -148,13 +165,16 @@ func (v *ValueReader) LoroValue() (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if n > uint64(v.r.Remaining()) { // each entry costs at least a key-len + kind byte
+			return nil, fmt.Errorf("loro/change: map length %d exceeds remaining %d", n, v.r.Remaining())
+		}
 		out := make(map[string]any, n)
 		for i := uint64(0); i < n; i++ {
 			k, err := v.Str()
 			if err != nil {
 				return nil, err
 			}
-			val, err := v.LoroValue()
+			val, err := v.loroValue(depth + 1)
 			if err != nil {
 				return nil, err
 			}

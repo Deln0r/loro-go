@@ -43,6 +43,9 @@ func DecodePositions(blob []byte) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if n > uint64(cr.Remaining()) { // each entry consumes at least its restLen varint
+		return nil, ErrBlock
+	}
 	out := make([][]byte, n)
 	var prev []byte
 	for i := uint64(0); i < n; i++ {

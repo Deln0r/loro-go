@@ -16,6 +16,11 @@ var ErrFrame = errors.New("loro/lz4: malformed frame")
 
 const frameMagic = 0x184D2204
 
+// maxDecompressed bounds a single frame's decompressed output. LZ4 matches let a
+// small block expand many-fold, so without a ceiling a tiny hostile block could
+// drive a huge allocation. Real Loro SSTable blocks are a few MB at most.
+const maxDecompressed = 64 << 20
+
 // DecompressFrame decodes one LZ4 frame and returns the decompressed content.
 // Block and content checksums are verified when the frame carries them.
 func DecompressFrame(b []byte) ([]byte, error) {
@@ -67,7 +72,7 @@ func DecompressFrame(b []byte) ([]byte, error) {
 		}
 		uncompressed := size&(1<<31) != 0
 		n := int(size &^ (1 << 31))
-		if p+n > len(b) {
+		if n > len(b)-p { // subtraction form so a large n cannot overflow the add
 			return nil, fmt.Errorf("%w: truncated block", ErrFrame)
 		}
 		data := b[p : p+n]
@@ -82,10 +87,13 @@ func DecompressFrame(b []byte) ([]byte, error) {
 			p += 4
 		}
 		if uncompressed {
+			if len(out)+len(data) > maxDecompressed {
+				return nil, fmt.Errorf("%w: decompressed size exceeds limit", ErrFrame)
+			}
 			out = append(out, data...)
 			continue
 		}
-		dec, err := decompressBlock(data, out)
+		dec, err := decompressBlock(data, out, maxDecompressed)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +112,7 @@ func DecompressFrame(b []byte) ([]byte, error) {
 
 // decompressBlock decodes one raw LZ4 block, appending to dst (matches may
 // reference earlier dst bytes only within this frame's already-decoded output).
-func decompressBlock(src, dst []byte) ([]byte, error) {
+func decompressBlock(src, dst []byte, maxOut int) ([]byte, error) {
 	base := 0 // matches may not reach before the frame's own output start
 	i := 0
 	for i < len(src) {
@@ -125,8 +133,11 @@ func decompressBlock(src, dst []byte) ([]byte, error) {
 				}
 			}
 		}
-		if i+litLen > len(src) {
+		if litLen > len(src)-i {
 			return nil, fmt.Errorf("%w: literals overrun", ErrFrame)
+		}
+		if len(dst)+litLen > maxOut {
+			return nil, fmt.Errorf("%w: decompressed size exceeds limit", ErrFrame)
 		}
 		dst = append(dst, src[i:i+litLen]...)
 		i += litLen
@@ -155,6 +166,9 @@ func decompressBlock(src, dst []byte) ([]byte, error) {
 					break
 				}
 			}
+		}
+		if len(dst)+matchLen > maxOut {
+			return nil, fmt.Errorf("%w: decompressed size exceeds limit", ErrFrame)
 		}
 		// byte-by-byte copy: overlapping matches replicate runs by design
 		pos := len(dst) - offset

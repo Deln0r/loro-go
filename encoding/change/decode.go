@@ -60,6 +60,9 @@ func DecodeContainers(cids []byte) ([]Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	if n > uint64(r.Remaining()) { // each row is several bytes; n > remaining is bogus
+		return nil, ErrBlock
+	}
 	out := make([]Container, n)
 	for i := range out {
 		if _, err = r.Uvarint(); err != nil { // field count, always 4
@@ -181,6 +184,11 @@ func DecodeOps(ops []byte) (*Ops, error) {
 	ln, err := columnar.AnyRleU64(cols[3])
 	if err != nil {
 		return nil, err
+	}
+	// All four columns describe the same ops, so they must have equal length;
+	// otherwise a later per-op index into one of them would be out of range.
+	if len(pr) != len(ci) || len(vkU8) != len(ci) || len(ln) != len(ci) {
+		return nil, ErrBlock
 	}
 	vk := make([]ValueKind, len(vkU8))
 	for i, b := range vkU8 {

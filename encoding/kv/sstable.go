@@ -78,8 +78,11 @@ func decodeMeta(meta []byte) ([]blockMeta, error) {
 		return nil, fmt.Errorf("%w: meta too short", ErrSSTable)
 	}
 	num := binary.LittleEndian.Uint32(meta[:4])
-	if num > 10_000_000 {
-		return nil, fmt.Errorf("%w: num_blocks %d", ErrSSTable, num)
+	// Each block meta is at least 7 bytes (offset 4 + first_key_len 2 + lac 1), so a
+	// count beyond meta/7 cannot be backed by the bytes and would only oversize the
+	// allocation below.
+	if uint64(num) > uint64(len(meta))/7 {
+		return nil, fmt.Errorf("%w: num_blocks %d exceeds meta size", ErrSSTable, num)
 	}
 	// meta checksum is the last 4 bytes, over everything after num_blocks.
 	body := meta[4 : len(meta)-4]

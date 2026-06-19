@@ -26,6 +26,9 @@ func DecodeHeader(blob []byte, n int) (*ChangeHeader, error) {
 	if err != nil {
 		return nil, err
 	}
+	if peerNum > uint64(r.Remaining())/8 { // each peer entry is exactly 8 bytes
+		return nil, ErrBlock
+	}
 	h := &ChangeHeader{Peers: make([]uint64, peerNum)}
 	for i := range h.Peers {
 		b, err := r.Bytes(8)
@@ -33,6 +36,9 @@ func DecodeHeader(blob []byte, n int) (*ChangeHeader, error) {
 			return nil, err
 		}
 		h.Peers[i] = binary.LittleEndian.Uint64(b)
+	}
+	if max0(n-1) > r.Remaining() { // each atom len is a varint of at least 1 byte
+		return nil, ErrBlock
 	}
 	h.AtomLens = make([]uint64, max0(n-1))
 	for i := range h.AtomLens {
@@ -48,7 +54,15 @@ func DecodeHeader(blob []byte, n int) (*ChangeHeader, error) {
 	}
 	sumDeps := 0
 	for _, d := range h.DepLens {
+		// Each dependency contributes at least one byte to the columns read below,
+		// so a sum exceeding the unread remainder (or that overflows int) is bogus.
+		if d > uint64(r.Remaining()) {
+			return nil, ErrBlock
+		}
 		sumDeps += int(d)
+		if sumDeps < 0 || sumDeps > r.Remaining() {
+			return nil, ErrBlock
+		}
 	}
 	if h.DepPeerIdxs, err = columnar.AnyRleNU64(r, sumDeps); err != nil {
 		return nil, err

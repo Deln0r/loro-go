@@ -29,11 +29,13 @@ func DecodeSnapshot(blob []byte) (*Updates, error) {
 	if len(body) < 4 {
 		return nil, fmt.Errorf("loro: snapshot body too short")
 	}
-	oplogLen := int(binary.LittleEndian.Uint32(body[:4]))
-	if 4+oplogLen > len(body) {
+	oplogLen := binary.LittleEndian.Uint32(body[:4])
+	// Compare on the unsigned value so a large length cannot overflow int to a
+	// negative on a 32-bit build and slip past the bound into a panicking slice.
+	if uint64(oplogLen) > uint64(len(body)-4) {
 		return nil, fmt.Errorf("loro: oplog section length %d exceeds body", oplogLen)
 	}
-	oplog := body[4 : 4+oplogLen]
+	oplog := body[4 : 4+int(oplogLen)]
 
 	entries, err := kv.ParseSSTable(oplog)
 	if err != nil {

@@ -84,6 +84,10 @@ cd testdata/gen && npm install && node gen.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for scope, the byte-compatibility rule for codec changes, fixture regeneration, and fuzzing.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -61,8 +61,9 @@ func numFromF64(f float64) any {
 // and move ops are not handled (no fixture exercises them).
 func MergeState(u *Updates) (map[string]any, error) {
 	type cinfo struct {
-		kind change.ContainerType
-		ops  []Op
+		kind   change.ContainerType
+		isRoot bool
+		ops    []Op
 	}
 	conts := map[string]*cinfo{}
 	var order []string
@@ -70,7 +71,7 @@ func MergeState(u *Updates) (map[string]any, error) {
 		for _, op := range ch.Ops {
 			ci := conts[op.Container]
 			if ci == nil {
-				ci = &cinfo{kind: op.Kind}
+				ci = &cinfo{kind: op.Kind, isRoot: op.IsRoot}
 				conts[op.Container] = ci
 				order = append(order, op.Container)
 			}
@@ -78,9 +79,8 @@ func MergeState(u *Updates) (map[string]any, error) {
 		}
 	}
 
-	state := map[string]any{}
-	for _, name := range order {
-		ci := conts[name]
+	// buildOne reconstructs a single non-tree container's value.
+	buildOne := func(ci *cinfo) (any, error) {
 		switch ci.kind {
 		case change.CMap:
 			ops := sortedOps(ci.ops)
@@ -92,30 +92,63 @@ func MergeState(u *Updates) (map[string]any, error) {
 				}
 				m[op.MapKey] = op.Value
 			}
-			state[name] = m
+			return m, nil
 		case change.CText:
 			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKStr), true), deleteSpans(ci.ops))
 			var sb strings.Builder
 			for _, e := range seq {
 				sb.WriteString(e.value.(string))
 			}
-			state[name] = sb.String()
+			return sb.String(), nil
 		case change.CList:
 			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false), deleteSpans(ci.ops))
-			state[name] = seqValues(seq)
+			return seqValues(seq), nil
 		case change.CMovableList:
 			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false), deleteSpans(ci.ops))
 			lst := seqValues(seq)
 			for _, m := range sortedOps(opsOfKind(ci.ops, change.VKListMove)) {
 				lst = applyMove(lst, int(m.MoveFrom), int(m.Pos))
 			}
-			state[name] = lst
-		case change.CTree:
-			state[name] = buildTree(ci.ops)
+			return lst, nil
 		case change.CCounter:
-			state[name] = counterValue(ci.ops)
+			return counterValue(ci.ops), nil
 		default:
 			return nil, fmt.Errorf("loro: merge unsupported container kind %v", ci.kind)
+		}
+	}
+
+	built := map[string]any{}
+	// Non-root Map containers are tree-node meta maps, keyed by node id "counter@peer".
+	metaMaps := map[string]map[string]any{}
+	// Pass 1: every container except trees, which need the meta maps built first.
+	for _, name := range order {
+		ci := conts[name]
+		if ci.kind == change.CTree {
+			continue
+		}
+		val, err := buildOne(ci)
+		if err != nil {
+			return nil, err
+		}
+		built[name] = val
+		if !ci.isRoot {
+			if m, ok := val.(map[string]any); ok {
+				metaMaps[name] = m
+			}
+		}
+	}
+	// Pass 2: trees, inlining each node's meta map by node id.
+	for _, name := range order {
+		if conts[name].kind == change.CTree {
+			built[name] = buildTree(conts[name].ops, metaMaps)
+		}
+	}
+
+	// Only root containers appear at the top level; nested ones are inlined above.
+	state := map[string]any{}
+	for _, name := range order {
+		if conts[name].isRoot {
+			state[name] = built[name]
 		}
 	}
 	return state, nil
@@ -193,8 +226,9 @@ func applyMove(lst []any, from, to int) []any {
 }
 
 // buildTree reconstructs loro's Tree toJSON: a nested list of nodes ordered by
-// (fractional_index, id) among siblings.
-func buildTree(ops []Op) []any {
+// (fractional_index, id) among siblings. metaMaps holds each node's meta map
+// (the node's data sub-container) keyed by node id; absent nodes get an empty meta.
+func buildTree(ops []Op, metaMaps map[string]map[string]any) []any {
 	type tn struct {
 		id, parent string
 		hasParent  bool
@@ -234,10 +268,14 @@ func buildTree(ops []Op) []any {
 			if k.hasParent {
 				parentVal = k.parent
 			}
+			meta := metaMaps[k.id]
+			if meta == nil {
+				meta = map[string]any{}
+			}
 			out[idx] = map[string]any{
 				"parent":           parentVal,
 				"index":            float64(idx),
-				"meta":             map[string]any{},
+				"meta":             meta,
 				"id":               k.id,
 				"fractional_index": k.fi,
 				"children":         build(k.id),

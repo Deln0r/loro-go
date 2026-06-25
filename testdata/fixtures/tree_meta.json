@@ -1,0 +1,26 @@
+{
+  "tr": [
+    {
+      "parent": null,
+      "index": 0,
+      "meta": {
+        "name": "root-node",
+        "n": 5
+      },
+      "id": "0@1",
+      "fractional_index": "80",
+      "children": [
+        {
+          "parent": "0@1",
+          "index": 0,
+          "meta": {
+            "label": "child"
+          },
+          "id": "3@1",
+          "fractional_index": "80",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

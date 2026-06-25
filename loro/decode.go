@@ -43,7 +43,8 @@ type ID struct {
 
 // Op is one decoded operation with its container and content resolved.
 type Op struct {
-	Container string               // root container name
+	Container string               // root container name, or "counter@peer" id for a non-root container
+	IsRoot    bool                 // false for nested containers (e.g. a tree node's meta map)
 	Kind      change.ContainerType // Map / List / Text / ...
 	VKind     change.ValueKind     // op content kind (insert / mark / move / tree-move / ...)
 	Pos       int64                // List/Text insert position; move target; delete position
@@ -230,8 +231,14 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		}
 		c := conts[ci]
 		name := ""
-		if c.IsRoot && c.KeyOrCounter >= 0 && int(c.KeyOrCounter) < len(keys) {
-			name = keys[c.KeyOrCounter]
+		if c.IsRoot {
+			if c.KeyOrCounter >= 0 && int(c.KeyOrCounter) < len(keys) {
+				name = keys[c.KeyOrCounter]
+			}
+		} else {
+			// A nested container (e.g. a tree node's meta map) is addressed by its
+			// creating id; name it "counter@peer" so it matches the owning node id.
+			name = fmtID(hdr.Peers, int64(c.PeerIdx), c.KeyOrCounter)
 		}
 		val, err := vr.OpContent(ops.ValueKind[i])
 		if err != nil {
@@ -239,6 +246,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		}
 		op := Op{
 			Container: name,
+			IsRoot:    c.IsRoot,
 			Kind:      c.Kind,
 			VKind:     ops.ValueKind[i],
 			Value:     val,

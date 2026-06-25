@@ -61,7 +61,7 @@ func main() {
 - Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
 - Change blocks: all eight blobs decode and re-encode byte-identically
-- Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index), Counter (summed increments)
+- Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index and per-node `meta` maps), Counter (summed increments)
 - Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce), including deletes targeting another peer's elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
@@ -73,7 +73,7 @@ func main() {
 ## Not yet
 
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
-- Tree node `meta` sub-containers and deep trees
+- Nested containers other than tree-node meta maps (a container stored as a map or list value)
 
 ## Cross-language fixtures
 

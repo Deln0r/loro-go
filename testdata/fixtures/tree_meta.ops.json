@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "0@0",
+            "parent": null,
+            "fractional_index": "80"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:0@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "name",
+            "value": "root-node"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:0@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "n",
+            "value": 5
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "3@0",
+            "parent": "0@0",
+            "fractional_index": "80"
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:3@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "label",
+            "value": "child"
+          },
+          "counter": 4
+        }
+      ]
+    }
+  ]
+}

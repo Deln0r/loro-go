@@ -189,6 +189,16 @@ emit("tree_simple", (doc) => {
   const root = tr.createNode();
   tr.createNode(root.id);
 });
+// Tree node meta: each node carries a Map sub-container (node.data) whose values
+// appear under "meta" in toJSON. Probes non-root container resolution by node id.
+emit("tree_meta", (doc) => {
+  const tr = doc.getTree("tr");
+  const root = tr.createNode();
+  root.data.set("name", "root-node");
+  root.data.set("n", 5);
+  const child = tr.createNode(root.id);
+  child.data.set("label", "child");
+});
 emit("richtext", (doc) => {
   const t = doc.getText("rt");
   t.insert(0, "hello");

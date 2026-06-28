@@ -37,4 +37,19 @@ Scope note: the byte comparison covers the 15 committed fixture scenarios
 (text, map, list, float values, deletes, movable list, tree, rich text, and
 concurrent multi-peer merges). Documents using the new mergeable-container API
 are not in the fixture set; for those, the claim rests on the source diff above.
-The generator pin stays at `1.12.5`.
+
+## loro-crdt 1.13.6 vs 1.12.5 (checked 2026-06-28)
+
+**Result: Fast wire format still unchanged. Every committed fixture regenerates
+byte-identical under 1.13.6, and all `toJSON()` states match.** The generator pin
+was moved from `1.12.5` to `1.13.6` (Dependabot) on the strength of this check.
+
+Method:
+
+```
+cd testdata/gen
+npm install loro-crdt@1.13.6
+node gen.mjs
+git status --porcelain ../fixtures   # empty: all binary blobs + JSON identical
+cd ../.. && go test ./...            # full suite green
+```

@@ -327,21 +327,31 @@ func idLess(a, b elem) bool {
 // inserts. Left origin is resolved against the op's CAUSAL PAST (same-peer
 // earlier elements + explicit deps), not the global merged sequence, so a
 // position resolves to the element the author actually saw.
+// The left origin of an op is the element at the op's visible position-1 in the
+// author's causal view, i.e. flatten(same-peer earlier elements)[pos-1]. Rather
+// than re-flattening that projection per op (the old O(n^2) path), we keep each
+// peer's causal view in flatten order incrementally. Ops replay in counter order,
+// so every new element carries the highest id its peer has emitted; in Fugue it
+// therefore becomes the LAST child of its left origin and lands at the end of the
+// origin's subtree. That makes the insert an index lookup plus a splice, and a
+// plain append in the common growing-at-the-end case. The final flatten(all) and
+// the resulting element set are unchanged, so the merged output is identical to
+// the reference algorithm (asserted in TestMergeSeqMatchesReference).
 func mergeSeq(ops []Op, isText bool) []elem {
 	var all []elem
+	views := map[uint64][]elem{} // peer -> its causal view in flatten order
 	for _, op := range sortedOps(ops) {
 		items := expandItems(op, isText)
+		seq := views[op.Peer]
 		pos := int(op.Pos)
 		var lp uint64
 		var lc int64
 		hasLeft := false
-		if pos > 0 {
-			proj := flatten(causalProjection(all, op))
-			if pos-1 < len(proj) {
-				hasLeft = true
-				lp, lc = proj[pos-1].peer, proj[pos-1].counter
-			}
+		if pos > 0 && pos-1 < len(seq) {
+			hasLeft = true
+			lp, lc = seq[pos-1].peer, seq[pos-1].counter
 		}
+		run := make([]elem, len(items))
 		for k := range items {
 			e := elem{
 				peer:    op.Peer,
@@ -356,22 +366,49 @@ func mergeSeq(ops []Op, isText bool) []elem {
 				e.leftPeer = op.Peer
 				e.leftCounter = op.Counter + int64(k-1)
 			}
-			all = append(all, e)
+			run[k] = e
 		}
+		all = append(all, run...)
+		li := -1
+		if hasLeft {
+			li = pos - 1 // left origin sits at pos-1 in the peer's view
+		}
+		views[op.Peer] = spliceElems(seq, subtreeEnd(seq, li), run)
 	}
 	return flatten(all)
 }
 
-// causalProjection returns the elements op causally depends on. For the current
-// fixtures that is same-peer-earlier elements (explicit cross-peer deps would be
-// added here for deeper histories).
-func causalProjection(all []elem, op Op) []elem {
-	var out []elem
-	for _, e := range all {
-		if e.peer == op.Peer && e.counter < op.Counter {
-			out = append(out, e)
-		}
+// subtreeEnd returns the index at which a new max-id child of the element at
+// index li should be inserted in a peer's flatten-ordered view: the end of that
+// element's subtree (the contiguous run of its descendants). li == -1 means the
+// element has no left origin (a root child), which as a max-id sibling sorts
+// after every existing element, so it goes at the end.
+func subtreeEnd(seq []elem, li int) int {
+	if li < 0 || li == len(seq)-1 {
+		return len(seq) // no origin, or origin is last => append (covers the hot path)
 	}
+	inSub := map[parentKey]bool{{true, seq[li].peer, seq[li].counter}: true}
+	i := li + 1
+	for i < len(seq) {
+		x := seq[i]
+		if !x.hasLeft || !inSub[parentKey{true, x.leftPeer, x.leftCounter}] {
+			break // first element outside the subtree ends it
+		}
+		inSub[parentKey{true, x.peer, x.counter}] = true
+		i++
+	}
+	return i
+}
+
+// spliceElems inserts run into seq at index at, returning the new slice.
+func spliceElems(seq []elem, at int, run []elem) []elem {
+	if at >= len(seq) {
+		return append(seq, run...)
+	}
+	out := make([]elem, 0, len(seq)+len(run))
+	out = append(out, seq[:at]...)
+	out = append(out, run...)
+	out = append(out, seq[at:]...)
 	return out
 }
 

@@ -19,3 +19,30 @@ jobs:
         run: go vet ./...
       - name: test
         run: go test ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: fuzz smoke (below-checksum decoders on malformed input)
+        run: |
+          set -e
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeBlock$' -fuzztime=30s
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeUpdates$' -fuzztime=15s
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeSnapshot$' -fuzztime=15s
+          go test ./encoding/columnar/ -run='^$' -fuzz='^FuzzStrategies$' -fuzztime=20s
+          go test ./encoding/change/ -run='^$' -fuzz='^FuzzBlobDecoders$' -fuzztime=15s
+          go test ./encoding/change/ -run='^$' -fuzz='^FuzzDecodeHeader$' -fuzztime=15s
+          go test ./encoding/change/ -run='^$' -fuzz='^FuzzLoroValue$' -fuzztime=15s
+          go test ./encoding/kv/ -run='^$' -fuzz='^FuzzParseSSTable$' -fuzztime=15s
+          go test ./encoding/lz4/ -run='^$' -fuzz='^FuzzDecompressFrame$' -fuzztime=15s
+      - name: upload crashers on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers
+          path: '**/testdata/fuzz/**'
+          if-no-files-found: ignore

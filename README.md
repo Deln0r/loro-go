@@ -4,7 +4,7 @@ A pure-Go library for the [Loro](https://github.com/loro-dev/loro) CRDT wire for
 
 [![CI](https://github.com/Deln0r/loro-go/actions/workflows/ci.yml/badge.svg)](https://github.com/Deln0r/loro-go/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Deln0r/loro-go.svg)](https://pkg.go.dev/github.com/Deln0r/loro-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Deln0r/loro-go)](https://goreportcard.com/report/github.com/Deln0r/loro-go)
+[![Listed on loro.dev](https://img.shields.io/badge/loro.dev%20docs-listed-7c3aed.svg)](https://loro.dev/docs/tutorial/get_started)
 [![Go](https://img.shields.io/badge/go-1.26+-00ADD8.svg)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange)]()
@@ -14,6 +14,8 @@ A pure-Go library for the [Loro](https://github.com/loro-dev/loro) CRDT wire for
 loro-go reads and writes the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) byte-for-byte, and reconstructs document state for Map, List, Text, MovableList, Tree and Counter containers. No cgo, single Go toolchain build.
 
 Bytes are verified against two independent ground truths: real `loro-crdt@1.13.6` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`. Upstream minors are re-checked against the committed fixtures; see [COMPAT.md](COMPAT.md) (1.13.6: byte-identical).
+
+loro-go is listed in the official [Loro documentation](https://loro.dev/docs/tutorial/get_started) as the pure-Go community implementation.
 
 > Not affiliated with loro-dev. Loro is a separate project; this is an independent Go reading of its wire format.
 

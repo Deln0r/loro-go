@@ -53,3 +53,20 @@ node gen.mjs
 git status --porcelain ../fixtures   # empty: all binary blobs + JSON identical
 cd ../.. && go test ./...            # full suite green
 ```
+
+## loro-crdt 1.13.7 + serde 1.0.229 (checked 2026-07-21)
+
+**Result: still byte-identical.** Regenerating the fixtures under loro-crdt
+1.13.7 leaves every binary blob and JSON state unchanged, and regenerating the
+serde_columnar golden vectors under serde 1.0.229 leaves
+`testdata/columnar_golden.txt` unchanged. Both pins were bumped (Dependabot #8
+and #7) on the strength of these checks.
+
+Method:
+
+```
+cd testdata/gen && npm install loro-crdt@1.13.7 && node gen.mjs
+cd ../rustgen && cargo update -p serde --precise 1.0.229 && cargo run > ../columnar_golden.txt
+cd ../.. && git status --porcelain testdata/   # empty: fixtures + golden vectors identical
+go test ./...                                   # full suite green
+```

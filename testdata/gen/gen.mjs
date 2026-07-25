@@ -62,6 +62,31 @@ emit("map_float", (doc) => {
   m.set("neg", -2.5);
 });
 
+// Edge cases for existing containers. unicode_text: multi-byte runes incl an
+// astral emoji, insert-only round-trip (state must match byte-for-byte).
+emit("unicode_text", (doc) => {
+  doc.getText("t").insert(0, "héllo 世界 🦀");
+});
+
+// map_mixed: assorted scalar value kinds in one map (bool, negative int, empty
+// string, string), exercising several VALUES-stream kinds together.
+emit("map_mixed", (doc) => {
+  const m = doc.getMap("m");
+  m.set("yes", true);
+  m.set("no", false);
+  m.set("neg", -1234567);
+  m.set("empty", "");
+  m.set("s", "text");
+});
+
+// text_cjk_del: delete spanning multi-byte (BMP) runes. Positions are BMP so the
+// utf-16 (loro) and rune (loro-go) indices agree; "abc世界def" delete(3,2) -> "abcdef".
+emit("text_cjk_del", (doc) => {
+  const t = doc.getText("t");
+  t.insert(0, "abc世界def");
+  t.delete(3, 2);
+});
+
 // Concurrent / multi-peer fixtures: two peers edit the same place, merge, then
 // export the merged update + final toJSON. Exercises multi-change blocks and the
 // CRDT merge (Fugue ordering for text/list, LWW for map).

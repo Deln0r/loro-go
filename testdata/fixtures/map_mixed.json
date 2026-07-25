@@ -1,0 +1,9 @@
+{
+  "m": {
+    "neg": -1234567,
+    "empty": "",
+    "no": false,
+    "s": "text",
+    "yes": true
+  }
+}

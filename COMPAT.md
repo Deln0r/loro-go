@@ -70,3 +70,18 @@ cd ../rustgen && cargo update -p serde --precise 1.0.229 && cargo run > ../colum
 cd ../.. && git status --porcelain testdata/   # empty: fixtures + golden vectors identical
 go test ./...                                   # full suite green
 ```
+
+## loro-crdt 1.13.8 (checked 2026-07-29)
+
+**Result: still byte-identical.** Regenerating the fixtures under loro-crdt
+1.13.8 leaves every binary blob and JSON state unchanged, including the unicode,
+mixed-map and CJK-delete edge cases added since the previous check. The pin was
+bumped from `1.13.7` (Dependabot #10) on the strength of this check.
+
+Method:
+
+```
+cd testdata/gen && npm install loro-crdt@1.13.8 && node gen.mjs
+cd ../.. && git status --porcelain testdata/fixtures/   # empty: all blobs + JSON identical
+go test ./...                                            # full suite green
+```

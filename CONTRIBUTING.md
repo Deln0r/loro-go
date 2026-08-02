@@ -32,6 +32,7 @@ Before opening a PR:
 - Run `go test ./...` (all packages must stay green).
 - Run `go vet ./...`.
 - Run `gofmt -l .` on changed files and fix anything it lists.
+- Run `golangci-lint run ./...` (config in `.golangci.yml`); CI gates on it.
 - Add a test that fails without the change and passes with it.
 
 Any PR that adds or modifies a byte decoder or encoder MUST extend the fixture corpus. Code-only codec changes without fixture coverage will not be merged, because the entire value of this library is staying byte-identical to `loro-crdt`.

@@ -20,11 +20,11 @@ func TestConcatReadersAdvance(t *testing.T) {
 		}
 		buf := append(append([]byte{}, col...), 0xAA) // sentinel
 		r := postcard.NewReader(buf)
-		name := row.strat + "/" + row.ty + "/" + row.csv
+		name := row.strategy + "/" + row.ty + "/" + row.csv
 
 		var got []int64
 		switch {
-		case row.strat == "BoolRle":
+		case row.strategy == "BoolRle":
 			v, err := BoolRleN(r, count)
 			if err != nil {
 				t.Fatalf("%s: %v", name, err)
@@ -36,13 +36,13 @@ func TestConcatReadersAdvance(t *testing.T) {
 					got = append(got, 0)
 				}
 			}
-		case row.strat == "Rle" && (row.ty == "u64" || row.ty == "u32" || row.ty == "u8"):
+		case row.strategy == "Rle" && (row.ty == "u64" || row.ty == "u32" || row.ty == "u8"):
 			v, err := AnyRleNU64(r, count)
 			if err != nil {
 				t.Fatalf("%s: %v", name, err)
 			}
 			got = toI64u(v)
-		case row.strat == "DeltaOfDelta":
+		case row.strategy == "DeltaOfDelta":
 			v, err := DeltaOfDeltaN(r, count)
 			if err != nil {
 				t.Fatalf("%s: %v", name, err)
@@ -55,12 +55,13 @@ func TestConcatReadersAdvance(t *testing.T) {
 		if r.I != len(col) {
 			t.Errorf("%s: reader at %d, want %d (must stop at column end)", name, r.I, len(col))
 		}
-		if row.strat == "BoolRle" {
+		if row.strategy == "BoolRle" {
 			var want []int64
 			for _, s := range strings.Split(row.csv, ",") {
-				if s == "true" {
+				switch s {
+				case "true":
 					want = append(want, 1)
-				} else if s == "false" {
+				case "false":
 					want = append(want, 0)
 				}
 			}

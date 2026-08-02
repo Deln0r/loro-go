@@ -1,0 +1,12 @@
+version: "2"
+
+linters:
+  # Defaults (errcheck, govet, ineffassign, staticcheck, unused) plus a few that
+  # matter for a wire-format library: unconvert catches pointless numeric
+  # conversions in the codec, misspell keeps the exported docs clean, and
+  # copyloopvar / usestdlibvars catch small modernisation slips.
+  enable:
+    - unconvert
+    - misspell
+    - copyloopvar
+    - usestdlibvars

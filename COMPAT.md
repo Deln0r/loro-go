@@ -85,3 +85,6 @@ cd testdata/gen && npm install loro-crdt@1.13.8 && node gen.mjs
 cd ../.. && git status --porcelain testdata/fixtures/   # empty: all blobs + JSON identical
 go test ./...                                            # full suite green
 ```
+
+**1.13.9 (checked 2026-08-10):** same method, same result, fixtures byte-identical;
+the pin moved on to `1.13.9` (Dependabot #12).

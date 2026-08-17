@@ -88,3 +88,25 @@ go test ./...                                            # full suite green
 
 **1.13.9 (checked 2026-08-10):** same method, same result, fixtures byte-identical;
 the pin moved on to `1.13.9` (Dependabot #12).
+
+## loro-crdt 1.14.1 vs 1.13.9 (checked 2026-08-17)
+
+**Result: Fast wire format unchanged across the first minor bump since 1.12.5.**
+Every fixture regenerates byte-identical under 1.14.1, and the release notes for
+1.14.0 and 1.14.1 describe no format work:
+
+- 1.14.0 is WASM-binding error handling (catchable JS errors instead of
+  `RuntimeError: unreachable` traps, a panic hook that records diagnostics, OOM
+  reporting) plus a core fix to how changes whose dependencies are not yet in the
+  DAG are parked and re-classified on import.
+- 1.14.1 makes `importBatch` atomic: the batch runs in an oplog rollback scope so
+  a blob rejected by state validation returns an error with the document still
+  attached, instead of trapping and leaving it detached.
+
+Both are import/apply and binding-level behaviour, not encoding. The pin moved to
+`1.14.1` (Dependabot #13).
+
+Note for future work: 1.14.0 mentions handling "an unknown container (created by a
+newer version of loro-crdt)", so upstream anticipates new container types. New
+container kinds would be a format addition to watch for, not a change to the
+existing ones.

@@ -31,6 +31,24 @@ jobs:
         with:
           version: v2.12
 
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: emit a blob from the Go encoder
+        run: go test ./loro/ -run TestEmitForJSImport -v
+      - name: install loro-crdt
+        run: npm ci
+        working-directory: testdata/gen
+      - name: import the Go blob into loro-crdt
+        run: node testdata/gen/validate_go.mjs
+
   fuzz:
     runs-on: ubuntu-latest
     steps:

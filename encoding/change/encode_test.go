@@ -12,13 +12,16 @@ import (
 // TestFileRoundTrip decodes every block's blobs to their semantic forms,
 // re-encodes them, reassembles the blocks + FastUpdates body + header (with a
 // recomputed xxh32 checksum), and asserts the whole file is byte-identical to
-// the original loro-crdt blob. positions/delete_ids pass through raw (their
-// semantic encoders are the remaining gap).
+// the original loro-crdt blob. All eight blobs go through their semantic
+// encoders; nothing is copied through raw.
 func TestFileRoundTrip(t *testing.T) {
 	for _, name := range []string{
 		"text_hi", "map_kv", "list_abc", "map_float",
 		"text_del", "list_del", "map_del",
 		"two_changes", "cross_del",
+		"unicode_text", "map_mixed", "text_cjk_del", "counter",
+		"tree_simple", "tree_meta", "tree_wide", "mlist",
+		"richtext", "rt_one", "rt_two", "rt_overlap",
 	} {
 		orig, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {
@@ -107,7 +110,25 @@ func roundTripBlock(t *testing.T, name string, raw []byte) []byte {
 			}
 		}
 
+		pos, err := DecodePositions(blk.Positions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rePos := EncodePositions(pos); !bytes.Equal(rePos, blk.Positions) {
+			t.Errorf("%s positions: % x != % x", name, rePos, blk.Positions)
+		}
+
+		dels, err := DecodeDeleteIDs(blk.DeleteIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reDels := EncodeDeleteIDs(dels); !bytes.Equal(reDels, blk.DeleteIDs) {
+			t.Errorf("%s delete ids: % x != % x", name, reDels, blk.DeleteIDs)
+		}
+
 		blk2 := *blk
+		blk2.Positions = EncodePositions(pos)
+		blk2.DeleteIDs = EncodeDeleteIDs(dels)
 		blk2.Header = EncodeHeader(ch)
 		blk2.ChangeMeta = EncodeChangeMeta(cm)
 		blk2.Ops = reOps

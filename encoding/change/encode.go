@@ -76,3 +76,23 @@ func EncodeKeys(keys []string) []byte {
 	}
 	return out
 }
+
+// EncodeDeleteIDs re-emits the delete_start_ids blob (inverse of DecodeDeleteIDs):
+// a serde_columnar vec of three DeltaRle columns, peer_idx, counter and len. An
+// empty set encodes to an empty blob.
+func EncodeDeleteIDs(ids []DeleteID) []byte {
+	if len(ids) == 0 {
+		return nil
+	}
+	peerIdx := make([]int64, len(ids))
+	counter := make([]int64, len(ids))
+	lens := make([]int64, len(ids))
+	for i, d := range ids {
+		peerIdx[i], counter[i], lens[i] = d.PeerIdx, d.Counter, d.Len
+	}
+	return columnar.EncodeColumns([][]byte{
+		columnar.EncodeDeltaRleI64(peerIdx),
+		columnar.EncodeDeltaRleI64(counter),
+		columnar.EncodeDeltaRleI64(lens),
+	})
+}

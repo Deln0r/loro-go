@@ -280,21 +280,95 @@ func (w *ValueWriter) LoroValue(v any) error {
 	return nil
 }
 
+// Mark writes a MarkStart value (inverse of ReadMark).
+func (w *ValueWriter) Mark(m Mark) error {
+	w.buf = append(w.buf, m.Info)
+	w.U64(uint64(m.Len))
+	w.U64(uint64(m.KeyIdx))
+	return w.LoroValue(m.Value)
+}
+
+// ListMove writes a MovableList move value (inverse of ReadListMove).
+func (w *ValueWriter) ListMove(m ListMove) {
+	w.U64(uint64(m.From))
+	w.U64(uint64(m.FromIdx))
+	w.U64(uint64(m.Lamport))
+}
+
+// RawTreeMove writes a Tree create/move value (inverse of ReadRawTreeMove).
+func (w *ValueWriter) RawTreeMove(m RawTreeMove) {
+	w.U64(uint64(m.SubjectPeerIdx))
+	w.U64(uint64(m.SubjectCounter))
+	w.U64(uint64(m.PositionIdx))
+	if m.ParentNull {
+		w.buf = append(w.buf, 1)
+		return
+	}
+	w.buf = append(w.buf, 0)
+	w.U64(uint64(m.ParentPeerIdx))
+	w.U64(uint64(m.ParentCounter))
+}
+
 // OpContent writes one op's value, dispatched by ValueKind (inverse of read).
 func (w *ValueWriter) OpContent(vk ValueKind, v any) error {
+	// A value of the wrong Go type is a caller error, not a reason to panic:
+	// every kind below reports a mismatch as an error instead.
+	bad := func() error {
+		return fmt.Errorf("loro/change: value kind %d cannot encode a %T", vk, v)
+	}
 	switch vk {
 	case VKNull, VKTrue, VKFalse, VKDeleteOnce, VKDeleteSeq:
 		return nil // no inline bytes; delete targets live in delete_start_ids
-	case VKI64:
-		w.I64(v.(int64))
+	case VKI64, VKDeltaInt:
+		x, ok := v.(int64)
+		if !ok {
+			return bad()
+		}
+		w.I64(x)
 	case VKF64:
-		w.F64(v.(float64))
+		x, ok := v.(float64)
+		if !ok {
+			return bad()
+		}
+		w.F64(x)
 	case VKStr:
-		w.Str(v.(string))
+		x, ok := v.(string)
+		if !ok {
+			return bad()
+		}
+		w.Str(x)
 	case VKBinary:
-		w.Binary(v.([]byte))
+		x, ok := v.([]byte)
+		if !ok {
+			return bad()
+		}
+		w.Binary(x)
 	case VKLoroValue:
 		return w.LoroValue(v)
+	case VKContainer:
+		x, ok := v.(uint64)
+		if !ok {
+			return bad()
+		}
+		w.U64(x)
+	case VKMarkStart:
+		x, ok := v.(Mark)
+		if !ok {
+			return bad()
+		}
+		return w.Mark(x)
+	case VKListMove:
+		x, ok := v.(ListMove)
+		if !ok {
+			return bad()
+		}
+		w.ListMove(x)
+	case VKRawTreeMove:
+		x, ok := v.(RawTreeMove)
+		if !ok {
+			return bad()
+		}
+		w.RawTreeMove(x)
 	default:
 		return fmt.Errorf("loro/change: OpContent encode unhandled value kind %d", vk)
 	}

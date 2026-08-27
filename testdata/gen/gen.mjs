@@ -230,6 +230,21 @@ emit("richtext", (doc) => {
   t.mark({ start: 0, end: 3 }, "bold", true);
 });
 
+// Wide tree: two children, then repeated insertions BETWEEN the same pair. That
+// is what drives fractional indices to grow and share leading bytes (80,
+// 817480, 817580, ...), so the positions blob actually exercises its
+// prefix-compression column. Appending siblings would not: those indices differ
+// in their first byte and every prefix length stays zero.
+emit("tree_wide", (doc) => {
+  const tr = doc.getTree("tr");
+  const root = tr.createNode();
+  tr.createNode(root.id, 0);
+  tr.createNode(root.id, 1);
+  for (let i = 0; i < 12; i++) {
+    tr.createNode(root.id, 1);
+  }
+});
+
 // Rich-text toDelta cases: capture the styled delta (toJSON only gives plain
 // text). One mark, two disjoint marks, overlapping marks.
 function emitDelta(name, build) {

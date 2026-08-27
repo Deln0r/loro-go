@@ -78,3 +78,47 @@ func readLenPrefixed(r *postcard.Reader) ([]byte, error) {
 	}
 	return r.Bytes(int(n))
 }
+
+// EncodePositions re-emits the positions blob (inverse of DecodePositions). Each
+// entry is stored as the length of its common prefix with the previous entry plus
+// the differing tail, so the prefix lengths ride in an AnyRle column and the tails
+// in a length-prefixed stream. An empty set encodes to an empty blob.
+func EncodePositions(positions [][]byte) []byte {
+	if len(positions) == 0 {
+		return nil
+	}
+	prefixes := make([]uint64, len(positions))
+	col1 := postcard.AppendUvarint(nil, uint64(len(positions)))
+	var prev []byte
+	for i, p := range positions {
+		n := commonPrefixLen(prev, p)
+		prefixes[i] = uint64(n)
+		rest := p[n:]
+		col1 = postcard.AppendUvarint(col1, uint64(len(rest)))
+		col1 = append(col1, rest...)
+		prev = p
+	}
+	out := postcard.AppendUvarint(nil, 1) // field count
+	out = postcard.AppendUvarint(out, 2)  // column count
+	out = appendLenPrefixed(out, columnar.EncodeAnyRleU64(prefixes))
+	return appendLenPrefixed(out, col1)
+}
+
+// commonPrefixLen returns how many leading bytes a and b share.
+func commonPrefixLen(a, b []byte) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+func appendLenPrefixed(dst, col []byte) []byte {
+	dst = postcard.AppendUvarint(dst, uint64(len(col)))
+	return append(dst, col...)
+}

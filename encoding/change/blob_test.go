@@ -1,6 +1,7 @@
 package change
 
 import (
+	"bytes"
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -174,4 +175,49 @@ func TestMovableListCarriesNoPositions(t *testing.T) {
 			t.Errorf("movable-list block has a %d-byte positions blob, want none", len(blk.Positions))
 		}
 	}
+}
+
+// TestBlobEncodersReproduceFixtureBytes scans every fixture and, for each block
+// carrying a positions or delete_start_ids blob, decodes it and re-encodes it,
+// asserting byte-identity against upstream. This is what lets the whole block
+// round-trip semantically rather than copying those two blobs through raw.
+func TestBlobEncodersReproduceFixtureBytes(t *testing.T) {
+	names, err := filepath.Glob(filepath.Join("..", "..", "testdata", "fixtures", "*.update.bin"))
+	if err != nil || len(names) == 0 {
+		t.Skipf("no fixtures found: %v", err)
+	}
+	var sawPositions, sawDeletes int
+	for _, path := range names {
+		name := filepath.Base(path)
+		for bi, blk := range blocksOf(t, name) {
+			if len(blk.Positions) > 0 {
+				sawPositions++
+				pos, err := DecodePositions(blk.Positions)
+				if err != nil {
+					t.Fatalf("%s block %d: DecodePositions: %v", name, bi, err)
+				}
+				if got := EncodePositions(pos); !bytes.Equal(got, blk.Positions) {
+					t.Errorf("%s block %d positions: re-encoded % x, want % x", name, bi, got, blk.Positions)
+				}
+			}
+			if len(blk.DeleteIDs) > 0 {
+				sawDeletes++
+				ids, err := DecodeDeleteIDs(blk.DeleteIDs)
+				if err != nil {
+					t.Fatalf("%s block %d: DecodeDeleteIDs: %v", name, bi, err)
+				}
+				if got := EncodeDeleteIDs(ids); !bytes.Equal(got, blk.DeleteIDs) {
+					t.Errorf("%s block %d delete ids: re-encoded % x, want % x", name, bi, got, blk.DeleteIDs)
+				}
+			}
+		}
+	}
+	// Guard against a silently empty run: the fixture set must exercise both.
+	if sawPositions == 0 {
+		t.Error("no fixture exercised the positions blob")
+	}
+	if sawDeletes == 0 {
+		t.Error("no fixture exercised the delete_start_ids blob")
+	}
+	t.Logf("round-tripped %d positions blobs and %d delete_start_ids blobs", sawPositions, sawDeletes)
 }

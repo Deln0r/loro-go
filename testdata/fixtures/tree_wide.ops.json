@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "0@0",
+            "parent": null,
+            "fractional_index": "80"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "1@0",
+            "parent": "0@0",
+            "fractional_index": "80"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "2@0",
+            "parent": "0@0",
+            "fractional_index": "8180"
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "3@0",
+            "parent": "0@0",
+            "fractional_index": "817F80"
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "4@0",
+            "parent": "0@0",
+            "fractional_index": "817E80"
+          },
+          "counter": 4
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "5@0",
+            "parent": "0@0",
+            "fractional_index": "817D80"
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "6@0",
+            "parent": "0@0",
+            "fractional_index": "817C80"
+          },
+          "counter": 6
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "7@0",
+            "parent": "0@0",
+            "fractional_index": "817B80"
+          },
+          "counter": 7
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "8@0",
+            "parent": "0@0",
+            "fractional_index": "817A80"
+          },
+          "counter": 8
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "9@0",
+            "parent": "0@0",
+            "fractional_index": "817980"
+          },
+          "counter": 9
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "10@0",
+            "parent": "0@0",
+            "fractional_index": "817880"
+          },
+          "counter": 10
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "11@0",
+            "parent": "0@0",
+            "fractional_index": "817780"
+          },
+          "counter": 11
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "12@0",
+            "parent": "0@0",
+            "fractional_index": "817680"
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "13@0",
+            "parent": "0@0",
+            "fractional_index": "817580"
+          },
+          "counter": 13
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "14@0",
+            "parent": "0@0",
+            "fractional_index": "817480"
+          },
+          "counter": 14
+        }
+      ]
+    }
+  ]
+}

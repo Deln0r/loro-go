@@ -6,6 +6,7 @@ package loro
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 	"github.com/Deln0r/loro-go/encoding/fast"
@@ -19,12 +20,14 @@ func fmtID(peers []uint64, peerIdx, counter int64) string {
 	return fmt.Sprintf("%d@%d", counter, peers[peerIdx])
 }
 
-// fiHex renders the fractional index at idx as hex (loro toJSON form).
+// fiHex renders the fractional index at idx as hex, matching loro's toJSON,
+// which uses UPPERCASE hex. Every fixture before tree_wide happened to have an
+// index of "80", so the case never showed until indices grew letter digits.
 func fiHex(positions [][]byte, idx int64) string {
 	if idx < 0 || int(idx) >= len(positions) {
 		return ""
 	}
-	return hex.EncodeToString(positions[idx])
+	return strings.ToUpper(hex.EncodeToString(positions[idx]))
 }
 
 // markKey resolves a mark's style-key index against the key pool.

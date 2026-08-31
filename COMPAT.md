@@ -110,3 +110,20 @@ Note for future work: 1.14.0 mentions handling "an unknown container (created by
 newer version of loro-crdt)", so upstream anticipates new container types. New
 container kinds would be a format addition to watch for, not a change to the
 existing ones.
+
+## loro-crdt 1.15.0 (checked 2026-08-31)
+
+**Result: Fast wire format unchanged.** Fixtures regenerate byte-identical. The
+release notes describe no work on this format:
+
+- The minor change adds `pause()` / `resume()` to the JS `UndoManager`.
+- One patch stops shallow-snapshot export from shipping the values of rich-text
+  marks whose range was already deleted. That is the shallow/redaction section,
+  which this library does not read.
+- One patch skips recording a mark op when it re-asserts an identical mark. That
+  changes which ops loro emits, not how ops encode.
+
+Worth remembering if shallow snapshots are ever supported: from 1.15.0 the values
+of dead style pairs are nulled during export, and re-exporting an older shallow
+snapshot cleans it too.
+

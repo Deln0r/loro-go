@@ -59,10 +59,18 @@ func numFromF64(f float64) any {
 // peer. That asymmetry is the whole rule. An earlier version ordered siblings
 // ascending throughout, which is right for concurrent inserts and wrong for
 // sequential ones, so every insert that was not an append came out reversed:
-// "BBB" then "Z" at position 0 produced "BBBZ" where loro gives "ZBBB". It
-// agreed with loro-crdt on 6 of 300 random insert-anywhere histories while all
-// 52 fixtures passed, because a fixture that only appends cannot tell the two
-// rules apart. testdata/fixtures/ordering_corpus.json now covers the gap.
+// "BBB" then "Z" at position 0 produced "BBBZ" where loro gives "ZBBB".
+//
+// Measured against loro-crdt on the 300 random insert-anywhere histories in
+// testdata/fixtures/ordering_corpus.json, counting how many matched:
+//
+//	ascending siblings, splice at subtree end (as shipped)      8
+//	ascending siblings, splice after the origin                 6
+//	descending siblings, splice at subtree end                107
+//	descending siblings, splice after the origin (this code)  300
+//
+// All 52 fixtures passed in every one of those four states, because a fixture
+// that only appends cannot tell the rules apart.
 //
 // Simplifications (honest limits): left-origin is resolved as the element at
 // position-1 in the peer's current view. Fugue's right origin is not recorded,

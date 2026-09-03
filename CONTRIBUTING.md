@@ -7,7 +7,8 @@ Thanks for considering a contribution. loro-go is an independent pure-Go reading
 loro-go implements the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) in pure Go, with no cgo.
 
 - **In scope:** byte-compatible decode and encode of the Fast format, the `serde_columnar` strategies, change-block parsing, CRDT state reconstruction for Map / List / Text / MovableList / Tree / Counter, rich-text `toDelta`, the KV/SSTable reader, LZ4 block decompression, the cross-language fixture suite, and robustness hardening of the decoders against malformed input.
-- **Out of scope until a future dedicated phase (planned work):** a real-time sync server, native persistence (sqlite or otherwise), mobile bindings (gomobile), peer-to-peer transport, the full concurrent Peritext expand-rule semantics, and a time-travel / checkout API. PRs that try to start any of these will be politely closed. They are reserved for a future development phase, and partial implementations would create maintenance debt.
+- **In scope, but only in `integration/`:** thin transports that carry already-exported update blobs over an existing network protocol, each as its own Go module. `integration/matrix` is the worked example. A transport may not add a wire format, negotiate sessions, or diff versions; if it needs any of those, it is the sync protocol below and out of scope for now.
+- **Out of scope until a future dedicated phase (planned work):** a real-time sync server, the sync protocol itself (version-vector diff, partial-history export, awareness), native persistence (sqlite or otherwise), mobile bindings (gomobile), the full concurrent Peritext expand-rule semantics, and a time-travel / checkout API. PRs that try to start any of these will be politely closed. They are reserved for a future development phase, and partial implementations would create maintenance debt.
 - **Out of scope permanently:** anything outside the Loro wire format and its CRDT semantics.
 
 If you are unsure whether something is in scope, open an issue first.
@@ -68,6 +69,29 @@ cd ../rustgen && cargo run > ../columnar_golden.txt
 
 After regeneration, commit the updated fixtures and any code needed to consume them, and keep the pinned `loro-crdt` and `serde_columnar` versions exact (a caret range would let the bytes drift silently). Do not commit `testdata/gen/node_modules/` or `testdata/rustgen/target/` (both are gitignored).
 
+## Integrations
+
+Each integration under `integration/` is a separate Go module with its own `go.mod` and a `replace` back to the repository root, so it builds against the working tree rather than the last published tag.
+
+```
+cd integration/matrix
+go test ./...          # unit tests, in-process homeserver double, no Docker
+docker compose up -d   # a real Dendrite homeserver on :8008
+go run ./cmd/loro-matrix-demo
+docker compose down -v
+```
+
+A transport must be proven against a real server, not only against a double, and CI runs it that way. This is not a formality: the first version of the Matrix transport passed every unit test while being rejected by an actual homeserver, and running it for real also exposed a genuine bug in the library underneath. If you add an integration, add the equivalent live check, and make its test double refuse whatever the real server refuses.
+
+## Merge semantics
+
+Two invariants hold for `loro.MergeState` and any code feeding it:
+
+- **Order independence.** Merging the same set of changes in any order gives the same state.
+- **Idempotence.** Applying the same op twice is the same as applying it once; ops are identified by the peer and counter they were issued with. A transport may deliver a duplicate for ordinary reasons (a retry, an overlapping pagination window), so this is a property of the merge, not a duty on the caller.
+
+Both are pinned in `loro/idempotence_test.go`. If you change the merge path, keep them.
+
 ## Fuzzing
 
 The decoders parse fully untrusted bytes, so they are fuzzed below the checksum layer (a malicious peer can recompute a valid checksum, so the deep decoders must be robust on their own). To run a target:
@@ -83,7 +107,8 @@ A new decoder path should never panic, allocate without bound, or hang on hostil
 
 - Standard `gofmt`. `go vet ./...` must pass.
 - Idiomatic Go. Generics only where the standard library already uses them.
-- No cgo. The whole project builds with `go build` and a couple of pure-Go test-time deps; please keep it that way.
+- No cgo, anywhere, including integrations.
+- **The library's `go.mod` has an empty `require` block and stays that way.** Anything that needs a dependency goes in its own module under `integration/`, so consumers of the library never inherit it. A PR that adds a `require` to the root module will be asked to move.
 - Public API stability is not yet a priority; breaking changes are accepted until v1.0.
 - Comments: a `doc.go`-style package comment and godoc on exported symbols. Short, not essays.
 

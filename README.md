@@ -71,7 +71,8 @@ func main() {
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 - Malformed-input hardening: the decoders are fuzzed and bound every attacker-controlled length and RLE run count, so a hostile blob errors out instead of panicking, hanging, or allocating without bound
-- Merge is order-independent and idempotent: the same changes in any order give the same state, and a duplicate op is absorbed rather than applied twice, so a transport that retries or replays does not corrupt the document
+- Merge is order-independent and idempotent: the same changes in any order give the same state, and a duplicate or partially overlapping op is absorbed rather than applied twice, so a transport that retries or replays does not corrupt the document
+- Sequence ordering checked against loro-crdt on 300 random insert-anywhere histories, not only on appends
 
 ## Matrix transport
 

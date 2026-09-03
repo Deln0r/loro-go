@@ -50,15 +50,25 @@ func numFromF64(f float64) any {
 
 // MergeState reconstructs document state with CRDT semantics, so it is correct
 // for CONCURRENT / multi-peer histories (unlike BuildState which applies in
-// order). Map containers resolve by last-writer-wins on (lamport, peer); Text and
-// List containers use an RGA/Fugue replay ordering concurrent same-origin inserts
-// by ascending (lamport, peer, counter), matching loro's merge for the fixtures.
+// order). Map containers resolve by last-writer-wins on (lamport, peer); Text
+// and List containers replay inserts into a tree parented by left origin and
+// walk it pre-order.
+//
+// Siblings under one origin order NEWEST FIRST: descending lamport, with an
+// equal lamport meaning the two inserts were concurrent and broken by ascending
+// peer. That asymmetry is the whole rule. An earlier version ordered siblings
+// ascending throughout, which is right for concurrent inserts and wrong for
+// sequential ones, so every insert that was not an append came out reversed:
+// "BBB" then "Z" at position 0 produced "BBBZ" where loro gives "ZBBB". It
+// agreed with loro-crdt on 6 of 300 random insert-anywhere histories while all
+// 52 fixtures passed, because a fixture that only appends cannot tell the two
+// rules apart. testdata/fixtures/ordering_corpus.json now covers the gap.
 //
 // Simplifications (honest limits): left-origin is resolved as the element at
-// position-1 in the current sequence (exact for pos 0 and non-interleaving
-// histories; deep concurrent inserts at the same non-zero position and Fugue's
-// multi-element non-interleaving guarantee are not yet fully general). Deletes
-// and move ops are not handled (no fixture exercises them).
+// position-1 in the peer's current view. Fugue's right origin is not recorded,
+// so the non-interleaving guarantee for concurrent multi-element inserts at the
+// same position is not fully general. Deletes are applied as id-addressed
+// tombstones; move ops are handled only for MovableList.
 func MergeState(u *Updates) (map[string]any, error) {
 	type cinfo struct {
 		kind   change.ContainerType
@@ -354,6 +364,19 @@ type elem struct {
 	hasLeft              bool
 }
 
+// siblingLess orders elements that share a left origin. RGA puts the causally
+// LATER insert first among siblings, so lamport descends; a tie means the two
+// were concurrent, and those are broken by ascending peer.
+func siblingLess(a, b elem) bool {
+	if a.lamport != b.lamport {
+		return a.lamport > b.lamport
+	}
+	if a.peer != b.peer {
+		return a.peer < b.peer
+	}
+	return a.counter > b.counter
+}
+
 func idLess(a, b elem) bool {
 	if a.lamport != b.lamport {
 		return a.lamport < b.lamport
@@ -417,7 +440,11 @@ func mergeSeq(ops []Op, isText bool) []elem {
 		if hasLeft {
 			li = pos - 1 // left origin sits at pos-1 in the peer's view
 		}
-		views[op.Peer] = spliceElems(seq, subtreeEnd(seq, li), run)
+		// The new run is causally the latest sibling of its left origin, and
+		// siblings order newest-first, so it goes IMMEDIATELY after the origin,
+		// in front of that origin's existing children. With no origin it is the
+		// newest root child and goes at the very front.
+		views[op.Peer] = spliceElems(seq, li+1, run)
 	}
 	return flatten(all)
 }
@@ -472,7 +499,7 @@ func flatten(all []elem) []elem {
 	}
 	for k := range children {
 		cs := children[k]
-		sort.SliceStable(cs, func(i, j int) bool { return idLess(cs[i], cs[j]) })
+		sort.SliceStable(cs, func(i, j int) bool { return siblingLess(cs[i], cs[j]) })
 		children[k] = cs
 	}
 	var out []elem

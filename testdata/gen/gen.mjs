@@ -332,3 +332,36 @@ emitMerged(
   writeFileSync(join(outDir, "span_tail.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
   console.log(`span_tail: full=${full.length}B tail=${tail.length}B`);
 }
+
+// Random insert-anywhere histories, with loro-crdt's own toJSON as the answer.
+//
+// The fixed scenarios above are almost all appends, and an append is the one
+// case a wrong sibling order still gets right. A merge that was wrong on 294 of
+// these 300 histories passed every one of them. Kept as one file rather than
+// 600, since each history is tiny and the point is breadth.
+{
+  const rng = (seed) => { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; };
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  const corpus = [];
+  for (let seed = 1; seed <= 300; seed++) {
+    const r = rng(seed);
+    const doc = new LoroDoc();
+    doc.setPeerId(1n);
+    const t = doc.getText("t");
+    const steps = 1 + Math.floor(r() * 12);
+    for (let i = 0; i < steps; i++) {
+      const at = Math.floor(r() * (t.length + 1));
+      const s = letters[Math.floor(r() * 26)].repeat(1 + Math.floor(r() * 3));
+      t.insert(at, s);
+      if (r() < 0.6) doc.commit();
+    }
+    doc.commit();
+    corpus.push({
+      seed,
+      update: Buffer.from(doc.export({ mode: "update" })).toString("base64"),
+      expected: doc.toJSON(),
+    });
+  }
+  writeFileSync(join(outDir, "ordering_corpus.json"), JSON.stringify(corpus, null, 1) + "\n");
+  console.log(`ordering_corpus: ${corpus.length} histories`);
+}

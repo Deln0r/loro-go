@@ -49,6 +49,51 @@ jobs:
       - name: import the Go blob into loro-crdt
         run: node testdata/gen/validate_go.mjs
 
+  matrix-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+        working-directory: integration/matrix
+      - name: vet
+        run: go vet ./...
+        working-directory: integration/matrix
+      - name: unit tests (in-process homeserver double)
+        run: go test -race ./...
+        working-directory: integration/matrix
+      # The unit tests above cannot prove the transport works against a real
+      # server: an earlier version passed them all while being rejected by
+      # Dendrite. So the convergence demo runs against an actual homeserver on
+      # every push, and fails the build if the two peers do not agree.
+      - name: start Dendrite
+        run: docker compose up -d
+        working-directory: integration/matrix
+      - name: wait for the homeserver
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8008/_matrix/client/versions >/dev/null; then
+              echo "ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "homeserver did not come up"; docker compose logs; exit 1
+        working-directory: integration/matrix
+      - name: two peers converge over a real homeserver
+        run: go run ./cmd/loro-matrix-demo
+        working-directory: integration/matrix
+      - name: homeserver logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+        working-directory: integration/matrix
+      - name: stop Dendrite
+        if: always()
+        run: docker compose down -v
+        working-directory: integration/matrix
+
   fuzz:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,54 @@
+# A real Matrix homeserver for the loro-go demo.
+#
+# Dendrite is the Go homeserver, which makes it the honest thing to test a Go
+# CRDT transport against: the whole point of loro-go is that this side of the
+# stack can be Go end to end, with no cgo and no foreign toolchain.
+#
+# The project name is pinned so this stack cannot collide with anything else
+# already running on the same machine.
+name: loro-matrix-demo
+
+services:
+  dendrite:
+    image: ghcr.io/element-hq/dendrite-monolith:latest
+    container_name: loro-matrix-dendrite
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./dendrite-data:/data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cd /data
+        # First run only: signing key, config, and the two demo accounts.
+        if [ ! -f matrix_key.pem ]; then
+          echo "generating signing key"
+          /usr/bin/generate-keys --private-key matrix_key.pem
+        fi
+        if [ ! -f dendrite.yaml ]; then
+          echo "generating config"
+          /usr/bin/generate-config -ci -dir /data -server localhost > dendrite.yaml
+        fi
+        /usr/bin/dendrite --config /data/dendrite.yaml --really-enable-open-registration &
+        SERVER_PID=$$!
+        # create-account writes straight to the database, so wait for the
+        # server to have created it rather than racing an empty file.
+        for i in $$(seq 1 60); do
+          if wget -q -O /dev/null http://localhost:8008/_matrix/client/versions 2>/dev/null; then
+            break
+          fi
+          sleep 1
+        done
+        for user in alice bob; do
+          /usr/bin/create-account --config /data/dendrite.yaml \
+            -username $$user -password demo-password 2>/dev/null \
+            && echo "created $$user" || echo "$$user already exists"
+        done
+        echo "dendrite ready on http://localhost:8008"
+        wait $$SERVER_PID
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8008/_matrix/client/versions"]
+      interval: 3s
+      timeout: 3s
+      retries: 30

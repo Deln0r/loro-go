@@ -72,6 +72,16 @@ func main() {
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 - Malformed-input hardening: the decoders are fuzzed and bound every attacker-controlled length and RLE run count, so a hostile blob errors out instead of panicking, hanging, or allocating without bound
 
+## Matrix transport
+
+[`integration/matrix`](integration/matrix/) carries Loro updates as Matrix
+events, so a Go service that already speaks Matrix can hold a shared local-first
+document without a second network stack. Two peers edit while disconnected,
+publish into a room, replay it, and converge; the demo exits non-zero if they do
+not, and CI runs it against a real [Dendrite](https://github.com/element-hq/dendrite)
+homeserver on every push. It is a separate Go module, so this library's own
+`go.mod` stays dependency-free.
+
 ## Not yet
 
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range

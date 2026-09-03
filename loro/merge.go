@@ -67,8 +67,30 @@ func MergeState(u *Updates) (map[string]any, error) {
 	}
 	conts := map[string]*cinfo{}
 	var order []string
+
+	// An op is identified by its origin: the peer that made it and the counter
+	// that peer gave it. Seeing the same id twice means the same op arrived
+	// twice, and re-applying it must be a no-op or the document ends up
+	// corrupted rather than merged. Duplicates are ordinary once updates travel
+	// over a real transport, which retries and hands back overlapping
+	// pagination windows, so the merge absorbs them here instead of making
+	// every caller deduplicate first.
+	type opID struct {
+		peer      uint64
+		counter   int64
+		container string
+		kind      change.ValueKind
+	}
+	seen := map[opID]bool{}
+
 	for _, ch := range u.Changes {
 		for _, op := range ch.Ops {
+			id := opID{peer: op.Peer, counter: op.Counter, container: op.Container, kind: op.VKind}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+
 			ci := conts[op.Container]
 			if ci == nil {
 				ci = &cinfo{kind: op.Kind, isRoot: op.IsRoot}

@@ -62,6 +62,11 @@ jobs:
       - name: vet
         run: go vet ./...
         working-directory: integration/matrix
+      # The root lint job cannot see this module: it is a separate go.mod.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          working-directory: integration/matrix
       - name: unit tests (in-process homeserver double)
         run: go test -race ./...
         working-directory: integration/matrix

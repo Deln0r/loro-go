@@ -385,16 +385,6 @@ func siblingLess(a, b elem) bool {
 	return a.counter > b.counter
 }
 
-func idLess(a, b elem) bool {
-	if a.lamport != b.lamport {
-		return a.lamport < b.lamport
-	}
-	if a.peer != b.peer {
-		return a.peer < b.peer
-	}
-	return a.counter < b.counter
-}
-
 // mergeSeq replays insert ops into a Fugue-style tree (each element's parent is
 // its left origin) and flattens it pre-order, ordering same-parent siblings by
 // ascending id. Building a tree (rather than flat skipping) keeps causal runs
@@ -455,28 +445,6 @@ func mergeSeq(ops []Op, isText bool) []elem {
 		views[op.Peer] = spliceElems(seq, li+1, run)
 	}
 	return flatten(all)
-}
-
-// subtreeEnd returns the index at which a new max-id child of the element at
-// index li should be inserted in a peer's flatten-ordered view: the end of that
-// element's subtree (the contiguous run of its descendants). li == -1 means the
-// element has no left origin (a root child), which as a max-id sibling sorts
-// after every existing element, so it goes at the end.
-func subtreeEnd(seq []elem, li int) int {
-	if li < 0 || li == len(seq)-1 {
-		return len(seq) // no origin, or origin is last => append (covers the hot path)
-	}
-	inSub := map[parentKey]bool{{true, seq[li].peer, seq[li].counter}: true}
-	i := li + 1
-	for i < len(seq) {
-		x := seq[i]
-		if !x.hasLeft || !inSub[parentKey{true, x.leftPeer, x.leftCounter}] {
-			break // first element outside the subtree ends it
-		}
-		inSub[parentKey{true, x.peer, x.counter}] = true
-		i++
-	}
-	return i
 }
 
 // spliceElems inserts run into seq at index at, returning the new slice.

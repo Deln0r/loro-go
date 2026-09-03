@@ -67,9 +67,16 @@ func Encode(blob []byte) (*UpdateContent, error) {
 	}, nil
 }
 
-// Decode unwraps event content back into a FastUpdates blob. Content that
-// arrived from a remote peer is untrusted: the payload is checked for a valid
-// header and checksum before it reaches the merge.
+// Decode unwraps event content back into a FastUpdates blob, checking the
+// header and checksum before the payload reaches the merge.
+//
+// Be clear about what that buys. It buys availability of reading: a malformed
+// or hostile blob errors out instead of taking the reader down with it. It buys
+// nothing about whether the sender was entitled to send what it sent. Deletes
+// here are id-addressed and carry no authorisation, so any peer holding the ids
+// may tombstone them, and in a Matrix room the right to write is the right to
+// delete everyone else's content. Room membership is full authority over the
+// document, not a reader role. TestValidationIsNotAuthorisation demonstrates it.
 func Decode(c *UpdateContent) ([]byte, error) {
 	if c == nil {
 		return nil, errors.New("loromatrix: nil content")

@@ -365,3 +365,45 @@ emitMerged(
   writeFileSync(join(outDir, "ordering_corpus.json"), JSON.stringify(corpus, null, 1) + "\n");
   console.log(`ordering_corpus: ${corpus.length} histories`);
 }
+
+// A peer that authored nothing deleting everything. Deletes in this CRDT are
+// id-addressed and carry no authorisation: any peer holding the ids may
+// tombstone them. Emitted so the transport can demonstrate, rather than assert,
+// that validating a blob says nothing about whether its author was entitled to
+// send it.
+{
+  const author = new LoroDoc();
+  author.setPeerId(1n);
+  author.getText("t").insert(0, "confidential minutes");
+  author.commit();
+  const authored = author.export({ mode: "update" });
+
+  const other = new LoroDoc();
+  other.setPeerId(99n);
+  other.import(authored);
+  other.getText("t").delete(0, 20);
+  other.commit();
+  const wipe = other.export({ mode: "update", from: author.version() });
+
+  writeFileSync(join(outDir, "foreign_delete.authored.bin"), Buffer.from(authored));
+  writeFileSync(join(outDir, "foreign_delete.wipe.bin"), Buffer.from(wipe));
+  writeFileSync(join(outDir, "foreign_delete.json"), JSON.stringify(other.toJSON(), null, 2) + "\n");
+  console.log(`foreign_delete: authored=${authored.length}B wipe=${wipe.length}B`);
+}
+
+// Guard, not a fixture. `new LoroDoc({peerId})` silently ignores the option and
+// leaves a random peer id, which would make every blob above non-deterministic
+// while looking correct. Only setPeerId works; this fails the generator loudly
+// if that ever changes or if someone reaches for the constructor form.
+{
+  const explicit = new LoroDoc();
+  explicit.setPeerId(1n);
+  if (explicit.peerId !== 1n) {
+    throw new Error(`setPeerId did not take: peerId=${explicit.peerId}`);
+  }
+  const viaOption = new LoroDoc({ peerId: 1n });
+  if (viaOption.peerId === 1n) {
+    throw new Error("new LoroDoc({peerId}) now works; update this guard and the generator may use it");
+  }
+  console.log("peer-id guard: setPeerId works, constructor option still ignored");
+}

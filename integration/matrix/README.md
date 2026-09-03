@@ -122,6 +122,13 @@ once. It took a real transport to produce the overlaps.
   without that check the document would land readable in a room whose members
   were promised otherwise. Installing a mautrix crypto helper lifts the refusal,
   since mautrix then encrypts outgoing events itself.
+- **No authorisation, and validation is not a substitute.** Deletes are
+  id-addressed and carry no proof of entitlement, so any peer holding the ids
+  may tombstone them: in a Matrix room, whoever can write can empty the
+  document, and every check this package makes passes on the blob that does it.
+  Read room membership as full authority over the document. The checks buy
+  availability of reading, not integrity of content, and
+  `TestValidationIsNotAuthorisation` exists to keep that honest.
 - **Not hardened against a hostile homeserver.** mautrix parses a `/sync` or
   `/messages` response into one typed tree, so a single event whose `content` is
   a JSON string rather than an object fails the whole response, and with it

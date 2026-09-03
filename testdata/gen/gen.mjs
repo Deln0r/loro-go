@@ -292,3 +292,43 @@ emitMerged(
     l.insert(1, "D");
   },
 );
+
+// Overlapping exports from one peer. loro coalesces adjacent atoms into a
+// single run, so two exports of the same document taken at different moments
+// share a first counter while covering different id spans. A reader that
+// deduplicates on the first counter alone silently loses the longer run's tail.
+// Emitted as two separate update blobs, since the whole point is what happens
+// when a merge sees both.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(2n);
+  doc.getText("t").insert(0, "ab");
+  doc.commit();
+  const early = doc.export({ mode: "update" });
+  doc.getText("t").insert(2, "cd");
+  doc.commit();
+  const late = doc.export({ mode: "update" });
+  writeFileSync(join(outDir, "span_overlap.early.bin"), Buffer.from(early));
+  writeFileSync(join(outDir, "span_overlap.late.bin"), Buffer.from(late));
+  writeFileSync(join(outDir, "span_overlap.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  console.log(`span_overlap: early=${early.length}B late=${late.length}B`);
+}
+
+// A full export alongside a from-version delta covering only the tail. The
+// delta starts at a later counter, so a reader keying on the first counter
+// misses the overlap entirely and applies the tail atoms a second time.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(3n);
+  doc.getText("t").insert(0, "hel");
+  doc.commit();
+  const v = doc.version();
+  doc.getText("t").insert(3, "lo");
+  doc.commit();
+  const full = doc.export({ mode: "update" });
+  const tail = doc.export({ mode: "update", from: v });
+  writeFileSync(join(outDir, "span_tail.full.bin"), Buffer.from(full));
+  writeFileSync(join(outDir, "span_tail.tail.bin"), Buffer.from(tail));
+  writeFileSync(join(outDir, "span_tail.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  console.log(`span_tail: full=${full.length}B tail=${tail.length}B`);
+}

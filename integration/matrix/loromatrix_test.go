@@ -31,6 +31,17 @@ type fakeHomeserver struct {
 	nextID int
 	// pageSize forces Replay to page when set, so the paging loop is covered.
 	pageSize int
+	// emptyPageAt injects one empty chunk that still carries a live "end"
+	// token, which a real server may do when per-user history visibility
+	// removes every event on a page. Replay must keep walking.
+	emptyPageAt int
+	emptyServed bool
+	// encrypted makes the room answer with an m.room.encryption state event,
+	// as a room with E2EE turned on does.
+	encrypted bool
+	// stateBroken makes the state lookup fail with something other than a
+	// clean "not found", so the fail-closed path is exercised.
+	stateBroken bool
 }
 
 func (f *fakeHomeserver) handler() http.Handler {
@@ -41,6 +52,8 @@ func (f *fakeHomeserver) handler() http.Handler {
 			f.send(w, r)
 		case strings.HasSuffix(r.URL.Path, "/messages"):
 			f.messages(w, r)
+		case strings.Contains(r.URL.Path, "/state/m.room.encryption"):
+			f.encryptionState(w, r)
 		default:
 			http.Error(w, `{"errcode":"M_UNRECOGNIZED"}`, http.StatusNotFound)
 		}
@@ -83,6 +96,22 @@ func (f *fakeHomeserver) sync(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// encryptionState answers the way a homeserver does: an encrypted room has the
+// state event, an unencrypted one answers 404 M_NOT_FOUND.
+func (f *fakeHomeserver) encryptionState(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case f.stateBroken:
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"errcode":"M_UNKNOWN","error":"nope"}`))
+	case f.encrypted:
+		_, _ = w.Write([]byte(`{"algorithm":"m.megolm.v1.aes-sha2"}`))
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Event not found."}`))
+	}
+}
+
 func (f *fakeHomeserver) send(w http.ResponseWriter, r *http.Request) {
 	var raw json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -107,18 +136,37 @@ func (f *fakeHomeserver) send(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"event_id": string(evtID)})
 }
 
-// messages pages backwards from a token, and rejects a missing one exactly as
-// Dendrite does. That rejection is deliberate: the first version of Replay
-// started from an empty token, this double happily accepted it, and only a real
-// homeserver caught the bug. A double that is more permissive than the server
-// it stands in for cannot catch that class of defect, so this one is not.
+// messages mirrors what Dendrite was measured to do, which is not what an
+// earlier version of this double assumed.
+//
+// Dendrite does not care whether the token is empty; it cares about direction.
+// A backward page is anchored at the live end of the timeline, so dir=b with
+// the token absent or empty is served normally. A forward page has no such
+// default and answers 400 M_INVALID_PARAM for an absent or empty token. A
+// token that is present but unparseable is rejected either way.
+//
+// Getting this right matters in both directions: a double more permissive than
+// the server hides real bugs (that is how the original forward-paging bug
+// shipped), and a double stricter than the server fails code the server would
+// have served.
 func (f *fakeHomeserver) messages(w http.ResponseWriter, r *http.Request) {
-	from := r.URL.Query().Get("from")
-	if from == "" {
+	badToken := func() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"errcode":"M_INVALID_PARAM","error":"Invalid from parameter: malformed sync token"}`))
-		return
+	}
+
+	from := r.URL.Query().Get("from")
+	dir := r.URL.Query().Get("dir")
+	if from == "" {
+		if dir == "f" {
+			badToken()
+			return
+		}
+		// Backward with no anchor: serve from the live end of the timeline.
+		f.mu.Lock()
+		from = fmt.Sprintf("tok%d", len(f.log))
+		f.mu.Unlock()
 	}
 
 	f.mu.Lock()
@@ -143,8 +191,13 @@ func (f *fakeHomeserver) messages(w http.ResponseWriter, r *http.Request) {
 		start = 0
 	}
 	chunk := append([]*event.Event(nil), f.log[start:end]...)
+	if f.emptyPageAt > 0 && !f.emptyServed && end <= f.emptyPageAt {
+		// Hand back nothing for this page while still pointing further back.
+		f.emptyServed = true
+		chunk = nil
+	}
 
-	// An exhausted room returns an empty chunk, which is Replay's stop signal.
+	// The walk ends when there is no "end" token, not when a chunk is empty.
 	resp := map[string]any{"start": from, "chunk": chunk}
 	if start > 0 {
 		resp["end"] = fmt.Sprintf("tok%d", start)
@@ -420,5 +473,112 @@ func TestConvergenceIsOrderIndependent(t *testing.T) {
 
 	if forward, reverse := build(a, b), build(b, a); forward != reverse {
 		t.Errorf("order changed the result:\n a,b = %s\n b,a = %s", forward, reverse)
+	}
+}
+
+// TestReplayWalksPastAnEmptyPage pins the pagination stop condition. The Matrix
+// spec ends a walk at the absence of an "end" token, not at an empty chunk: a
+// server may legitimately return an empty page that still points further back,
+// for instance when per-user history visibility removed every event on it.
+// Stopping at the empty page silently truncates the document and reports
+// success, which is the worst shape a bug can take here.
+func TestReplayWalksPastAnEmptyPage(t *testing.T) {
+	f := &fakeHomeserver{pageSize: 1, emptyPageAt: 3}
+	cli := newTestClient(t, f)
+	ctx := context.Background()
+
+	const n = 5
+	for i := range n {
+		blob := sampleBlob(t, uint64(i+1), fmt.Sprintf("p%d", i))
+		if _, err := Publish(ctx, cli, testRoomID, blob); err != nil {
+			t.Fatalf("publish %d: %v", i, err)
+		}
+	}
+
+	u, errs, err := Replay(ctx, cli, testRoomID, 1)
+	if err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Errorf("unexpected decode errors: %v", errs)
+	}
+	// The injected page returns nothing, modelling a server that filtered every
+	// event on it away, so that one change is legitimately not visible. What
+	// must survive is the walk: everything BEHIND that page has to come back.
+	// Stopping at the empty page yields only the pages in front of it.
+	if len(u.Changes) != n-1 {
+		t.Errorf("replayed %d changes, want %d: the walk stopped at the empty page", len(u.Changes), n-1)
+	}
+}
+
+// TestDoubleMatchesDendriteOnTokens pins the double against what the real
+// server was measured to do, so it can neither hide a bug by being lenient nor
+// fail correct code by being strict.
+func TestDoubleMatchesDendriteOnTokens(t *testing.T) {
+	f := &fakeHomeserver{}
+	cli := newTestClient(t, f)
+	ctx := context.Background()
+	if _, err := Publish(ctx, cli, testRoomID, sampleBlob(t, 1, "x")); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("backward without a token is served", func(t *testing.T) {
+		resp, err := cli.Messages(ctx, testRoomID, "", "", mautrix.DirectionBackward, nil, 10)
+		if err != nil {
+			t.Fatalf("dir=b with no token should be served, got %v", err)
+		}
+		if len(resp.Chunk) == 0 {
+			t.Error("dir=b with no token returned nothing")
+		}
+	})
+	t.Run("forward without a token is refused", func(t *testing.T) {
+		if _, err := cli.Messages(ctx, testRoomID, "", "", mautrix.DirectionForward, nil, 10); err == nil {
+			t.Error("dir=f with no token should be refused, got nil")
+		}
+	})
+	t.Run("unparseable token is refused", func(t *testing.T) {
+		if _, err := cli.Messages(ctx, testRoomID, "garbage", "", mautrix.DirectionBackward, nil, 10); err == nil {
+			t.Error("an unparseable token should be refused, got nil")
+		}
+	})
+}
+
+// TestPublishRefusesEncryptedRoom pins the guard that matters most to a user.
+// A homeserver accepts a plaintext event into an encrypted room and returns a
+// normal event id, so without this check the document would land readable in a
+// room where the members were promised otherwise, and nothing in the return
+// value would say so.
+func TestPublishRefusesEncryptedRoom(t *testing.T) {
+	f := &fakeHomeserver{encrypted: true}
+	cli := newTestClient(t, f)
+
+	_, err := Publish(context.Background(), cli, testRoomID, sampleBlob(t, 1, "secret"))
+	if err == nil {
+		t.Fatal("published into an encrypted room, want a refusal")
+	}
+	if !errors.Is(err, ErrEncryptedRoom) {
+		t.Errorf("error = %v, want errors.Is ErrEncryptedRoom", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.log) != 0 {
+		t.Errorf("refused, but %d event(s) still reached the room", len(f.log))
+	}
+}
+
+// TestPublishFailsClosedOnUnknownState pins the direction of the failure: if
+// the room's encryption state cannot be read at all, publishing is refused
+// rather than risked.
+func TestPublishFailsClosedOnUnknownState(t *testing.T) {
+	f := &fakeHomeserver{stateBroken: true}
+	cli := newTestClient(t, f)
+
+	if _, err := Publish(context.Background(), cli, testRoomID, sampleBlob(t, 1, "x")); err == nil {
+		t.Error("published without knowing whether the room is encrypted, want a refusal")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.log) != 0 {
+		t.Errorf("refused, but %d event(s) still reached the room", len(f.log))
 	}
 }

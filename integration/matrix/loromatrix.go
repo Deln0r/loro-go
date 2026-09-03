@@ -87,11 +87,30 @@ func Decode(c *UpdateContent) ([]byte, error) {
 	return blob, nil
 }
 
+// ErrEncryptedRoom is returned when the target room is encrypted and this
+// client has no crypto helper, so publishing would put the document into the
+// room in the clear.
+var ErrEncryptedRoom = errors.New("loromatrix: room is encrypted and this client cannot encrypt")
+
 // Publish exports the document's current updates and sends them to the room as
 // one event, returning the event id the homeserver assigned.
+//
+// If the room is encrypted and the client cannot encrypt, Publish refuses.
+// A homeserver will happily accept a plaintext event into an encrypted room and
+// return a normal event id, so without this check the document would land
+// readable in a room where every member was told otherwise, with nothing in the
+// return value to say so. When the caller has installed a crypto helper,
+// mautrix encrypts outgoing events itself and the check is skipped.
+//
+// The check costs one state request per publish. That is deliberate: caching it
+// would mean trusting a snapshot of a room setting that can change at any time,
+// and the failure it guards against is disclosure.
 func Publish(ctx context.Context, cli *mautrix.Client, roomID id.RoomID, blob []byte) (id.EventID, error) {
 	content, err := Encode(blob)
 	if err != nil {
+		return "", err
+	}
+	if err := checkPlaintextAllowed(ctx, cli, roomID); err != nil {
 		return "", err
 	}
 	resp, err := cli.SendMessageEvent(ctx, roomID, LoroUpdate, content)
@@ -99,6 +118,29 @@ func Publish(ctx context.Context, cli *mautrix.Client, roomID id.RoomID, blob []
 		return "", fmt.Errorf("loromatrix: send: %w", err)
 	}
 	return resp.EventID, nil
+}
+
+// checkPlaintextAllowed reports whether an unencrypted event may be sent to the
+// room. It fails closed: if the room's encryption state cannot be read at all,
+// publishing is refused rather than risked.
+func checkPlaintextAllowed(ctx context.Context, cli *mautrix.Client, roomID id.RoomID) error {
+	if cli.Crypto != nil {
+		return nil // mautrix encrypts outgoing events for this client
+	}
+	var enc event.EncryptionEventContent
+	err := cli.StateEvent(ctx, roomID, event.StateEncryption, "", &enc)
+	if err == nil {
+		if enc.Algorithm != "" {
+			return fmt.Errorf("%w (%s)", ErrEncryptedRoom, enc.Algorithm)
+		}
+		return nil
+	}
+	// An unencrypted room simply has no such state event.
+	var httpErr mautrix.HTTPError
+	if errors.As(err, &httpErr) && httpErr.RespError != nil && httpErr.RespError.ErrCode == "M_NOT_FOUND" {
+		return nil
+	}
+	return fmt.Errorf("loromatrix: cannot determine whether room is encrypted, refusing to publish: %w", err)
 }
 
 // Collect merges a batch of timeline events into a single *loro.Updates.
@@ -147,10 +189,20 @@ func Collect(events []*event.Event) (*loro.Updates, []error) {
 // merge is order-independent, which is the property that makes a CRDT the right
 // payload for a transport that promises no ordering.
 //
-// An earlier version started from an empty /messages token instead. That works
-// against a permissive test double and is rejected by a real homeserver
-// (Dendrite answers M_INVALID_PARAM, "malformed sync token"), which is why the
-// anchor comes from /sync.
+// An earlier version paged FORWARD with no token at all, which a real
+// homeserver rejects. Measured against Dendrite: a backward page needs no
+// token, because the server anchors it at the live end of the timeline, and
+// dir=b with the token absent or empty both return the newest page. A forward
+// page has no such default, and dir=f with the token absent or empty both
+// answer 400 M_INVALID_PARAM "Invalid from parameter: malformed sync token".
+// So the fault was the direction, not the emptiness of the token; anchoring on
+// /sync and walking backwards sidesteps it and makes the walk deterministic.
+//
+// Pagination ends when the server stops handing back an "end" token, not when a
+// page comes back empty. A spec-compliant server may return an empty chunk with
+// a live continuation token, for instance when every event on that page was
+// removed by per-user history visibility, and stopping there would silently
+// truncate the document.
 //
 // pageSize bounds one homeserver request; Replay pages until the room ends.
 func Replay(ctx context.Context, cli *mautrix.Client, roomID id.RoomID, pageSize int) (*loro.Updates, []error, error) {
@@ -199,9 +251,6 @@ func Replay(ctx context.Context, cli *mautrix.Client, roomID id.RoomID, pageSize
 		resp, err := cli.Messages(ctx, roomID, from, "", mautrix.DirectionBackward, nil, pageSize)
 		if err != nil {
 			return merged, errs, fmt.Errorf("loromatrix: replay: %w", err)
-		}
-		if len(resp.Chunk) == 0 {
-			return merged, errs, nil
 		}
 		u, pageErrs := Collect(fresh(resp.Chunk))
 		merged.Changes = append(merged.Changes, u.Changes...)

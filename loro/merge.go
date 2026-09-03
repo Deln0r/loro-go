@@ -68,28 +68,41 @@ func MergeState(u *Updates) (map[string]any, error) {
 	conts := map[string]*cinfo{}
 	var order []string
 
-	// An op is identified by its origin: the peer that made it and the counter
-	// that peer gave it. Seeing the same id twice means the same op arrived
-	// twice, and re-applying it must be a no-op or the document ends up
-	// corrupted rather than merged. Duplicates are ordinary once updates travel
-	// over a real transport, which retries and hands back overlapping
-	// pagination windows, so the merge absorbs them here instead of making
-	// every caller deduplicate first.
-	type opID struct {
+	// An op is identified by the id RANGE it occupies: the peer that made it and
+	// the counters [Counter, Counter+Len) that peer assigned to its atoms.
+	// Re-applying an atom must be a no-op, or the document ends up corrupted
+	// rather than merged, and duplicates are ordinary once updates travel over a
+	// real transport that retries and hands back overlapping pagination windows.
+	//
+	// The range, not just its first counter, is what matters. loro coalesces
+	// adjacent atoms from one peer into a single run, so two exports of the same
+	// document taken at different moments share a first counter while covering
+	// different spans: "ab" is counter 0 len 2 and "abcd" is counter 0 len 4.
+	// Keying on the first counter alone made whichever arrived first win, so
+	// "abcd" merged after "ab" silently lost "cd". The complement was as bad: a
+	// tail delta re-sent at a later start counter missed the key entirely and its
+	// atoms were applied a second time, which is the "hello" -> "hellooloo"
+	// corruption this dedup exists to prevent.
+	//
+	// So each incoming op is clipped to the sub-ranges not already consumed, and
+	// dropped only when its whole range is covered.
+	type spanKey struct {
 		peer      uint64
-		counter   int64
 		container string
 		kind      change.ValueKind
 	}
-	seen := map[opID]bool{}
+	consumed := map[spanKey][]idRange{}
 
 	for _, ch := range u.Changes {
 		for _, op := range ch.Ops {
-			id := opID{peer: op.Peer, counter: op.Counter, container: op.Container, kind: op.VKind}
-			if seen[id] {
+			key := spanKey{peer: op.Peer, container: op.Container, kind: op.VKind}
+			span := idRange{start: op.Counter, end: op.Counter + atomCount(op)}
+
+			fresh := uncovered(consumed[key], span)
+			consumed[key] = addRange(consumed[key], span)
+			if len(fresh) == 0 {
 				continue
 			}
-			seen[id] = true
 
 			ci := conts[op.Container]
 			if ci == nil {
@@ -97,7 +110,16 @@ func MergeState(u *Updates) (map[string]any, error) {
 				conts[op.Container] = ci
 				order = append(order, op.Container)
 			}
-			ci.ops = append(ci.ops, op)
+			for _, r := range fresh {
+				clipped, ok := clipOp(op, span, r)
+				if !ok {
+					// The value cannot be sliced, so the op is all-or-nothing.
+					// It reaches here only when some part of it is new.
+					ci.ops = append(ci.ops, op)
+					break
+				}
+				ci.ops = append(ci.ops, clipped)
+			}
 		}
 	}
 
@@ -479,4 +501,120 @@ func expandItems(op Op, isText bool) []any {
 		return lst
 	}
 	return nil
+}
+
+// idRange is a half-open counter range [start, end) belonging to one peer.
+type idRange struct{ start, end int64 }
+
+// atomCount is how many ids an op consumes. Multi-element inserts carry Len;
+// everything else (a map write, a delete op, a move) occupies exactly one id,
+// and a zero or negative Len would otherwise make the range empty and defeat
+// deduplication entirely.
+func atomCount(op Op) int64 {
+	if op.Len > 1 {
+		return op.Len
+	}
+	return 1
+}
+
+// uncovered returns the parts of want that none of the ranges in have covers,
+// in ascending order. have is kept sorted and non-overlapping by addRange.
+func uncovered(have []idRange, want idRange) []idRange {
+	var out []idRange
+	cur := want.start
+	for _, h := range have {
+		if h.end <= cur {
+			continue
+		}
+		if h.start >= want.end {
+			break
+		}
+		if h.start > cur {
+			out = append(out, idRange{cur, min64(h.start, want.end)})
+		}
+		if h.end > cur {
+			cur = h.end
+		}
+		if cur >= want.end {
+			return out
+		}
+	}
+	if cur < want.end {
+		out = append(out, idRange{cur, want.end})
+	}
+	return out
+}
+
+// addRange merges r into have, keeping it sorted and non-overlapping.
+func addRange(have []idRange, r idRange) []idRange {
+	out := make([]idRange, 0, len(have)+1)
+	placed := false
+	for _, h := range have {
+		switch {
+		case h.end < r.start:
+			out = append(out, h)
+		case h.start > r.end:
+			if !placed {
+				out = append(out, r)
+				placed = true
+			}
+			out = append(out, h)
+		default: // overlaps or touches: absorb
+			r.start = min64(r.start, h.start)
+			r.end = max64(r.end, h.end)
+		}
+	}
+	if !placed {
+		out = append(out, r)
+	}
+	return out
+}
+
+// clipOp narrows op, whose atoms occupy span, to the sub-range keep. It reports
+// false when the op's value cannot be sliced, in which case the caller must
+// treat the op as all-or-nothing rather than corrupt it.
+func clipOp(op Op, span, keep idRange) (Op, bool) {
+	if keep == span {
+		return op, true
+	}
+	off := keep.start - span.start
+	n := keep.end - keep.start
+
+	switch v := op.Value.(type) {
+	case string:
+		r := []rune(v)
+		if off < 0 || off+n > int64(len(r)) {
+			return op, false
+		}
+		op.Value = string(r[off : off+n])
+	case []any:
+		if off < 0 || off+n > int64(len(v)) {
+			return op, false
+		}
+		op.Value = append([]any(nil), v[off:off+n]...)
+	default:
+		return op, false
+	}
+
+	// Trimming k atoms off the front moves the run's id, its lamport and the
+	// position it inserts at by the same k.
+	op.Counter += off
+	op.Lamport += off
+	op.Pos += off
+	op.Len = n
+	return op, true
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }

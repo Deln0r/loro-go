@@ -6,6 +6,6 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "loro-crdt": "1.15.0"
+    "loro-crdt": "1.15.1"
   }
 }

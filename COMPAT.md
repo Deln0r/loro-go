@@ -127,3 +127,30 @@ Worth remembering if shallow snapshots are ever supported: from 1.15.0 the value
 of dead style pairs are nulled during export, and re-exporting an older shallow
 snapshot cleans it too.
 
+## loro-crdt 1.16.1 (checked 2026-09-17)
+
+**Result: Fast wire format unchanged across 1.15.1, 1.16.0 and 1.16.1.** Every
+fixture regenerates byte-identical under 1.16.1, including the corpora added
+since the last check: the 300 random insert-anywhere histories in
+`ordering_corpus.json` (whose expected states are loro-crdt's own `toJSON()`),
+the overlapping-export and tail-resend pairs, and the foreign-delete pair. The
+generator's peer-id guard still holds. The pin moved to `1.16.1` (Dependabot #16).
+
+The release notes describe no work on this format:
+
+- 1.15.1 caches container ids per JavaScript wrapper and stops
+  `toJsonWithReplacer` from throwing on malformed `cid:` strings. Binding-level.
+- 1.16.0 adds JavaScript deep-read APIs (`getDeepValueWithID()` on containers,
+  `toContainerTree()`), bounds a WASM decoded-value cache, and speeds up
+  shallow-snapshot export. That last one changes the bytes of a shallow
+  snapshot ("logically equivalent", about 17% smaller on their fixture), but
+  shallow snapshots are a mode this library does not read.
+- 1.16.1 speeds up concurrent imports and fixes a style table that grew a
+  duplicate entry per re-replayed style op. Import and apply side, not encoding.
+
+Two things worth knowing that are not format changes. The `cid` field in
+`getDeepValueWithID()` results changed shape in 1.16.0, which matters only to
+JavaScript consumers parsing it. And the pure-TypeScript runtime that was merged
+upstream in July now ships on npm as `loro.js` (0.2.0 on 2026-08-27), so there
+are two independent reference implementations to check against, not one.
+

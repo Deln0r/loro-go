@@ -119,6 +119,20 @@ func (v *ValueReader) Binary() ([]byte, error) {
 // nested lists/maps cannot overflow the stack. Loro itself uses 128.
 const maxLoroValueDepth = 128
 
+// maxLoroValuePrealloc caps how many list slots or map entries are reserved up
+// front from a declared count. Past that, storage grows as elements are
+// actually decoded.
+//
+// The declared count is attacker-controlled and was already checked against
+// the bytes remaining, but that check is local to one level. Each nested header
+// is checked against the SAME remaining bytes, so a few hundred bytes of nested
+// headers in front of a large tail made every level reserve room for the whole
+// tail: a 1 MB value of 128 nested maps allocated 10.7 GB and took 2.2 s, and
+// the list version allocated 2.1 GB. Reserving only what has been read keeps
+// allocation proportional to input actually consumed, since every element
+// costs at least one byte.
+const maxLoroValuePrealloc = 64
+
 // LoroValue reads one self-describing nested value (kind byte + content).
 func (v *ValueReader) LoroValue() (any, error) { return v.loroValue(0) }
 
@@ -153,11 +167,13 @@ func (v *ValueReader) loroValue(depth int) (any, error) {
 		if n > uint64(v.r.Remaining()) { // each element costs at least a kind byte
 			return nil, fmt.Errorf("loro/change: list length %d exceeds remaining %d", n, v.r.Remaining())
 		}
-		out := make([]any, n)
-		for i := range out {
-			if out[i], err = v.loroValue(depth + 1); err != nil {
+		out := make([]any, 0, min(n, maxLoroValuePrealloc))
+		for i := uint64(0); i < n; i++ {
+			elem, err := v.loroValue(depth + 1)
+			if err != nil {
 				return nil, err
 			}
+			out = append(out, elem)
 		}
 		return out, nil
 	case lvMap:
@@ -168,7 +184,7 @@ func (v *ValueReader) loroValue(depth int) (any, error) {
 		if n > uint64(v.r.Remaining()) { // each entry costs at least a key-len + kind byte
 			return nil, fmt.Errorf("loro/change: map length %d exceeds remaining %d", n, v.r.Remaining())
 		}
-		out := make(map[string]any, n)
+		out := make(map[string]any, min(n, maxLoroValuePrealloc))
 		for i := uint64(0); i < n; i++ {
 			k, err := v.Str()
 			if err != nil {

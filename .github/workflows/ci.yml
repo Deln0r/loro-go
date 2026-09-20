@@ -79,7 +79,7 @@ jobs:
         working-directory: integration/matrix
       - name: wait for the homeserver
         run: |
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -sf http://localhost:8008/_matrix/client/versions >/dev/null; then
               echo "ready"; exit 0
             fi
@@ -106,18 +106,26 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # -fuzzminimizetime is capped well under -fuzztime on purpose. Its default
+      # is 60s PER MINIMIZATION ATTEMPT, so a smoke run given 15s can be inside a
+      # minimization when its own deadline passes, and the coordinator then
+      # reports "context deadline exceeded" as a failure on an unchanged tree.
+      # Measured on FuzzDecodeSnapshot, four interleaved 90s runs from a clean
+      # corpus: with the default budget the run froze for 24s and 15s; with a 3s
+      # budget neither run froze at all. Minimization that matters happens in the
+      # nightly job, which has the time for it.
       - name: fuzz smoke (below-checksum decoders on malformed input)
         run: |
           set -e
-          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeBlock$' -fuzztime=30s
-          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeUpdates$' -fuzztime=15s
-          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeSnapshot$' -fuzztime=15s
-          go test ./encoding/columnar/ -run='^$' -fuzz='^FuzzStrategies$' -fuzztime=20s
-          go test ./encoding/change/ -run='^$' -fuzz='^FuzzBlobDecoders$' -fuzztime=15s
-          go test ./encoding/change/ -run='^$' -fuzz='^FuzzDecodeHeader$' -fuzztime=15s
-          go test ./encoding/change/ -run='^$' -fuzz='^FuzzLoroValue$' -fuzztime=15s
-          go test ./encoding/kv/ -run='^$' -fuzz='^FuzzParseSSTable$' -fuzztime=15s
-          go test ./encoding/lz4/ -run='^$' -fuzz='^FuzzDecompressFrame$' -fuzztime=15s
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeBlock$' -fuzztime=30s -fuzzminimizetime=3s
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeUpdates$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeSnapshot$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./encoding/columnar/ -run='^$' -fuzz='^FuzzStrategies$' -fuzztime=20s -fuzzminimizetime=3s
+          go test ./encoding/change/ -run='^$' -fuzz='^FuzzBlobDecoders$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./encoding/change/ -run='^$' -fuzz='^FuzzDecodeHeader$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./encoding/change/ -run='^$' -fuzz='^FuzzLoroValue$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./encoding/kv/ -run='^$' -fuzz='^FuzzParseSSTable$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./encoding/lz4/ -run='^$' -fuzz='^FuzzDecompressFrame$' -fuzztime=15s -fuzzminimizetime=3s
       - name: upload crashers on failure
         if: failure()
         uses: actions/upload-artifact@v7

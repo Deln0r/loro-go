@@ -1,0 +1,78 @@
+name: Fuzz nightly
+
+# The per-push job in ci.yml is a smoke test: nine targets, fifteen seconds
+# each, starting from an empty corpus every time. It catches a decoder that
+# breaks outright and nothing subtler.
+#
+# This job is the one that actually fuzzes. Each target gets four minutes, the
+# corpus is carried between nights so coverage accumulates instead of restarting
+# from the seeds, and minimization gets a real budget because a saved input is
+# only useful if it is small enough to read.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./loro/
+            target: FuzzDecodeBlock
+          - pkg: ./loro/
+            target: FuzzDecodeUpdates
+          - pkg: ./loro/
+            target: FuzzDecodeSnapshot
+          - pkg: ./encoding/columnar/
+            target: FuzzStrategies
+          - pkg: ./encoding/change/
+            target: FuzzBlobDecoders
+          - pkg: ./encoding/change/
+            target: FuzzDecodeHeader
+          - pkg: ./encoding/change/
+            target: FuzzLoroValue
+          - pkg: ./encoding/kv/
+            target: FuzzParseSSTable
+          - pkg: ./encoding/lz4/
+            target: FuzzDecompressFrame
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: locate the fuzz corpus
+        id: cache-dir
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+
+      # Restore-keys let tonight's run start from the newest corpus for this
+      # target, and the run-id in the key means every night writes a fresh entry
+      # rather than fighting an immutable one.
+      - name: restore the corpus from previous nights
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cache-dir.outputs.dir }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: fuzz ${{ matrix.target }}
+        run: go test ${{ matrix.pkg }} -run='^$' -fuzz='^${{ matrix.target }}$' -fuzztime=4m -fuzzminimizetime=30s
+
+      # A failing input is written under the package's testdata/fuzz, which is
+      # the whole point of running longer than the smoke job.
+      - name: upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crasher-${{ matrix.target }}
+          path: '**/testdata/fuzz/**'
+          if-no-files-found: ignore

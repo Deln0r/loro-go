@@ -73,10 +73,13 @@ func numFromF64(f float64) any {
 // that only appends cannot tell the rules apart.
 //
 // Simplifications (honest limits): left-origin is resolved as the element at
-// position-1 in the peer's current view. Fugue's right origin is not recorded,
-// so the non-interleaving guarantee for concurrent multi-element inserts at the
-// same position is not fully general. Deletes are applied as id-addressed
-// tombstones; move ops are handled only for MovableList.
+// position-1 in a view built from the inserting peer's OWN earlier edits. Edits
+// it had imported from other peers are not in that view, so an insert made
+// after a sync can take the wrong neighbour; TestPostSyncEdits pins that gap.
+// Fugue's right origin is not recorded, so the non-interleaving guarantee for
+// concurrent multi-element inserts at the same position is not fully general.
+// Deletes are applied as id-addressed tombstones; moves are handled for
+// MovableList and Tree.
 func MergeState(u *Updates) (map[string]any, error) {
 	type cinfo struct {
 		kind   change.ContainerType
@@ -202,7 +205,11 @@ func MergeState(u *Updates) (map[string]any, error) {
 	// Pass 2: trees, inlining each node's meta map by node id.
 	for _, name := range order {
 		if conts[name].kind == change.CTree {
-			built[name] = buildTree(conts[name].ops, metaMaps)
+			tree, err := buildTree(conts[name].ops, metaMaps)
+			if err != nil {
+				return nil, err
+			}
+			built[name] = tree
 		}
 	}
 
@@ -287,17 +294,95 @@ func applyMove(lst []any, from, to int) []any {
 	return append(lst[:to], append([]any{el}, lst[to:]...)...)
 }
 
+// deletedTreeRoot is loro's TreeID::delete_root(), counter i32::MAX on peer
+// u64::MAX. A tree delete is encoded as a move under this parent.
+const deletedTreeRoot = "2147483647@18446744073709551615"
+
+// The cycle check walks from a move's new parent up towards the root. Only a
+// node that already has children can be an ancestor of anything, so most moves,
+// and every creation, skip the walk. The walks that remain are bounded in total:
+// treeWalkPerMove steps per tree op on average, plus treeWalkFloor. A document
+// that needs more is refused with an error instead of taking the CPU. That
+// allows an average ancestor walk of 64 levels on every single move, far past
+// any real tree, while a crafted history of deep subtrees being moved under
+// their own leaves is cut off after a few million steps.
+const (
+	treeWalkPerMove = 64
+	treeWalkFloor   = 1 << 22
+)
+
 // buildTree reconstructs loro's Tree toJSON: a nested list of nodes ordered by
-// (fractional_index, id) among siblings. metaMaps holds each node's meta map
+// (fractional_index, lamport, peer) among siblings. metaMaps holds each node's meta map
 // (the node's data sub-container) keyed by node id; absent nodes get an empty meta.
-func buildTree(ops []Op, metaMaps map[string]map[string]any) []any {
-	type tn struct {
-		id, parent string
-		hasParent  bool
-		fi         string
+//
+// Every tree op is a move. Creating a node moves a new node in; deleting one
+// moves it under deletedTreeRoot. So the state is not the set of ops but the
+// result of applying them: each node has exactly one current parent, set by the
+// last move applied to it.
+//
+// Moves are applied in (lamport, peer, counter) order, and a move that would
+// make a node its own ancestor is skipped. That is the movable-tree rule loro
+// follows, and it is what keeps two honest peers who concurrently move A under
+// B and B under A from producing a cycle: the move that sorts first stands and
+// the other is dropped.
+//
+// An earlier version skipped the application entirely and listed every op as a
+// child of its parent. A node moved once appeared under both parents, a
+// deleted node stayed visible, and the crossing moves above made the tree
+// cyclic, so the recursive build overflowed the stack and killed the process:
+// a fatal error Go cannot recover from, reachable by honest concurrent edits.
+// None of the fixtures moved or deleted a node; the fuzzer found the cycle once
+// it was allowed below the checksum.
+func buildTree(ops []Op, metaMaps map[string]map[string]any) ([]any, error) {
+	type placement struct {
+		parent    string // meaningful only when hasParent
+		hasParent bool
+		fi        string
+		// lamport and peer of the move that put the node where it is. Siblings
+		// with equal fractional indices are ordered by these, as loro orders
+		// them by the idlp of the last effective move.
+		lamport int64
+		peer    uint64
 	}
-	var nodes []tn
-	for _, op := range ops {
+	current := map[string]placement{}
+	// childCount[x] is how many nodes currently have x as their parent.
+	childCount := map[string]int{}
+	budget := treeWalkFloor + treeWalkPerMove*len(ops)
+	steps := 0
+
+	// wouldCycle reports whether moving node under parent would make node its
+	// own ancestor: true when parent is node, or node sits somewhere above
+	// parent in the current state.
+	//
+	// An earlier version of this check walked up from every new parent, and a
+	// chain built one child at a time costs a walk as long as the chain on each
+	// step: an honest tree 60 000 levels deep, which loro-crdt builds in 110 ms,
+	// took 65 s to merge. A node with no children cannot be anyone's ancestor, so
+	// the walk only runs for nodes that have some; that covers every creation.
+	wouldCycle := func(node, parent string) (bool, error) {
+		if parent == node {
+			return true, nil
+		}
+		if childCount[node] == 0 {
+			return false, nil
+		}
+		for at := parent; ; {
+			if at == node {
+				return true, nil
+			}
+			p, ok := current[at]
+			if !ok || !p.hasParent {
+				return false, nil
+			}
+			steps++
+			if steps > budget {
+				return false, fmt.Errorf("loro: tree ancestry checks exceeded %d steps for %d ops", budget, len(ops))
+			}
+			at = p.parent
+		}
+	}
+
+	for _, op := range sortedOps(ops) {
 		if op.VKind != change.VKRawTreeMove {
 			continue
 		}
@@ -305,27 +390,68 @@ func buildTree(ops []Op, metaMaps map[string]map[string]any) []any {
 		if !ok {
 			continue
 		}
-		nodes = append(nodes, tn{n.ID, n.Parent, n.HasParent, n.FI})
-	}
-	childrenOf := map[string][]tn{}
-	for _, n := range nodes {
-		p := ""
-		if n.hasParent {
-			p = n.parent
+		if n.HasParent && n.Parent != deletedTreeRoot {
+			cyclic, err := wouldCycle(n.ID, n.Parent)
+			if err != nil {
+				return nil, err
+			}
+			if cyclic {
+				continue
+			}
 		}
-		childrenOf[p] = append(childrenOf[p], n)
+		if prev, ok := current[n.ID]; ok && prev.hasParent {
+			childCount[prev.parent]--
+		}
+		if n.HasParent {
+			childCount[n.Parent]++
+		}
+		current[n.ID] = placement{parent: n.Parent, hasParent: n.HasParent, fi: n.FI, lamport: op.Lamport, peer: op.Peer}
 	}
+
+	type child struct {
+		id string
+		placement
+	}
+	childrenOf := map[string][]child{}
+	for id, p := range current {
+		key := ""
+		if p.hasParent {
+			key = p.parent
+		}
+		childrenOf[key] = append(childrenOf[key], child{id, p})
+	}
+
+	// The walk starts at the root. A deleted node hangs under deletedTreeRoot,
+	// which is never reached from the root, so it disappears together with its
+	// subtree, as it does in loro's toJSON. visited is defence in depth: with one
+	// parent per node and cycle-closing moves skipped, no node can be reached
+	// twice, and if that ever stops being true this ends the walk rather than
+	// the process.
+	visited := map[string]bool{}
 	var build func(parent string) []any
 	build = func(parent string) []any {
-		kids := append([]tn{}, childrenOf[parent]...)
+		kids := append([]child{}, childrenOf[parent]...)
+		// Fractional index first; fiHex renders two uppercase hex digits per
+		// byte, so comparing the strings compares the bytes. Ties, which happen
+		// whenever two peers insert into the same gap without seeing each other,
+		// go to the numeric (lamport, peer) of the placing move. The id string is
+		// not a substitute: "0@10" sorts before "0@2".
 		sort.SliceStable(kids, func(i, j int) bool {
-			if kids[i].fi != kids[j].fi {
-				return kids[i].fi < kids[j].fi
+			a, b := kids[i], kids[j]
+			if a.fi != b.fi {
+				return a.fi < b.fi
 			}
-			return kids[i].id < kids[j].id
+			if a.lamport != b.lamport {
+				return a.lamport < b.lamport
+			}
+			return a.peer < b.peer
 		})
-		out := make([]any, len(kids))
-		for idx, k := range kids {
+		out := make([]any, 0, len(kids))
+		for _, k := range kids {
+			if visited[k.id] {
+				continue
+			}
+			visited[k.id] = true
 			var parentVal any
 			if k.hasParent {
 				parentVal = k.parent
@@ -334,18 +460,18 @@ func buildTree(ops []Op, metaMaps map[string]map[string]any) []any {
 			if meta == nil {
 				meta = map[string]any{}
 			}
-			out[idx] = map[string]any{
+			out = append(out, map[string]any{
 				"parent":           parentVal,
-				"index":            float64(idx),
+				"index":            float64(len(out)),
 				"meta":             meta,
 				"id":               k.id,
 				"fractional_index": k.fi,
 				"children":         build(k.id),
-			}
+			})
 		}
 		return out
 	}
-	return build("")
+	return build(""), nil
 }
 
 func sortedOps(ops []Op) []Op {

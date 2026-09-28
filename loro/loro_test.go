@@ -36,7 +36,7 @@ func TestBuildStateMatchesToJSON(t *testing.T) {
 	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del"} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {
-			t.Skipf("fixture %s missing: %v", name, err)
+			t.Fatalf("fixture %s missing: %v", name, err)
 		}
 		u, err := DecodeUpdates(blob)
 		if err != nil {
@@ -66,7 +66,7 @@ func TestDecodeSnapshotMatchesToJSON(t *testing.T) {
 	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del"} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".snapshot.bin"))
 		if err != nil {
-			t.Skipf("fixture %s missing: %v", name, err)
+			t.Fatalf("fixture %s missing: %v", name, err)
 		}
 		u, err := DecodeSnapshot(blob)
 		if err != nil {
@@ -96,10 +96,12 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 	for _, name := range []string{
 		"text_hi", "map_kv", "list_abc", "map_float",
 		"conc_text", "conc_map", "conc_list", "conc_text2", "conc_list2", "richtext", "mlist", "tree_simple", "tree_meta", "tree_wide", "text_del", "list_del", "map_del", "two_changes", "cross_del", "rt_one", "rt_two", "rt_overlap", "counter", "unicode_text", "map_mixed", "text_cjk_del",
+		"tree_move_once", "tree_move_twice", "tree_delete_subtree", "tree_crossing_moves",
+		"tree_rejected_stays", "tree_sibling_tie", "tree_delete_vs_move", "tree_one_change",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {
-			t.Skipf("fixture %s missing: %v", name, err)
+			t.Fatalf("fixture %s missing: %v", name, err)
 		}
 		u, err := DecodeUpdates(blob)
 		if err != nil {

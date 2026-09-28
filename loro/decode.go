@@ -188,9 +188,22 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 
 	// Partition the block's op stream into its n changes. Change i covers
 	// atomLens[i] atoms; atomLens[0..n-2] come from the header, the last is
-	// derived from counter_len. Change 0's lamport is the block's lamport_start;
-	// changes 1..n-1 carry theirs in the header lamports column (a later change
-	// may dep on another peer, so lamports are not simply cumulative).
+	// derived from counter_len.
+	//
+	// Lamports follow the same shape. The header's lamports column holds the
+	// lamports of changes 0..n-2, and the last change's lamport is derived from
+	// the block's lamport span: lamport_start + lamport_len - atomLen(last).
+	// That is loro's own decoder (block_meta_encode.rs), and its encoder writes
+	// the column under `if !is_last`.
+	//
+	// An earlier version read the column as the lamports of changes 1..n-1, so
+	// every change after the first took the lamport of the change before it.
+	// It went unnoticed because loro merges consecutive local commits into one
+	// change, so almost every fixture had one change per block and never read
+	// the column. Separate changes appear as soon as a peer edits after
+	// importing someone else's edits, which is ordinary collaboration; there a
+	// peer's later edit could sort before its earlier ones, and map writes, text
+	// and list order, and tree moves were resolved against the wrong clock.
 	atomLens := make([]int64, n)
 	var atomSum int64
 	for i := 0; i < n-1; i++ {
@@ -205,11 +218,19 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 	for i := 1; i < n; i++ {
 		starts[i] = starts[i-1] + atomLens[i-1]
 	}
+	if len(hdr.Lamports) != n-1 {
+		return nil, fmt.Errorf("loro: %d header lamports for %d changes", len(hdr.Lamports), n)
+	}
+	lastLamport := int64(blk.LamportStart) + int64(blk.LamportLen) - atomLens[n-1]
+	if int64(blk.LamportStart) < 0 || int64(blk.LamportLen) < 0 || lastLamport < 0 {
+		return nil, fmt.Errorf("loro: lamport span %d+%d cannot end with a change of %d atoms",
+			blk.LamportStart, blk.LamportLen, atomLens[n-1])
+	}
 	lamportOf := func(i int) int64 {
-		if i == 0 {
-			return int64(blk.LamportStart)
+		if i < n-1 {
+			return hdr.Lamports[i]
 		}
-		return hdr.Lamports[i-1]
+		return lastLamport
 	}
 	changes := make([]Change, n)
 	for i := range changes {

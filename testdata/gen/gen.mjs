@@ -407,3 +407,218 @@ emitMerged(
   }
   console.log("peer-id guard: setPeerId works, constructor option still ignored");
 }
+
+// Tree moves and deletes. Every tree op is a move: creating a node moves a new
+// node in, and deleting one moves it under loro's deleted-root sentinel. The
+// tree fixtures above only ever create nodes, so none of this was covered, and
+// state reconstruction turned out to show a moved node under every parent it
+// had ever had, keep deleted nodes, and recurse forever on the crossing-moves
+// case below.
+emit("tree_move_once", (doc) => {
+  const t = doc.getTree("tr");
+  const a = t.createNode();
+  const b = t.createNode();
+  doc.commit();
+  t.move(b.id, a.id);
+});
+
+emit("tree_move_twice", (doc) => {
+  const t = doc.getTree("tr");
+  const a = t.createNode();
+  const b = t.createNode();
+  const c = t.createNode();
+  doc.commit();
+  t.move(c.id, a.id);
+  doc.commit();
+  t.move(c.id, b.id);
+});
+
+// Deleting a node takes its subtree with it.
+emit("tree_delete_subtree", (doc) => {
+  const t = doc.getTree("tr");
+  t.createNode();
+  const b = t.createNode();
+  const c = t.createNode();
+  doc.commit();
+  t.move(c.id, b.id);
+  doc.commit();
+  t.delete(b.id);
+});
+
+// Two honest peers from a shared base make crossing moves at the same lamport:
+// one puts A under B, the other B under A. Applying both would make each the
+// other's ancestor. loro orders the moves by (lamport, peer) and drops the one
+// that would close the cycle, so peer 1's move stands and peer 2's is skipped.
+{
+  const base = new LoroDoc();
+  base.setPeerId(1n);
+  const bt = base.getTree("tr");
+  const a = bt.createNode();
+  const b = bt.createNode();
+  base.commit();
+  const p1 = new LoroDoc();
+  p1.setPeerId(1n);
+  p1.import(base.export({ mode: "update" }));
+  const p2 = new LoroDoc();
+  p2.setPeerId(2n);
+  p2.import(base.export({ mode: "update" }));
+  p1.getTree("tr").move(a.id, b.id);
+  p1.commit();
+  p2.getTree("tr").move(b.id, a.id);
+  p2.commit();
+  p1.import(p2.export({ mode: "update" }));
+  const update = p1.export({ mode: "update" });
+  const snapshot = p1.export({ mode: "snapshot" });
+  writeFileSync(join(outDir, "tree_crossing_moves.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "tree_crossing_moves.snapshot.bin"), Buffer.from(snapshot));
+  writeFileSync(join(outDir, "tree_crossing_moves.json"), JSON.stringify(p1.toJSON(), null, 2) + "\n");
+  console.log(`tree_crossing_moves: update=${update.length}B merged=${JSON.stringify(p1.toJSON()).slice(0, 120)}`);
+}
+
+// A rejected move stays rejected. From a shared base, A under B and B under A
+// cross; B under A loses. Then A moves back to the root, which breaks the old
+// cycle. The dropped move must not come back to life: both nodes end at root.
+{
+  const base = new LoroDoc();
+  base.setPeerId(1n);
+  const bt = base.getTree("tr");
+  const a = bt.createNode();
+  const b = bt.createNode();
+  base.commit();
+  const p1 = new LoroDoc();
+  p1.setPeerId(1n);
+  p1.import(base.export({ mode: "update" }));
+  const p2 = new LoroDoc();
+  p2.setPeerId(2n);
+  p2.import(base.export({ mode: "update" }));
+  p1.getTree("tr").move(a.id, b.id);
+  p1.commit();
+  p2.getTree("tr").move(b.id, a.id);
+  p2.commit();
+  p1.import(p2.export({ mode: "update" }));
+  p1.getTree("tr").move(a.id, undefined);
+  p1.commit();
+  const update = p1.export({ mode: "update" });
+  writeFileSync(join(outDir, "tree_rejected_stays.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "tree_rejected_stays.snapshot.bin"), Buffer.from(p1.export({ mode: "snapshot" })));
+  writeFileSync(join(outDir, "tree_rejected_stays.json"), JSON.stringify(p1.toJSON(), null, 2) + "\n");
+  console.log(`tree_rejected_stays: update=${update.length}B`);
+}
+
+// Sibling order on equal fractional indices. Peers 2 and 10 each create a child
+// of the same parent at the same position without seeing each other, so both
+// children get the same index. The tie is broken by the numeric (lamport, peer)
+// of the move that placed them, not by the id string, where "0@10" < "0@2".
+{
+  const base = new LoroDoc();
+  base.setPeerId(1n);
+  const root = base.getTree("tr").createNode();
+  base.commit();
+  const p2 = new LoroDoc();
+  p2.setPeerId(2n);
+  p2.import(base.export({ mode: "update" }));
+  const p10 = new LoroDoc();
+  p10.setPeerId(10n);
+  p10.import(base.export({ mode: "update" }));
+  p2.getTree("tr").createNode(root.id, 0);
+  p2.commit();
+  p10.getTree("tr").createNode(root.id, 0);
+  p10.commit();
+  p2.import(p10.export({ mode: "update" }));
+  const update = p2.export({ mode: "update" });
+  writeFileSync(join(outDir, "tree_sibling_tie.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "tree_sibling_tie.snapshot.bin"), Buffer.from(p2.export({ mode: "snapshot" })));
+  writeFileSync(join(outDir, "tree_sibling_tie.json"), JSON.stringify(p2.toJSON(), null, 2) + "\n");
+  console.log(`tree_sibling_tie: update=${update.length}B merged=${JSON.stringify(p2.toJSON()).slice(0, 160)}`);
+}
+
+// Delete against a concurrent move of the same node. A delete is a move too,
+// so whichever sorts later in (lamport, peer) order decides where A ends up.
+{
+  const base = new LoroDoc();
+  base.setPeerId(1n);
+  const bt = base.getTree("tr");
+  const a = bt.createNode();
+  const b = bt.createNode();
+  base.commit();
+  const p1 = new LoroDoc();
+  p1.setPeerId(1n);
+  p1.import(base.export({ mode: "update" }));
+  const p2 = new LoroDoc();
+  p2.setPeerId(2n);
+  p2.import(base.export({ mode: "update" }));
+  p1.getTree("tr").delete(a.id);
+  p1.commit();
+  p2.getTree("tr").move(a.id, b.id);
+  p2.commit();
+  p1.import(p2.export({ mode: "update" }));
+  const update = p1.export({ mode: "update" });
+  writeFileSync(join(outDir, "tree_delete_vs_move.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "tree_delete_vs_move.snapshot.bin"), Buffer.from(p1.export({ mode: "snapshot" })));
+  writeFileSync(join(outDir, "tree_delete_vs_move.json"), JSON.stringify(p1.toJSON(), null, 2) + "\n");
+  console.log(`tree_delete_vs_move: update=${update.length}B merged=${JSON.stringify(p1.toJSON()).slice(0, 160)}`);
+}
+
+// Creation and moves inside one change, so every op shares the change's start
+// lamport plus its own offset.
+emit("tree_one_change", (doc) => {
+  const t = doc.getTree("tr");
+  const a = t.createNode();
+  const b = t.createNode();
+  const c = t.createNode();
+  t.move(c.id, a.id);
+  t.move(b.id, c.id);
+});
+
+// emitDoc writes the same four files as emit for a document built elsewhere,
+// for histories that need more than one peer and more than one round of sync.
+function emitDoc(name, doc) {
+  const update = doc.export({ mode: "update" });
+  const snapshot = doc.export({ mode: "snapshot" });
+  writeFileSync(join(outDir, `${name}.update.bin`), Buffer.from(update));
+  writeFileSync(join(outDir, `${name}.snapshot.bin`), Buffer.from(snapshot));
+  writeFileSync(join(outDir, `${name}.json`), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  writeFileSync(
+    join(outDir, `${name}.ops.json`),
+    JSON.stringify(doc.exportJsonUpdates(), (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) + "\n",
+  );
+  console.log(`${name}: update=${update.length}B merged=${JSON.stringify(doc.toJSON()).slice(0, 140)}`);
+}
+
+// Edits made after a sync. loro cannot fold them into the peer's earlier change
+// because they depend on the other peer's ops, so each peer's block carries
+// several changes and the lamport column in the block header is actually read.
+// Every other fixture edits before merging, which is why a decoder that read
+// that column one change off went unnoticed. Here it decides the result: map key
+// "k" is written three times, and only the true lamports make "a2" the winner.
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  a.getMap("m").set("k", "a1");
+  a.getText("t").insert(0, "A");
+  a.getList("l").insert(0, "a");
+  const tr = a.getTree("tr");
+  const n1 = tr.createNode();
+  const n2 = tr.createNode();
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  b.getMap("m").set("k", "b1");
+  b.getText("t").insert(1, "B");
+  b.getList("l").insert(1, "b");
+  b.getTree("tr").move(n2.id, n1.id);
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  a.getMap("m").set("k", "a2");
+  a.getText("t").insert(0, "C");
+  a.getList("l").insert(0, "c");
+  a.getTree("tr").move(n2.id, undefined);
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  b.getMap("m").set("k2", "b2");
+  b.getText("t").insert(0, "D");
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  emitDoc("post_merge_edits", a);
+}

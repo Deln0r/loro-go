@@ -1,0 +1,30 @@
+{
+  "l": [
+    "c",
+    "a",
+    "b"
+  ],
+  "t": "DCAB",
+  "tr": [
+    {
+      "parent": null,
+      "index": 0,
+      "meta": {},
+      "id": "3@1",
+      "fractional_index": "80",
+      "children": []
+    },
+    {
+      "parent": null,
+      "index": 1,
+      "meta": {},
+      "id": "4@1",
+      "fractional_index": "8180",
+      "children": []
+    }
+  ],
+  "m": {
+    "k": "a2",
+    "k2": "b2"
+  }
+}

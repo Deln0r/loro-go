@@ -63,9 +63,9 @@ func main() {
 - Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
 - Change blocks: all eight blobs decode and re-encode byte-identically
-- Containers: Map (LWW), List and Text (Fugue ordering, concurrent + multi-peer merge), MovableList (moves), Tree (nested state with fractional index and per-node `meta` maps), Counter (summed increments)
+- Containers: Map (LWW), List and Text (Fugue-style ordering, for peers that edit concurrently and then merge; see "Not yet" for edits made after a sync), MovableList (moves), Tree (moves and deletes applied in (lamport, peer) order with cycle-closing moves skipped as loro does, siblings ordered by fractional index then (lamport, peer), per-node `meta` maps), Counter (summed increments)
 - Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce), including deletes targeting another peer's elements
-- Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered)
+- Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered; every decoded change lamport is checked against the lamport loro-crdt itself recorded)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
 - Rich-text `toDelta`: styled runs reconstructed via the mark anchor model (`loro.TextDelta`)
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt
@@ -86,6 +86,7 @@ homeserver on every push. It is a separate Go module, so this library's own
 
 ## Not yet
 
+- Text and List inserts made after a sync. An insert's left neighbour is resolved against the inserting peer's own earlier edits, not against edits it had imported from other peers, so an insert typed right after someone else's text can land out of place. Map and Tree are correct for the same histories. `TestPostSyncEdits` pins the gap and fails once it is closed; the fix needs each op's causal past from the change DAG.
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
 - Nested containers other than tree-node meta maps (a container stored as a map or list value)
 

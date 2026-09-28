@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "0@0",
+            "parent": null,
+            "fractional_index": "80"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "1@0",
+            "parent": null,
+            "fractional_index": "8180"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "move",
+            "target": "1@0",
+            "parent": "0@0",
+            "fractional_index": "80"
+          },
+          "counter": 2
+        }
+      ]
+    }
+  ]
+}

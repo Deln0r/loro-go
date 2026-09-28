@@ -94,7 +94,7 @@ Both are pinned in `loro/idempotence_test.go`. If you change the merge path, kee
 
 ## Fuzzing
 
-The decoders parse fully untrusted bytes, so they are fuzzed below the checksum layer (a malicious peer can recompute a valid checksum, so the deep decoders must be robust on their own). To run a target:
+The decoders parse fully untrusted bytes, so they are fuzzed below the checksum layer (a malicious peer can recompute a valid checksum, so the deep decoders must be robust on their own). `FuzzDecodeUpdates` and `FuzzDecodeSnapshot` start above it, so they recompute the header checksum over the mutated bytes before decoding; without that every mutation fails the checksum and nothing below it is ever reached, which is how a stack overflow in tree reconstruction went unfound. Do the same in any new target that starts from a whole blob. To run a target:
 
 ```
 go test ./loro/ -run='^$' -fuzz=FuzzDecodeBlock -fuzztime=30s

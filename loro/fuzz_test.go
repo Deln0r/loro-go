@@ -1,12 +1,15 @@
 package loro
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Deln0r/loro-go/encoding/change"
+	"github.com/Deln0r/loro-go/encoding/fast"
+	"github.com/Deln0r/loro-go/encoding/xxh32"
 )
 
 // seedFuzz adds every fixture file with the given suffix to the fuzz corpus so
@@ -27,6 +30,24 @@ func seedFuzz(f *testing.F, suffix string) {
 	}
 }
 
+// reseal recomputes the header checksum over a mutated blob, which is exactly
+// what a hostile peer does before sending one. Without it these two targets
+// could only test the checksum wall: any mutation of the body breaks the
+// xxh32, DecodeUpdates and DecodeSnapshot reject it on the spot, and nothing
+// below the checksum is ever reached. Measured before this existed: after a
+// week of nightly runs the FuzzDecodeSnapshot corpus had grown by nothing
+// since the first night, and of 14 cached inputs one got past the checksum.
+// The rejection itself is unit-tested in encoding/fast, so the fuzzer loses
+// nothing by skipping it.
+func reseal(data []byte) []byte {
+	if len(data) < fast.HeaderSize {
+		return data
+	}
+	out := append([]byte(nil), data...)
+	binary.LittleEndian.PutUint32(out[16:20], xxh32.Checksum(out[20:], xxh32.Seed))
+	return out
+}
+
 // FuzzDecodeUpdates asserts the FastUpdates decoder never panics on arbitrary
 // bytes: malformed input must return an error, not crash, allocate without
 // bound, or hang. When decode succeeds, state reconstruction must not panic
@@ -34,7 +55,7 @@ func seedFuzz(f *testing.F, suffix string) {
 func FuzzDecodeUpdates(f *testing.F) {
 	seedFuzz(f, ".update.bin")
 	f.Fuzz(func(t *testing.T, data []byte) {
-		u, err := DecodeUpdates(data)
+		u, err := DecodeUpdates(reseal(data))
 		if err != nil {
 			return
 		}
@@ -48,7 +69,7 @@ func FuzzDecodeUpdates(f *testing.F) {
 func FuzzDecodeSnapshot(f *testing.F) {
 	seedFuzz(f, ".snapshot.bin")
 	f.Fuzz(func(t *testing.T, data []byte) {
-		u, err := DecodeSnapshot(data)
+		u, err := DecodeSnapshot(reseal(data))
 		if err != nil {
 			return
 		}

@@ -57,7 +57,7 @@ jobs:
       # target, and the run-id in the key means every night writes a fresh entry
       # rather than fighting an immutable one.
       - name: restore the corpus from previous nights
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.cache-dir.outputs.dir }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}

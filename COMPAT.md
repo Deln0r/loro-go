@@ -154,3 +154,28 @@ JavaScript consumers parsing it. And the pure-TypeScript runtime that was merged
 upstream in July now ships on npm as `loro.js` (0.2.0 on 2026-08-27), so there
 are two independent reference implementations to check against, not one.
 
+## loro-crdt 1.16.3 (checked 2026-09-28)
+
+**Result: Fast wire format unchanged across 1.16.2 and 1.16.3.** All 117
+fixture files were rewritten by the generator under 1.16.3 and none differ,
+including the ordering corpus and the overlap, tail-resend and foreign-delete
+pairs. The pin moved to `1.16.3` (Dependabot #18).
+
+1.16.2 does touch encoding, but not what this library reads:
+
+- It fixes the decoding of **tree snapshot state** whose siblings are not in
+  fractional-index order, and now rejects state with duplicate node ids or
+  duplicate sibling positions. That is the state section of a snapshot. This
+  library reads a snapshot's oplog section and rebuilds state from the ops, so
+  the change is outside what it decodes. Worth knowing for anyone comparing
+  against `loro.js`: its 0.1.0 and 0.2.0 releases wrote tree snapshot state with
+  siblings out of order after a `move()` (loro-dev/loro#1088).
+- It retains deleted-container state in `forkAt` and snapshot-at exports, and
+  fixes shallow snapshots that exported but would not import. Neither mode is
+  read here.
+- The rest is runtime behaviour: subscribing during an emit, and
+  `LoroText.getCursor` at UTF-16 boundaries.
+
+1.16.3 makes inserting a container that belongs to another document a
+recoverable error in the JavaScript binding.
+

@@ -604,10 +604,24 @@ func flatten(all []elem) []elem {
 		sort.SliceStable(cs, func(i, j int) bool { return siblingLess(cs[i], cs[j]) })
 		children[k] = cs
 	}
+	// Each element is emitted once. Decoding already rejects the malformed
+	// inserts that produced colliding ids, but an element that names itself, or
+	// a descendant, as its left origin would otherwise recurse until the stack
+	// is gone and take the process with it, so the walk refuses to revisit.
+	type elemID struct {
+		peer    uint64
+		counter int64
+	}
+	seen := map[elemID]bool{}
 	var out []elem
 	var dfs func(p parentKey)
 	dfs = func(p parentKey) {
 		for _, e := range children[p] {
+			id := elemID{e.peer, e.counter}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
 			out = append(out, e)
 			dfs(parentKey{true, e.peer, e.counter})
 		}

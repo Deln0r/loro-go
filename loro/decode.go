@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 	"github.com/Deln0r/loro-go/encoding/fast"
@@ -279,6 +280,9 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			Lamport:   lamportOf(chIdx) + (cum - starts[chIdx]),
 			Len:       ops.Len[i],
 		}
+		if err := checkInsertAtoms(op); err != nil {
+			return nil, err
+		}
 		if op.VKind == change.VKDeleteSeq {
 			if delConsumed >= len(deleteIDs) {
 				return nil, fmt.Errorf("loro: DeleteSeq op without delete_start_ids entry")
@@ -315,4 +319,33 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		changes[chIdx].Ops = append(changes[chIdx].Ops, op)
 	}
 	return changes, nil
+}
+
+// checkInsertAtoms rejects a sequence insert whose value holds a different
+// number of atoms than its op length. The length decides the ids the insert
+// occupies (its counters run from Counter to Counter+Len) and how duplicates
+// are recognised; the value decides how many elements the merge creates. When
+// they disagree, elements get ids that belong to the next op, and an insert can
+// end up as its own left neighbour. The fuzzer produced exactly that: two text
+// inserts of length 1 carrying two characters each, which sent the sequence
+// flatten into unbounded recursion. loro never writes such an op.
+func checkInsertAtoms(op Op) error {
+	var atoms int
+	switch {
+	case op.Kind == change.CText && op.VKind == change.VKStr:
+		s, _ := op.Value.(string)
+		atoms = utf8.RuneCountInString(s)
+	case (op.Kind == change.CList || op.Kind == change.CMovableList) && op.VKind == change.VKLoroValue:
+		lst, ok := op.Value.([]any)
+		if !ok {
+			return fmt.Errorf("loro: list insert %d@%d carries %T, not a list of values", op.Counter, op.Peer, op.Value)
+		}
+		atoms = len(lst)
+	default:
+		return nil
+	}
+	if int64(atoms) != op.Len {
+		return fmt.Errorf("loro: insert %d@%d has length %d but carries %d atoms", op.Counter, op.Peer, op.Len, atoms)
+	}
+	return nil
 }

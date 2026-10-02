@@ -63,7 +63,7 @@ func main() {
 - Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
 - Change blocks: all eight blobs decode and re-encode byte-identically
-- Containers: Map (LWW), List and Text (Fugue-style ordering, for peers that edit concurrently and then merge; see "Not yet" for edits made after a sync), MovableList (moves), Tree (moves and deletes applied in (lamport, peer) order with cycle-closing moves skipped as loro does, siblings ordered by fractional index then (lamport, peer), per-node `meta` maps), Counter (summed increments)
+- Containers: Map (LWW), List and Text (Fugue-style ordering, for peers that edit concurrently and then merge; see "Not yet" for inserts made after a sync, a delete or a mark), MovableList (moves; see "Not yet" for inserts made after a move), Tree (moves and deletes applied in (lamport, peer) order with cycle-closing moves skipped as loro does, siblings ordered by fractional index then (lamport, peer), per-node `meta` maps), Counter (summed increments)
 - Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce), including deletes targeting another peer's elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered; every decoded change lamport is checked against the lamport loro-crdt itself recorded)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
@@ -86,7 +86,8 @@ homeserver on every push. It is a separate Go module, so this library's own
 
 ## Not yet
 
-- Text and List inserts made after a sync. An insert's left neighbour is resolved against the inserting peer's own earlier edits, not against edits it had imported from other peers, so an insert typed right after someone else's text can land out of place. Map and Tree are correct for the same histories. `TestPostSyncEdits` pins the gap and fails once it is closed; the fix needs each op's causal past from the change DAG.
+- Text and List inserts made after a sync, after a delete, or after a rich-text mark. An insert records a position in the sequence as its author saw it, and the merge resolves that position against the author's own earlier inserts only. Edits imported from other peers, deletes, and the two anchors a mark adds are missing from that view, so such an insert can land out of place. Map and Tree are correct for the same histories. `TestPostSyncEdits` pins the post-sync case, and fixtures for all three are held to loro-crdt through a reference merge; the fix resolves each position against the author's causal past from the change DAG.
+- MovableList inserts made after a move. Positions are resolved without the moves, so `[a,b,c]`, then moving `c` to the front, then inserting `X` at 1 gives `[b,a,X,c]` where loro gives `[c,X,a,b]`.
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
 - Nested containers other than tree-node meta maps (a container stored as a map or list value)
 

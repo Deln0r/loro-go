@@ -623,6 +623,76 @@ function emitDoc(name, doc) {
   emitDoc("post_merge_edits", a);
 }
 
+// Inserts placed after a delete. A position counts only what its author could
+// see, so a delete the author had seen shifts it and a delete it had not seen
+// must not. Every earlier fixture deleted last, which let a merge that never
+// applied deletes to the author's view pass all of them.
+{
+  // One peer deletes "bc", then types "X" after "e": "adeXf".
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  doc.getText("t").insert(0, "abcdef");
+  doc.getList("l").insert(0, "a");
+  doc.getList("l").insert(1, "b");
+  doc.getList("l").insert(2, "c");
+  doc.getList("l").insert(3, "d");
+  doc.commit();
+  doc.getText("t").delete(1, 2);
+  doc.getList("l").delete(1, 2);
+  doc.commit();
+  doc.getText("t").insert(3, "X");
+  doc.getList("l").insert(2, "X");
+  doc.commit();
+  emitDoc("insert_after_delete", doc);
+}
+{
+  // Peer 2 deletes "bc"; peer 1 imports that and types "X" after "e": "adeXf".
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  a.getText("t").insert(0, "abcdef");
+  a.getList("l").insert(0, "a");
+  a.getList("l").insert(1, "b");
+  a.getList("l").insert(2, "c");
+  a.getList("l").insert(3, "d");
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  b.getText("t").delete(1, 2);
+  b.getList("l").delete(1, 2);
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  a.getText("t").insert(3, "X");
+  a.getList("l").insert(2, "X");
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  emitDoc("insert_after_foreign_delete", b);
+}
+{
+  // Peer 2 deletes "bc" while peer 1, not yet aware of it, types "X" between
+  // "c" and "d". X belongs after the deleted pair: "aXdef".
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  a.getText("t").insert(0, "abcdef");
+  a.getList("l").insert(0, "a");
+  a.getList("l").insert(1, "b");
+  a.getList("l").insert(2, "c");
+  a.getList("l").insert(3, "d");
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  b.getText("t").delete(1, 2);
+  b.getList("l").delete(1, 2);
+  b.commit();
+  a.getText("t").insert(3, "X");
+  a.getList("l").insert(3, "X");
+  a.commit();
+  a.import(b.export({ mode: "update" }));
+  b.import(a.export({ mode: "update" }));
+  emitDoc("insert_concurrent_with_delete", a);
+}
+
 // Two backspaces in a row. loro folds them into one delete whose span starts at
 // the LOWEST id it removes and runs backwards: start 1@peer, length -2, removing
 // "b" and "c". Reading the span downwards from its start removes "a" and "b".
@@ -641,4 +711,61 @@ function emitDoc(name, doc) {
   doc.getList("l").delete(1, 1);
   doc.commit();
   emitDoc("delete_backwards", doc);
+}
+
+// One delete op whose atoms the other peer saw only in part. Peer 1 deletes
+// "b", peer 2 imports that, peer 1 deletes "c", and loro folds both deletes
+// into one op. Peer 2 types "X" after "c" having seen only the first atom, so a
+// merge that treats the whole op as seen puts "X" after "d".
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  a.getText("t").insert(0, "abcd");
+  a.commit();
+  a.getText("t").delete(1, 1);
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  a.getText("t").delete(1, 1);
+  a.commit();
+  b.getText("t").insert(2, "X");
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  b.import(a.export({ mode: "update" }));
+  emitDoc("delete_split_by_dep", a);
+}
+
+// Inserts after a mark. A mark adds two anchors to the text's coordinate
+// space, so typing at visible position 4 after a mark over [0,3) is recorded
+// as position 6. A merge that leaves the anchors out loses the neighbour.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  const t = doc.getText("t");
+  t.insert(0, "hello");
+  doc.commit();
+  t.mark({ start: 0, end: 3 }, "bold", true);
+  doc.commit();
+  t.insert(4, "X");
+  doc.commit();
+  t.insert(1, "Y");
+  doc.commit();
+  emitDoc("insert_after_mark", doc);
+}
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  a.getText("t").insert(0, "hello");
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  b.getText("t").mark({ start: 0, end: 3 }, "bold", true);
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  a.getText("t").insert(4, "X");
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  emitDoc("insert_after_foreign_mark", a);
 }

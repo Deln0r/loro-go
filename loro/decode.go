@@ -106,7 +106,12 @@ type Change struct {
 	ID        ID
 	Lamport   int64
 	Timestamp int64
-	Ops       []Op
+	// Deps is the frontier the author had when it made the change: the last op
+	// it had seen from each peer, minimised, so an op reached through another
+	// dep is left out. That includes the author's own previous op, which is
+	// listed only when nothing else already covers it.
+	Deps []ID
+	Ops  []Op
 }
 
 // Updates is a decoded FastUpdates blob.
@@ -244,6 +249,9 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			Timestamp: cm.Timestamps[i],
 		}
 	}
+	if err := decodeDeps(hdr, changes); err != nil {
+		return nil, err
+	}
 
 	vr := change.NewValueReader(blk.Values)
 	cum := int64(0)  // counter offset within the block
@@ -326,6 +334,53 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		changes[chIdx].Ops = append(changes[chIdx].Ops, op)
 	}
 	return changes, nil
+}
+
+// decodeDeps fills in each change's dependencies from the block header, the way
+// loro's own decoder reads them (block_meta_encode.rs). A dependency on the
+// author's own previous op is a flag, because loro moves any dep on its own
+// peer there; every other dependency is a peer index and a counter, the
+// counter naming the last op seen, inclusive.
+func decodeDeps(hdr *change.ChangeHeader, changes []Change) error {
+	if len(hdr.DepOnSelf) != len(changes) || len(hdr.DepLens) != len(changes) ||
+		len(hdr.DepPeerIdxs) != len(hdr.DepCounters) {
+		return fmt.Errorf("loro: dependency columns do not match %d changes", len(changes))
+	}
+	next := 0
+	for i := range changes {
+		own := changes[i].ID
+		var deps []ID
+		if hdr.DepOnSelf[i] {
+			if own.Counter == 0 {
+				return fmt.Errorf("loro: change %d@%d depends on an op before its peer's first", own.Counter, own.Peer)
+			}
+			deps = append(deps, ID{Peer: own.Peer, Counter: own.Counter - 1})
+		}
+		if hdr.DepLens[i] > uint64(len(hdr.DepPeerIdxs)-next) {
+			return fmt.Errorf("loro: change %d@%d lists more dependencies than the block holds", own.Counter, own.Peer)
+		}
+		for k := uint64(0); k < hdr.DepLens[i]; k++ {
+			pi, ctr := hdr.DepPeerIdxs[next], hdr.DepCounters[next]
+			next++
+			if pi >= uint64(len(hdr.Peers)) {
+				return fmt.Errorf("loro: dependency peer index %d out of range", pi)
+			}
+			if ctr < 0 || ctr > math.MaxInt32 {
+				return fmt.Errorf("loro: dependency counter %d out of range", ctr)
+			}
+			dep := ID{Peer: hdr.Peers[pi], Counter: ctr}
+			// A change cannot have seen its own op, or one its author made later.
+			if dep.Peer == own.Peer && dep.Counter >= own.Counter {
+				return fmt.Errorf("loro: change %d@%d depends on %d@%d, which it precedes", own.Counter, own.Peer, dep.Counter, dep.Peer)
+			}
+			deps = append(deps, dep)
+		}
+		changes[i].Deps = deps
+	}
+	if next != len(hdr.DepPeerIdxs) {
+		return fmt.Errorf("loro: %d dependencies left unassigned", len(hdr.DepPeerIdxs)-next)
+	}
+	return nil
 }
 
 // checkDeleteSpan rejects a delete whose span cannot be real: counters outside

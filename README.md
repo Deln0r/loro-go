@@ -63,7 +63,7 @@ func main() {
 - Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
 - Change blocks: all eight blobs decode and re-encode byte-identically
-- Containers: Map (LWW), List and Text (Fugue-style ordering, for peers that edit concurrently and then merge; see "Not yet" for inserts made after a sync, a delete or a mark), MovableList (moves; see "Not yet" for inserts made after a move), Tree (moves and deletes applied in (lamport, peer) order with cycle-closing moves skipped as loro does, siblings ordered by fractional index then (lamport, peer), per-node `meta` maps), Counter (summed increments)
+- Containers: Map (LWW), List and Text (Fugue-style ordering; each insert's position is resolved against what its author had seen, its causal past from the change deps minus the deletes in that past, with rich-text mark anchors counted, so edits made after a sync, a delete or a mark land where loro puts them), MovableList (moves; see "Not yet" for inserts made after a move), Tree (moves and deletes applied in (lamport, peer) order with cycle-closing moves skipped as loro does, siblings ordered by fractional index then (lamport, peer), per-node `meta` maps), Counter (summed increments)
 - Deletes: text/list id-span tombstones (DeleteSeq), map key deletion (DeleteOnce), including deletes targeting another peer's elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered; every decoded change lamport is checked against the lamport loro-crdt itself recorded)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
@@ -72,7 +72,7 @@ func main() {
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 - Malformed-input hardening: the decoders are fuzzed and bound every attacker-controlled length and RLE run count, so a hostile blob errors out instead of panicking, hanging, or allocating without bound
 - Merge is order-independent and idempotent: the same changes in any order give the same state, and a duplicate or partially overlapping op is absorbed rather than applied twice, so a transport that retries or replays does not corrupt the document
-- Sequence ordering checked against loro-crdt on 300 random insert-anywhere histories, not only on appends
+- Sequence ordering checked against loro-crdt on 300 random insert-anywhere histories, not only on appends, and on named histories with syncs, deletes, backwards deletes and marks; the merge also matches a brute-force reference, itself held to loro-crdt, on 300 random multi-peer histories with real deps
 
 ## Matrix transport
 
@@ -86,7 +86,7 @@ homeserver on every push. It is a separate Go module, so this library's own
 
 ## Not yet
 
-- Text and List inserts made after a sync, after a delete, or after a rich-text mark. An insert records a position in the sequence as its author saw it, and the merge resolves that position against the author's own earlier inserts only. Edits imported from other peers, deletes, and the two anchors a mark adds are missing from that view, so such an insert can land out of place. Map and Tree are correct for the same histories. `TestPostSyncEdits` pins the post-sync case, and fixtures for all three are held to loro-crdt through a reference merge; the fix resolves each position against the author's causal past from the change DAG.
+- Fast merging of long concurrent branches. An edit made with everything already merged in view (typing, or editing after a sync) resolves at once; one made concurrently with edits already merged is resolved by scanning the merged sequence. Two peers that each made thousands of changes offline therefore cost time proportional to the product of the two, and past 2^28 steps `MergeState` returns an error rather than run on.
 - MovableList inserts made after a move. Positions are resolved without the moves, so `[a,b,c]`, then moving `c` to the front, then inserting `X` at 1 gives `[b,a,X,c]` where loro gives `[c,X,a,b]`.
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
 - Nested containers other than tree-node meta maps (a container stored as a map or list value)

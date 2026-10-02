@@ -82,6 +82,20 @@ func (d DeleteSpan) Normalize() (start, n int64) {
 	return d.Counter, -d.Len
 }
 
+// atomFor returns which atom of the delete removed the element with counter c
+// (the delete op's k-th id removes the k-th element in deletion order), or
+// false when c is outside the span.
+func (d DeleteSpan) atomFor(c int64) (int64, bool) {
+	start, n := d.Normalize()
+	if c < start || c >= start+n {
+		return 0, false
+	}
+	if d.Len < 0 {
+		return start + n - 1 - c, true
+	}
+	return c - start, true
+}
+
 // TreeNode is a decoded Tree create/move op target.
 type TreeNode struct {
 	ID        string // "counter@peer"

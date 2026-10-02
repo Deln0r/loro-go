@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Deln0r/loro-go/encoding/change"
 )
 
 // mergedJSON merges the given blobs, in the given order, into one state.
@@ -164,6 +166,89 @@ func TestPartialTailResendIsAbsorbed(t *testing.T) {
 		{"tail then full", [][]byte{tail, full}},
 		{"full alone", [][]byte{full}},
 		{"interleaved", [][]byte{tail, full, tail, full}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := mergedJSON(t, c.blobs...); got != want {
+				t.Errorf("merged = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
+// TestOverlappingDeletesAreSliced is the delete side of the same dedup. Two
+// backspaces, an export, two more backspaces: loro folds all four into one
+// backwards delete, so the later export repeats the first two atoms inside a
+// longer op. That op has to be cut down to its new atoms, which for a
+// backwards delete are the lowest ids of its span, not the first ones.
+func TestOverlappingDeletesAreSliced(t *testing.T) {
+	early := readFixture(t, "span_delete_overlap.early.bin")
+	late := readFixture(t, "span_delete_overlap.late.bin")
+	want := expectedState(t, "span_delete_overlap.json")
+
+	for _, c := range []struct {
+		name  string
+		blobs [][]byte
+	}{
+		{"oldest first", [][]byte{early, late}},
+		{"newest first", [][]byte{late, early}},
+		{"late alone", [][]byte{late}},
+		{"repeated", [][]byte{early, late, early, late}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := mergedJSON(t, c.blobs...); got != want {
+				t.Errorf("merged = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
+// TestClipOpSlicesDeletes checks the slicing rule directly. Atom k of a delete
+// removes the k-th element of its span in deletion order, so keeping atoms
+// [2,4) of a four-atom delete over ids 10..13 keeps ids 12..13 when it ran
+// forwards (both removed at the op's position) and ids 10..11 when it ran
+// backwards (removed two positions further left).
+func TestClipOpSlicesDeletes(t *testing.T) {
+	base := Op{VKind: change.VKDeleteSeq, Peer: 1, Counter: 20, Lamport: 30, Pos: 7, Len: 4}
+	for _, c := range []struct {
+		name    string
+		span    DeleteSpan
+		want    DeleteSpan
+		wantPos int64
+	}{
+		{"forwards", DeleteSpan{Peer: 9, Counter: 10, Len: 4}, DeleteSpan{Peer: 9, Counter: 12, Len: 2}, 7},
+		{"backwards", DeleteSpan{Peer: 9, Counter: 10, Len: -4}, DeleteSpan{Peer: 9, Counter: 10, Len: -2}, 5},
+	} {
+		op := base
+		op.Value = c.span
+		got, ok := clipOp(op, idRange{start: 20, end: 24}, idRange{start: 22, end: 24})
+		if !ok {
+			t.Fatalf("%s: delete was not sliced", c.name)
+		}
+		if got.Value != c.want || got.Pos != c.wantPos || got.Counter != 22 || got.Lamport != 32 || got.Len != 2 {
+			t.Errorf("%s: got span %+v pos %d counter %d lamport %d len %d; want span %+v pos %d counter 22 lamport 32 len 2",
+				c.name, got.Value, got.Pos, got.Counter, got.Lamport, got.Len, c.want, c.wantPos)
+		}
+	}
+}
+
+// TestDeltaInsideAFullExportKeepsOrder merges a full export with a delta taken
+// from the middle of the same history. loro folds the history into one change,
+// so after deduplication the full copy holds "ab" and "ef" with a gap where
+// the delta's "cd" goes. "ef" was typed after "cd", so it can only be placed
+// once "cd" is in: replaying the full copy in one piece put "ef" first.
+func TestDeltaInsideAFullExportKeepsOrder(t *testing.T) {
+	delta := readFixture(t, "span_gap.delta.bin")
+	full := readFixture(t, "span_gap.full.bin")
+	want := expectedState(t, "span_gap.json")
+
+	for _, c := range []struct {
+		name  string
+		blobs [][]byte
+	}{
+		{"delta first", [][]byte{delta, full}},
+		{"full first", [][]byte{full, delta}},
+		{"full alone", [][]byte{full}},
+		{"repeated", [][]byte{delta, full, delta}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := mergedJSON(t, c.blobs...); got != want {

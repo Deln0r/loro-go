@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 )
@@ -50,9 +49,16 @@ func numFromF64(f float64) any {
 
 // MergeState reconstructs document state with CRDT semantics, so it is correct
 // for CONCURRENT / multi-peer histories (unlike BuildState which applies in
-// order). Map containers resolve by last-writer-wins on (lamport, peer); Text
-// and List containers replay inserts into a tree parented by left origin and
-// walk it pre-order.
+// order). Map containers resolve by last-writer-wins on (lamport, peer); Text,
+// List and MovableList inserts go into a tree parented by left origin, walked
+// pre-order; Tree replays moves with cycle-closing ones skipped.
+//
+// An insert records only a position: the index in the sequence as its author
+// saw it. So each one is resolved against that view, the elements in the op's
+// causal past (the closure of its change's deps, plus the author's own earlier
+// atoms) minus those removed by a delete atom inside that past, with the two
+// anchors a rich-text mark adds taking positions like characters. The left
+// origin is the element just before the position in that view.
 //
 // Siblings under one origin order NEWEST FIRST: descending lamport, with an
 // equal lamport meaning the two inserts were concurrent and broken by ascending
@@ -72,15 +78,29 @@ func numFromF64(f float64) any {
 // All 52 fixtures passed in every one of those four states, because a fixture
 // that only appends cannot tell the rules apart.
 //
-// Simplifications (honest limits): left-origin is resolved as the element at
-// position-1 in a view built from the inserting peer's OWN earlier edits. Edits
-// it had imported from other peers are not in that view, so an insert made
-// after a sync can take the wrong neighbour; TestPostSyncEdits pins that gap.
-// Fugue's right origin is not recorded, so the non-interleaving guarantee for
-// concurrent multi-element inserts at the same position is not fully general.
-// Deletes are applied as id-addressed tombstones; moves are handled for
-// MovableList and Tree.
+// MergeState assumes the changes it is given are causally closed: every dep
+// is either among them or absent from all of them. A missing change is not an
+// error, but positions that counted its elements cannot be resolved, and such
+// an insert lands at the front.
+//
+// Cost: an op made with everything already merged in view (one peer typing,
+// or a peer editing after a sync) resolves at the nearer end of the merged
+// sequence. An op made concurrently with edits already merged is resolved by
+// scanning it, so long concurrent branches cost time proportional to the
+// product of their sizes; past seqWorkLimit steps MergeState returns an error.
+//
+// Honest limits: Fugue's right origin is not recorded, so the non-interleaving
+// guarantee for concurrent multi-element inserts at the same position is not
+// fully general. MovableList positions are resolved without its moves, and
+// moves are then applied by index, which is wrong for an insert made after a
+// move.
 func MergeState(u *Updates) (map[string]any, error) {
+	return mergeState(u, seqWorkLimit)
+}
+
+// mergeState is MergeState with the sequence merge's step limit as a
+// parameter, so a test can reach it without a huge input.
+func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 	type cinfo struct {
 		kind   change.ContainerType
 		isRoot bool
@@ -114,7 +134,18 @@ func MergeState(u *Updates) (map[string]any, error) {
 	}
 	consumed := map[spanKey][]idRange{}
 
-	for _, ch := range u.Changes {
+	// Every change as it arrived, with the ops that were new in it: the
+	// sequence merge needs to know which change an op came from, since that
+	// change's deps say what its author had seen.
+	copies := make([]*seqChange, len(u.Changes))
+	var units []*seqChange
+	for i := range u.Changes {
+		ch := &u.Changes[i]
+		sc := &seqChange{ch: ch, start: ch.ID.Counter, end: ch.ID.Counter}
+		for _, op := range ch.Ops {
+			sc.end += atomCount(op)
+		}
+		copies[i] = sc
 		for _, op := range ch.Ops {
 			key := spanKey{peer: op.Peer, container: op.Container, kind: op.VKind}
 			span := idRange{start: op.Counter, end: op.Counter + atomCount(op)}
@@ -137,15 +168,24 @@ func MergeState(u *Updates) (map[string]any, error) {
 					// The value cannot be sliced, so the op is all-or-nothing.
 					// It reaches here only when some part of it is new.
 					ci.ops = append(ci.ops, op)
+					sc.fresh = append(sc.fresh, op)
 					break
 				}
 				ci.ops = append(ci.ops, clipped)
+				sc.fresh = append(sc.fresh, clipped)
 			}
 		}
+		if len(sc.fresh) > 0 {
+			units = append(units, sc)
+		}
+	}
+	seqs, err := mergeSequences(copies, units, &seqWork{limit: seqLimit})
+	if err != nil {
+		return nil, err
 	}
 
 	// buildOne reconstructs a single non-tree container's value.
-	buildOne := func(ci *cinfo) (any, error) {
+	buildOne := func(name string, ci *cinfo) (any, error) {
 		switch ci.kind {
 		case change.CMap:
 			ops := sortedOps(ci.ops)
@@ -159,18 +199,20 @@ func MergeState(u *Updates) (map[string]any, error) {
 			}
 			return m, nil
 		case change.CText:
-			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKStr), true), deleteSpans(ci.ops))
-			var sb strings.Builder
-			for _, e := range seq {
-				sb.WriteString(e.value.(string))
+			if s := seqs[name]; s != nil {
+				return s.text(), nil
 			}
-			return sb.String(), nil
+			return "", nil
 		case change.CList:
-			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false), deleteSpans(ci.ops))
-			return seqValues(seq), nil
+			if s := seqs[name]; s != nil {
+				return s.values(), nil
+			}
+			return []any{}, nil
 		case change.CMovableList:
-			seq := tombstone(mergeSeq(opsOfKind(ci.ops, change.VKLoroValue), false), deleteSpans(ci.ops))
-			lst := seqValues(seq)
+			lst := []any{}
+			if s := seqs[name]; s != nil {
+				lst = s.values()
+			}
 			for _, m := range sortedOps(opsOfKind(ci.ops, change.VKListMove)) {
 				lst = applyMove(lst, int(m.MoveFrom), int(m.Pos))
 			}
@@ -191,7 +233,7 @@ func MergeState(u *Updates) (map[string]any, error) {
 		if ci.kind == change.CTree {
 			continue
 		}
-		val, err := buildOne(ci)
+		val, err := buildOne(name, ci)
 		if err != nil {
 			return nil, err
 		}
@@ -223,58 +265,12 @@ func MergeState(u *Updates) (map[string]any, error) {
 	return state, nil
 }
 
-// deleteSpans collects the id spans removed by the container's DeleteSeq ops.
-func deleteSpans(ops []Op) []DeleteSpan {
-	var out []DeleteSpan
-	for _, op := range ops {
-		if op.VKind != change.VKDeleteSeq {
-			continue
-		}
-		if d, ok := op.Value.(DeleteSpan); ok {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// tombstone drops sequence elements whose id falls inside any delete span.
-// Deletes are id-addressed, so this is order-independent and correct under
-// concurrent insert/delete (a delete never touches elements it has not seen).
-func tombstone(seq []elem, spans []DeleteSpan) []elem {
-	if len(spans) == 0 {
-		return seq
-	}
-	out := seq[:0]
-	for _, e := range seq {
-		dead := false
-		for _, d := range spans {
-			start, n := d.Normalize()
-			if e.peer == d.Peer && e.counter >= start && e.counter < start+n {
-				dead = true
-				break
-			}
-		}
-		if !dead {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
 func opsOfKind(ops []Op, vk change.ValueKind) []Op {
 	var out []Op
 	for _, op := range ops {
 		if op.VKind == vk {
 			out = append(out, op)
 		}
-	}
-	return out
-}
-
-func seqValues(seq []elem) []any {
-	out := make([]any, len(seq))
-	for i, e := range seq {
-		out[i] = e.value
 	}
 	return out
 }
@@ -489,163 +485,6 @@ func sortedOps(ops []Op) []Op {
 	return out
 }
 
-// elem is one sequence element with its id, lamport, value, and left origin.
-type elem struct {
-	peer, leftPeer       uint64
-	counter, leftCounter int64
-	lamport              int64
-	value                any
-	hasLeft              bool
-}
-
-// siblingLess orders elements that share a left origin. RGA puts the causally
-// LATER insert first among siblings, so lamport descends; a tie means the two
-// were concurrent, and those are broken by ascending peer.
-func siblingLess(a, b elem) bool {
-	if a.lamport != b.lamport {
-		return a.lamport > b.lamport
-	}
-	if a.peer != b.peer {
-		return a.peer < b.peer
-	}
-	return a.counter > b.counter
-}
-
-// mergeSeq replays insert ops into a Fugue-style tree (each element's parent is
-// its left origin) and flattens it pre-order, ordering same-parent siblings by
-// ascending id. Building a tree (rather than flat skipping) keeps causal runs
-// contiguous, giving the non-interleaving property for concurrent multi-element
-// inserts. Left origin is resolved against the op's CAUSAL PAST (same-peer
-// earlier elements + explicit deps), not the global merged sequence, so a
-// position resolves to the element the author actually saw.
-// The left origin of an op is the element at the op's visible position-1 in the
-// author's causal view, i.e. flatten(same-peer earlier elements)[pos-1]. Rather
-// than re-flattening that projection per op (the old O(n^2) path), we keep each
-// peer's causal view in flatten order incrementally. Ops replay in counter order,
-// so every new element carries the highest id its peer has emitted; in Fugue it
-// therefore becomes the LAST child of its left origin and lands at the end of the
-// origin's subtree. That makes the insert an index lookup plus a splice, and a
-// plain append in the common growing-at-the-end case. The final flatten(all) and
-// the resulting element set are unchanged, so the merged output is identical to
-// the reference algorithm (asserted in TestMergeSeqMatchesReference).
-func mergeSeq(ops []Op, isText bool) []elem {
-	var all []elem
-	views := map[uint64][]elem{} // peer -> its causal view in flatten order
-	for _, op := range sortedOps(ops) {
-		items := expandItems(op, isText)
-		seq := views[op.Peer]
-		pos := int(op.Pos)
-		var lp uint64
-		var lc int64
-		hasLeft := false
-		if pos > 0 && pos-1 < len(seq) {
-			hasLeft = true
-			lp, lc = seq[pos-1].peer, seq[pos-1].counter
-		}
-		run := make([]elem, len(items))
-		for k := range items {
-			e := elem{
-				peer:    op.Peer,
-				counter: op.Counter + int64(k),
-				lamport: op.Lamport + int64(k),
-				value:   items[k],
-			}
-			if k == 0 {
-				e.hasLeft, e.leftPeer, e.leftCounter = hasLeft, lp, lc
-			} else {
-				e.hasLeft = true
-				e.leftPeer = op.Peer
-				e.leftCounter = op.Counter + int64(k-1)
-			}
-			run[k] = e
-		}
-		all = append(all, run...)
-		li := -1
-		if hasLeft {
-			li = pos - 1 // left origin sits at pos-1 in the peer's view
-		}
-		// The new run is causally the latest sibling of its left origin, and
-		// siblings order newest-first, so it goes IMMEDIATELY after the origin,
-		// in front of that origin's existing children. With no origin it is the
-		// newest root child and goes at the very front.
-		views[op.Peer] = spliceElems(seq, li+1, run)
-	}
-	return flatten(all)
-}
-
-// spliceElems inserts run into seq at index at, returning the new slice.
-func spliceElems(seq []elem, at int, run []elem) []elem {
-	if at >= len(seq) {
-		return append(seq, run...)
-	}
-	out := make([]elem, 0, len(seq)+len(run))
-	out = append(out, seq[:at]...)
-	out = append(out, run...)
-	out = append(out, seq[at:]...)
-	return out
-}
-
-type parentKey struct {
-	has     bool
-	peer    uint64
-	counter int64
-}
-
-// flatten orders elements as a pre-order DFS of the left-origin tree, with
-// same-parent siblings sorted by ascending id.
-func flatten(all []elem) []elem {
-	children := map[parentKey][]elem{}
-	for _, e := range all {
-		k := parentKey{e.hasLeft, e.leftPeer, e.leftCounter}
-		children[k] = append(children[k], e)
-	}
-	for k := range children {
-		cs := children[k]
-		sort.SliceStable(cs, func(i, j int) bool { return siblingLess(cs[i], cs[j]) })
-		children[k] = cs
-	}
-	// Each element is emitted once. Decoding already rejects the malformed
-	// inserts that produced colliding ids, but an element that names itself, or
-	// a descendant, as its left origin would otherwise recurse until the stack
-	// is gone and take the process with it, so the walk refuses to revisit.
-	type elemID struct {
-		peer    uint64
-		counter int64
-	}
-	seen := map[elemID]bool{}
-	var out []elem
-	var dfs func(p parentKey)
-	dfs = func(p parentKey) {
-		for _, e := range children[p] {
-			id := elemID{e.peer, e.counter}
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			out = append(out, e)
-			dfs(parentKey{true, e.peer, e.counter})
-		}
-	}
-	dfs(parentKey{has: false})
-	return out
-}
-
-func expandItems(op Op, isText bool) []any {
-	if isText {
-		s, _ := op.Value.(string)
-		r := []rune(s)
-		out := make([]any, len(r))
-		for i, c := range r {
-			out[i] = string(c)
-		}
-		return out
-	}
-	if lst, ok := op.Value.([]any); ok {
-		return lst
-	}
-	return nil
-}
-
 // idRange is a half-open counter range [start, end) belonging to one peer.
 type idRange struct{ start, end int64 }
 
@@ -722,6 +561,7 @@ func clipOp(op Op, span, keep idRange) (Op, bool) {
 	}
 	off := keep.start - span.start
 	n := keep.end - keep.start
+	shift := off // how far the kept part's position moves
 
 	switch v := op.Value.(type) {
 	case string:
@@ -735,15 +575,33 @@ func clipOp(op Op, span, keep idRange) (Op, bool) {
 			return op, false
 		}
 		op.Value = append([]any(nil), v[off:off+n]...)
+	case DeleteSpan:
+		// Atom k of a delete removes the k-th element of its span in deletion
+		// order. Kept atoms of a forward delete remove the span from off on,
+		// all at the op's position. A backwards delete removed its highest id
+		// first, one position further left each time, so its kept atoms remove
+		// the ids below the first off, starting off positions to the left.
+		start, total := v.Normalize()
+		if off < 0 || off+n > total {
+			return op, false
+		}
+		if v.Len >= 0 {
+			v.Counter, v.Len = start+off, n
+			shift = 0
+		} else {
+			v.Counter, v.Len = start+total-(off+n), -n
+			shift = -off
+		}
+		op.Value = v
 	default:
 		return op, false
 	}
 
-	// Trimming k atoms off the front moves the run's id, its lamport and the
-	// position it inserts at by the same k.
+	// Trimming k atoms off the front moves the op's id and its lamport by k.
+	// An insert's position moves by k too; a delete's as set above.
 	op.Counter += off
 	op.Lamport += off
-	op.Pos += off
+	op.Pos += shift
 	op.Len = n
 	return op, true
 }

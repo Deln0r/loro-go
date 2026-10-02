@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Deln0r/loro-go/encoding/change"
 )
 
 // corpusInput reads the single []byte argument out of a go fuzz corpus file.
@@ -44,18 +46,108 @@ func TestInsertLengthMismatchIsRejected(t *testing.T) {
 	}
 }
 
-// TestFlattenSurvivesCollidingIDs checks the guard beneath that rejection.
-// Two elements share the id 1@1, and the second names 1@1 as its left origin,
-// which is the shape the malformed inserts produced. The walk must emit each
-// id once and stop, not recurse through the collision forever.
-func TestFlattenSurvivesCollidingIDs(t *testing.T) {
-	all := []elem{
-		{peer: 1, counter: 0, lamport: 0, value: "a"},
-		{peer: 1, counter: 1, lamport: 1, value: "b", hasLeft: true, leftPeer: 1, leftCounter: 0},
-		{peer: 1, counter: 1, lamport: 2, value: "c", hasLeft: true, leftPeer: 1, leftCounter: 1},
+// TestSequenceMergeSurvivesCollidingIDs checks the merge beneath that
+// rejection. A text insert and a mark built by hand claim the same ids, the
+// shape the malformed inserts produced; the merge places elements by scanning
+// what it has already merged, so a collision can only misplace text, never
+// send it into a loop.
+func TestSequenceMergeSurvivesCollidingIDs(t *testing.T) {
+	text := func(counter, lamport, pos int64, s string) Op {
+		return Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr,
+			Pos: pos, Value: s, Len: int64(len(s)), Peer: 1, Counter: counter, Lamport: lamport}
 	}
-	out := flatten(all)
-	if len(out) != 2 {
-		t.Fatalf("flatten emitted %d elements, want the 2 distinct ids", len(out))
+	mark := Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKMarkStart,
+		Pos: 1, Value: MarkInfo{Start: 1, Len: 1}, Len: 1, Peer: 1, Counter: 1, Lamport: 2}
+	u := &Updates{Changes: []Change{
+		{ID: ID{Peer: 1, Counter: 0}, Ops: []Op{text(0, 0, 0, "ab"), mark, text(1, 3, 1, "c")}},
+	}}
+	if _, err := MergeState(u); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+}
+
+// TestSequenceMergeRejectsForwardDeps refuses a change that depends on an op
+// whose lamport is not below its own. loro gives every change a lamport above
+// all it depends on, so such a dep is forward or circular, and a merge that
+// took it as history could resolve positions against ops not yet made.
+func TestSequenceMergeRejectsForwardDeps(t *testing.T) {
+	ins := func(peer uint64, lamport int64) Op {
+		return Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr,
+			Value: "x", Len: 1, Peer: peer, Lamport: lamport}
+	}
+	u := &Updates{Changes: []Change{
+		{ID: ID{Peer: 1}, Lamport: 5, Deps: []ID{{Peer: 2}}, Ops: []Op{ins(1, 5)}},
+		{ID: ID{Peer: 2}, Lamport: 5, Deps: []ID{{Peer: 1}}, Ops: []Op{ins(2, 5)}},
+	}}
+	_, err := MergeState(u)
+	if err == nil || !strings.Contains(err.Error(), "depends on") {
+		t.Fatalf("circular deps merged: err = %v", err)
+	}
+}
+
+// TestHugeDeleteSpanIsCheap feeds the merge a delete whose span claims two
+// billion ids. Its cost has to follow the elements that exist, not the length
+// the input declares.
+func TestHugeDeleteSpanIsCheap(t *testing.T) {
+	ops := []Op{
+		{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr, Value: "abc", Len: 3, Peer: 1},
+		{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKDeleteSeq,
+			Value: DeleteSpan{Peer: 1, Counter: 1, Len: 1 << 31}, Len: 1 << 31, Peer: 1, Counter: 3, Lamport: 3},
+	}
+	u := &Updates{Changes: []Change{{ID: ID{Peer: 1}, Ops: ops}}}
+	state, err := mergeState(u, 1000)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if state["t"] != "a" {
+		t.Fatalf("t = %q, want %q", state["t"], "a")
+	}
+}
+
+// TestSequenceMergeStopsAtItsStepLimit runs two branches that never synced
+// under a small step limit. Every op is concurrent with the other branch and
+// is resolved by a scan, so the limit is reached and the merge says so instead
+// of running on.
+func TestSequenceMergeStopsAtItsStepLimit(t *testing.T) {
+	var changes []Change
+	for peer := uint64(1); peer <= 2; peer++ {
+		for i := int64(0); i < 200; i++ {
+			ch := Change{ID: ID{Peer: peer, Counter: i}, Lamport: i}
+			if i > 0 {
+				ch.Deps = []ID{{Peer: peer, Counter: i - 1}}
+			}
+			ch.Ops = []Op{{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr,
+				Pos: i, Value: "x", Len: 1, Peer: peer, Counter: i, Lamport: i}}
+			changes = append(changes, ch)
+		}
+	}
+	u := &Updates{Changes: changes}
+	if _, err := mergeState(u, seqWorkLimit); err != nil {
+		t.Fatalf("within the real limit: %v", err)
+	}
+	if _, err := mergeState(u, 10000); err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("under a 10000-step limit: err = %v", err)
+	}
+}
+
+// TestManyDeletesOfOneElementStayLinear sends one element a hundred thousand
+// separate deletes. Each delete records its atom on the element, so the cost
+// has to stay one step per delete: checking the element's earlier deletes
+// first, as an earlier draft did, made this quadratic, five billion
+// comparisons for an input of a few hundred kilobytes.
+func TestManyDeletesOfOneElementStayLinear(t *testing.T) {
+	const n = 100000
+	ops := []Op{{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr, Value: "x", Len: 1, Peer: 1}}
+	for i := int64(1); i <= n; i++ {
+		ops = append(ops, Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKDeleteSeq,
+			Value: DeleteSpan{Peer: 1, Counter: 0, Len: 1}, Len: 1, Peer: 1, Counter: i, Lamport: i})
+	}
+	u := &Updates{Changes: []Change{{ID: ID{Peer: 1}, Ops: ops}}}
+	state, err := mergeState(u, 8*n)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if state["t"] != "" {
+		t.Fatalf("t = %q, want empty", state["t"])
 	}
 }

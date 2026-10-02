@@ -769,3 +769,50 @@ function emitDoc(name, doc) {
   b.import(a.export({ mode: "update" }));
   emitDoc("insert_after_foreign_mark", a);
 }
+
+// The same backwards delete in two overlapping exports. Two backspaces, an
+// export, two more backspaces: loro folds all four into one delete op, so the
+// later export repeats the first two atoms inside a longer op. Merging both
+// has to slice that op down to its new atoms, or apply nothing twice.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(4n);
+  doc.getText("t").insert(0, "abcdef");
+  doc.commit();
+  doc.getText("t").delete(5, 1);
+  doc.getText("t").delete(4, 1);
+  doc.commit();
+  const early = doc.export({ mode: "update" });
+  doc.getText("t").delete(3, 1);
+  doc.getText("t").delete(2, 1);
+  doc.commit();
+  const late = doc.export({ mode: "update" });
+  writeFileSync(join(outDir, "span_delete_overlap.early.bin"), Buffer.from(early));
+  writeFileSync(join(outDir, "span_delete_overlap.late.bin"), Buffer.from(late));
+  writeFileSync(join(outDir, "span_delete_overlap.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  const ops = (b) => { const d = new LoroDoc(); d.import(b); return d.exportJsonUpdates().changes.flatMap((c) => c.ops.map((o) => `${o.counter}:${JSON.stringify(o.content)}`)); };
+  console.log(`span_delete_overlap: early=${ops(early).join(" ")} late=${ops(late).join(" ")}`);
+}
+
+// A full export alongside a delta from the middle of it. "ab", a saved
+// version, "cd", a delta from that version, then "ef" and a full export. loro
+// folds the whole history into one change, so after deduplication the full
+// copy keeps only "ab" and "ef", with "cd" coming from the delta. "ef" was
+// typed after "cd" and can only be placed once "cd" is in.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(5n);
+  doc.getText("t").insert(0, "ab");
+  doc.commit();
+  const v = doc.version();
+  doc.getText("t").insert(2, "cd");
+  doc.commit();
+  const delta = doc.export({ mode: "update", from: v });
+  doc.getText("t").insert(4, "ef");
+  doc.commit();
+  const full = doc.export({ mode: "update" });
+  writeFileSync(join(outDir, "span_gap.delta.bin"), Buffer.from(delta));
+  writeFileSync(join(outDir, "span_gap.full.bin"), Buffer.from(full));
+  writeFileSync(join(outDir, "span_gap.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
+  console.log(`span_gap: delta=${delta.length}B full=${full.length}B merged=${JSON.stringify(doc.toJSON())}`);
+}

@@ -223,3 +223,79 @@ func refRender(seq []elem, isText bool) any {
 	}
 	return out
 }
+
+// elem is one element of the reference's sequence, with its left origin.
+type elem struct {
+	peer, leftPeer       uint64
+	counter, leftCounter int64
+	lamport              int64
+	value                any
+	hasLeft              bool
+}
+
+// siblingLess orders elements that share a left origin: the causally later
+// insert first (lamport descending), concurrent ones by ascending peer.
+func siblingLess(a, b elem) bool {
+	if a.lamport != b.lamport {
+		return a.lamport > b.lamport
+	}
+	if a.peer != b.peer {
+		return a.peer < b.peer
+	}
+	return a.counter > b.counter
+}
+
+type parentKey struct {
+	has     bool
+	peer    uint64
+	counter int64
+}
+
+// flatten orders elements as a pre-order walk of the left-origin tree, each id
+// emitted once.
+func flatten(all []elem) []elem {
+	children := map[parentKey][]elem{}
+	for _, e := range all {
+		k := parentKey{e.hasLeft, e.leftPeer, e.leftCounter}
+		children[k] = append(children[k], e)
+	}
+	for k := range children {
+		cs := children[k]
+		sort.SliceStable(cs, func(i, j int) bool { return siblingLess(cs[i], cs[j]) })
+	}
+	type elemID struct {
+		peer    uint64
+		counter int64
+	}
+	seen := map[elemID]bool{}
+	var out []elem
+	var dfs func(p parentKey)
+	dfs = func(p parentKey) {
+		for _, e := range children[p] {
+			id := elemID{e.peer, e.counter}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, e)
+			dfs(parentKey{true, e.peer, e.counter})
+		}
+	}
+	dfs(parentKey{has: false})
+	return out
+}
+
+// expandItems splits an insert's value into its atoms: runes for Text, items
+// for List.
+func expandItems(op Op, isText bool) []any {
+	if isText {
+		s, _ := op.Value.(string)
+		var out []any
+		for _, c := range s {
+			out = append(out, string(c))
+		}
+		return out
+	}
+	lst, _ := op.Value.([]any)
+	return lst
+}

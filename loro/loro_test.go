@@ -99,6 +99,11 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		"tree_move_once", "tree_move_twice", "tree_delete_subtree", "tree_crossing_moves",
 		"tree_rejected_stays", "tree_sibling_tie", "tree_delete_vs_move", "tree_one_change",
 		"delete_backwards",
+		// Inserts made after a sync, after a delete, and after a mark: each
+		// position counts what its author had seen and nothing else.
+		"post_merge_edits", "insert_after_delete", "insert_after_foreign_delete",
+		"insert_concurrent_with_delete", "delete_split_by_dep",
+		"insert_after_mark", "insert_after_foreign_mark",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

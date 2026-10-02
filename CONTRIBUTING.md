@@ -92,6 +92,12 @@ Two invariants hold for `loro.MergeState` and any code feeding it:
 
 Both are pinned in `loro/idempotence_test.go`. If you change the merge path, keep them.
 
+A third holds for Text, List and MovableList:
+
+- **Positions mean what the author saw.** An insert records only an index, so it is resolved against its author's view: the elements in its causal past (the closure of its change's deps, plus the author's own earlier atoms), minus those removed by a delete atom inside that past, with rich-text mark anchors taking positions.
+
+`loro/causal_ref_test.go` is a brute-force reference for that rule, sharing no code with the merge. `TestCausalRefMatchesLoro` holds the reference to loro-crdt on every fixture, and `TestMergeMatchesCausalReference` holds the merge to the reference on random multi-peer histories. If you change the sequence merge, keep both passing.
+
 ## Fuzzing
 
 The decoders parse fully untrusted bytes, so they are fuzzed below the checksum layer (a malicious peer can recompute a valid checksum, so the deep decoders must be robust on their own). `FuzzDecodeUpdates` and `FuzzDecodeSnapshot` start above it, so they recompute the header checksum over the mutated bytes before decoding; without that every mutation fails the checksum and nothing below it is ever reached, which is how a stack overflow in tree reconstruction went unfound. Do the same in any new target that starts from a whole blob. To run a target:

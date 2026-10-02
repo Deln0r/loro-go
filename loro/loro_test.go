@@ -33,7 +33,7 @@ func normalize(v any) any {
 
 func TestBuildStateMatchesToJSON(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del"} {
+	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del", "delete_backwards"} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {
 			t.Fatalf("fixture %s missing: %v", name, err)
@@ -63,7 +63,7 @@ func TestBuildStateMatchesToJSON(t *testing.T) {
 
 func TestDecodeSnapshotMatchesToJSON(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del"} {
+	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del", "delete_backwards"} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".snapshot.bin"))
 		if err != nil {
 			t.Fatalf("fixture %s missing: %v", name, err)
@@ -98,6 +98,7 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		"conc_text", "conc_map", "conc_list", "conc_text2", "conc_list2", "richtext", "mlist", "tree_simple", "tree_meta", "tree_wide", "text_del", "list_del", "map_del", "two_changes", "cross_del", "rt_one", "rt_two", "rt_overlap", "counter", "unicode_text", "map_mixed", "text_cjk_del",
 		"tree_move_once", "tree_move_twice", "tree_delete_subtree", "tree_crossing_moves",
 		"tree_rejected_stays", "tree_sibling_tie", "tree_delete_vs_move", "tree_one_change",
+		"delete_backwards",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

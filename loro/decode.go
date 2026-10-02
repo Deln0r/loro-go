@@ -6,6 +6,7 @@ package loro
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -63,20 +64,22 @@ type Op struct {
 }
 
 // DeleteSpan is the id range a text/list delete op removes: elements with the
-// same peer and counters [Counter, Counter+Len) (Len may be negative for
-// reverse deletion; Normalize resolves it).
+// same peer and counters [Counter, Counter+|Len|). Counter is the LOWEST id in
+// the range whichever way the delete ran; a negative Len records that the
+// elements were removed backwards, highest id first, which is what two
+// backspaces in a row produce once loro folds them into one op.
 type DeleteSpan struct {
 	Peer    uint64
 	Counter int64
 	Len     int64
 }
 
-// Normalize returns the span as (first counter, count >= 0).
+// Normalize returns the span as (lowest counter, count >= 0).
 func (d DeleteSpan) Normalize() (start, n int64) {
 	if d.Len >= 0 {
 		return d.Counter, d.Len
 	}
-	return d.Counter + d.Len + 1, -d.Len
+	return d.Counter, -d.Len
 }
 
 // TreeNode is a decoded Tree create/move op target.
@@ -292,7 +295,11 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			if d.PeerIdx < 0 || int(d.PeerIdx) >= len(hdr.Peers) {
 				return nil, fmt.Errorf("loro: delete peer index %d out of range", d.PeerIdx)
 			}
-			op.Value = DeleteSpan{Peer: hdr.Peers[d.PeerIdx], Counter: d.Counter, Len: d.Len}
+			span := DeleteSpan{Peer: hdr.Peers[d.PeerIdx], Counter: d.Counter, Len: d.Len}
+			if err := checkDeleteSpan(op, span); err != nil {
+				return nil, err
+			}
+			op.Value = span
 		}
 		if c.Kind == change.CMap {
 			if p := ops.Prop[i]; p >= 0 && int(p) < len(keys) {
@@ -319,6 +326,21 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		changes[chIdx].Ops = append(changes[chIdx].Ops, op)
 	}
 	return changes, nil
+}
+
+// checkDeleteSpan rejects a delete whose span cannot be real: counters outside
+// loro's i32 range, an end that overflows, or a span that removes a different
+// number of elements than the op has atoms. Each atom of a delete removes
+// exactly one element; loro never writes the two counts out of step.
+func checkDeleteSpan(op Op, d DeleteSpan) error {
+	start, n := d.Normalize()
+	if start < 0 || n < 0 || start > math.MaxInt32 || n > math.MaxInt32+1-start {
+		return fmt.Errorf("loro: delete %d@%d spans counters %d..%d", op.Counter, op.Peer, start, start+n)
+	}
+	if n != op.Len {
+		return fmt.Errorf("loro: delete %d@%d has length %d but its span removes %d", op.Counter, op.Peer, op.Len, n)
+	}
+	return nil
 }
 
 // checkInsertAtoms rejects a sequence insert whose value holds a different

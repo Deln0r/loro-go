@@ -622,3 +622,23 @@ function emitDoc(name, doc) {
   a.import(b.export({ mode: "update" }));
   emitDoc("post_merge_edits", a);
 }
+
+// Two backspaces in a row. loro folds them into one delete whose span starts at
+// the LOWEST id it removes and runs backwards: start 1@peer, length -2, removing
+// "b" and "c". Reading the span downwards from its start removes "a" and "b".
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  doc.getText("t").insert(0, "abcd");
+  for (const [i, v] of ["a", "b", "c", "d"].entries()) doc.getList("l").insert(i, v);
+  doc.commit();
+  doc.getText("t").delete(2, 1);
+  doc.commit();
+  doc.getText("t").delete(1, 1);
+  doc.commit();
+  doc.getList("l").delete(2, 1);
+  doc.commit();
+  doc.getList("l").delete(1, 1);
+  doc.commit();
+  emitDoc("delete_backwards", doc);
+}

@@ -19,7 +19,8 @@ func BuildState(u *Updates) (map[string]any, error) {
 			case change.CText:
 				cur, _ := state[op.Container].(string)
 				if op.VKind == change.VKDeleteSeq {
-					state[op.Container] = deleteString(cur, int(op.Pos), int(op.Len))
+					from, n := deleteRange(op)
+					state[op.Container] = deleteString(cur, from, n)
 					continue
 				}
 				ins, ok := op.Value.(string)
@@ -41,7 +42,8 @@ func BuildState(u *Updates) (map[string]any, error) {
 			case change.CList:
 				cur, _ := state[op.Container].([]any)
 				if op.VKind == change.VKDeleteSeq {
-					state[op.Container] = deleteList(cur, int(op.Pos), int(op.Len))
+					from, n := deleteRange(op)
+					state[op.Container] = deleteList(cur, from, n)
 					continue
 				}
 				elems, ok := op.Value.([]any)
@@ -68,6 +70,17 @@ func BuildState(u *Updates) (map[string]any, error) {
 		}
 	}
 	return state, nil
+}
+
+// deleteRange returns where a positional delete starts and how many elements
+// it removes. A delete that ran backwards (negative span length, two
+// backspaces folded into one op) is recorded at the position of the LAST
+// element it removed, so it covers [pos-n+1, pos+1).
+func deleteRange(op Op) (from, n int) {
+	if d, ok := op.Value.(DeleteSpan); ok && d.Len < 0 {
+		return int(op.Pos + d.Len + 1), int(-d.Len)
+	}
+	return int(op.Pos), int(op.Len)
 }
 
 // insertString inserts ins at rune position pos.

@@ -91,7 +91,9 @@ func numFromF64(f float64) any {
 //
 // Honest limits: Fugue's right origin is not recorded, so the non-interleaving
 // guarantee for concurrent multi-element inserts at the same position is not
-// fully general. MovableList positions are resolved without its moves, and
+// fully general. A delete is applied by its recorded ids where loro applies it
+// by position, so a delete that loro-crdt's WASM build up to 1.16.3 wrote with
+// wrong ids (loro-dev/loro#1149) removes the wrong characters here. MovableList positions are resolved without its moves, and
 // moves are then applied by index, which is wrong for an insert made after a
 // move.
 func MergeState(u *Updates) (map[string]any, error) {

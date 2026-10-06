@@ -8,12 +8,12 @@ A pure-Go library for the [Loro](https://github.com/loro-dev/loro) CRDT wire for
 [![Go](https://img.shields.io/badge/go-1.26+-00ADD8.svg)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange)]()
-[![Byte-compat vs loro-crdt](https://img.shields.io/badge/byte--compat-loro--crdt%201.16.3-success)]()
+[![Byte-compat vs loro-crdt](https://img.shields.io/badge/byte--compat-loro--crdt%201.16.4-success)]()
 [![Codeberg mirror](https://img.shields.io/badge/mirror-codeberg.org-2185d0)](https://codeberg.org/Deln0r/loro-go)
 
 loro-go reads and writes the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) byte-for-byte, and reconstructs document state for Map, List, Text, MovableList, Tree and Counter containers. No cgo, single Go toolchain build.
 
-Bytes are verified against two independent ground truths: real `loro-crdt@1.16.3` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`, checked on every CI run. Upstream minors are re-checked against the committed fixtures; see [COMPAT.md](COMPAT.md) (1.16.3: byte-identical).
+Bytes are verified against two independent ground truths: real `loro-crdt@1.16.4` exports, and the `serde_columnar@0.3.14` crate (golden column vectors emitted by a small Rust harness). A blob produced by loro-go imports cleanly into the canonical `loro-crdt` JavaScript package with matching `toJSON()`, checked on every CI run. Upstream minors are re-checked against the committed fixtures; see [COMPAT.md](COMPAT.md) (1.16.4: byte-identical).
 
 loro-go is listed in the official [Loro documentation](https://loro.dev/docs/tutorial/get_started) as the pure-Go community implementation.
 
@@ -86,6 +86,7 @@ homeserver on every push. It is a separate Go module, so this library's own
 
 ## Not yet
 
+- Text deletes written by loro-crdt's WASM build up to 1.16.3 with wrong ids (loro-dev/loro#1149). Such a delete names characters next to the ones deleted when an emoji or other astral character ends one of the inserts it spans. loro applies a delete by its position and is unaffected; this library applies it by its ids and removes the wrong characters. Reading by position needs the concurrent order above to match first.
 - Fast merging of long concurrent branches. An edit made with everything already merged in view (typing, or editing after a sync) resolves at once; one made concurrently with edits already merged is resolved by scanning the merged sequence. Two peers that each made thousands of changes offline therefore cost time proportional to the product of the two, and past 2^28 steps `MergeState` returns an error rather than run on.
 - MovableList inserts made after a move. Positions are resolved without the moves, so `[a,b,c]`, then moving `c` to the front, then inserting `X` at 1 gives `[b,a,X,c]` where loro gives `[c,X,a,b]`.
 - Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range

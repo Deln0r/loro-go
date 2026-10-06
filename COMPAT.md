@@ -179,3 +179,39 @@ pairs. The pin moved to `1.16.3` (Dependabot #18).
 1.16.3 makes inserting a container that belongs to another document a
 recoverable error in the JavaScript binding.
 
+
+## loro-crdt 1.16.4 (checked 2026-10-06)
+
+**Result: Fast wire format unchanged.** All 183 fixture files were rewritten
+by the generator under 1.16.4 and none differ. The pin moved to `1.16.4`
+(Dependabot #19).
+
+What in 1.16.4 touches a reader of these bytes:
+
+- **Deletes with wrong ids in existing histories (loro-dev/loro#1149).** The
+  WASM build up to 1.16.3 could record a wrong `start_id` for a text delete
+  that spans text from separate inserts when an astral character ends one of
+  them. 1.16.4 writes correct ids for new ops; histories written before keep
+  the wrong ones. loro's own import applies a delete by its position in the
+  author's version (`diff_calc.rs`), so it is unaffected. This library applies
+  a delete by its id span, so it removes the wrong characters:
+  `testdata/fixtures/frozen/delete_astral_ids_1163`, written by 1.16.3, gives
+  `"x!"` here where loro gives `"b!"`. Reading deletes by position needs the
+  merged order of concurrent inserts to match loro's first; until then the id
+  span is the more reliable of the two, and the README lists the gap.
+- **Hard limit on sequence positions.** loro now rejects insert, delete and
+  move positions of 1 073 741 822 or more in a List, MovableList or Text op at
+  decode. This library does not reject them; such a position resolves to no
+  element.
+- **Reused op ids.** loro now refuses an import that reuses op ids for different
+  content (two clients sharing a peer id), and one whose change skips counters
+  of its peer. This library keeps the first copy of an id range it sees and
+  merges a change that skips counters as a partial history.
+- **Empty root containers.** A root container touched by a history now stays
+  in the value after a replay even when its ops cancel out (`{"t": ""}`), as it
+  already did for the writing peer. `MergeState` lists every root container an
+  op touches, so it agrees.
+- The rest is runtime behaviour outside the Fast format: `applyDiff`,
+  `revertTo` and undo made all-or-nothing, unknown container types, shallow
+  snapshot re-export, movable-list `move`/`set` validation, and two rich-text
+  fixes that change where new ops are recorded, not how old ones read.

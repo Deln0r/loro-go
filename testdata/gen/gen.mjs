@@ -816,3 +816,101 @@ function emitDoc(name, doc) {
   writeFileSync(join(outDir, "span_gap.json"), JSON.stringify(doc.toJSON(), null, 2) + "\n");
   console.log(`span_gap: delta=${delta.length}B full=${full.length}B merged=${JSON.stringify(doc.toJSON())}`);
 }
+
+// Acceptance corpora for the sequence merge. Random histories with loro-crdt's
+// own toJSON as the answer: inserts anywhere (astral and other multi-byte
+// characters included), deletes forwards and backwards (backspace runs that
+// loro folds into one op), marks over text, and list edits. The single-peer
+// corpus has one author; in the concurrent one, two or three peers edit their
+// own replicas and now and then import another's, so edits land after syncs
+// and alongside each other.
+{
+  const rng = (seed) => { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; };
+  const alphabet = ["a", "b", "c", "d", "e", "😀", "é", "中"];
+  const points = (s) => Array.from(s);
+  // The JS API counts positions in UTF-16 units; pick them on character boundaries.
+  const u16 = (s, k) => points(s).slice(0, k).join("").length;
+  const editOnce = (doc, r) => {
+    const t = doc.getText("t");
+    const l = doc.getList("l");
+    const s = t.toString();
+    const n = points(s).length;
+    const pick = r();
+    if (pick < 0.4 || n === 0) {
+      const k = Math.floor(r() * (n + 1));
+      let ins = "";
+      for (let j = 1 + Math.floor(r() * 3); j > 0; j--) ins += alphabet[Math.floor(r() * alphabet.length)];
+      t.insert(u16(s, k), ins);
+    } else if (pick < 0.6) {
+      const k = Math.floor(r() * n);
+      const m = 1 + Math.floor(r() * Math.min(3, n - k));
+      t.delete(u16(s, k), u16(s, k + m) - u16(s, k));
+    } else if (pick < 0.72) {
+      // A backspace run: one character at a time, leftwards.
+      let k = 1 + Math.floor(r() * n);
+      for (let j = 1 + Math.floor(r() * 3); j > 0 && k > 0; j--, k--) {
+        const cur = t.toString();
+        t.delete(u16(cur, k - 1), u16(cur, k) - u16(cur, k - 1));
+      }
+    } else if (pick < 0.82) {
+      const a = Math.floor(r() * n);
+      const b = a + 1 + Math.floor(r() * (n - a));
+      t.mark({ start: u16(s, a), end: u16(s, b) }, r() < 0.5 ? "bold" : "italic", true);
+    } else if (pick < 0.92 || l.length === 0) {
+      l.insert(Math.floor(r() * (l.length + 1)), Math.floor(r() * 100));
+    } else {
+      const k = Math.floor(r() * l.length);
+      l.delete(k, 1 + Math.floor(r() * Math.min(2, l.length - k)));
+    }
+  };
+  // The answer is what a replay of the exported bytes shows, which is what a
+  // reader of those bytes sees. The writing replica can differ: it lists a
+  // root container it merely opened, as "l": [], where a replay has nothing.
+  const record = (seed, doc) => {
+    const update = doc.export({ mode: "update" });
+    const replay = new LoroDoc();
+    replay.import(update);
+    return { seed, update: Buffer.from(update).toString("base64"), expected: replay.toJSON() };
+  };
+
+  const single = [];
+  for (let seed = 1; seed <= 300; seed++) {
+    const r = rng(seed * 7919);
+    const doc = new LoroDoc();
+    doc.setPeerId(1n);
+    for (let i = 3 + Math.floor(r() * 20); i > 0; i--) {
+      editOnce(doc, r);
+      if (r() < 0.5) doc.commit();
+    }
+    doc.commit();
+    single.push(record(seed, doc));
+  }
+  writeFileSync(join(outDir, "seq_single_corpus.json"), JSON.stringify(single, null, 1) + "\n");
+  console.log(`seq_single_corpus: ${single.length} histories`);
+
+  const concurrent = [];
+  for (let seed = 1; seed <= 300; seed++) {
+    const r = rng(seed * 104729);
+    const peers = [];
+    for (let p = 0; p < 2 + (seed % 2); p++) {
+      const doc = new LoroDoc();
+      doc.setPeerId(BigInt(p + 1));
+      peers.push(doc);
+    }
+    for (let i = 4 + Math.floor(r() * 24); i > 0; i--) {
+      const doc = peers[Math.floor(r() * peers.length)];
+      if (r() < 0.25) {
+        const other = peers[Math.floor(r() * peers.length)];
+        if (other !== doc) doc.import(other.export({ mode: "update" }));
+        continue;
+      }
+      editOnce(doc, r);
+      doc.commit();
+    }
+    const all = new LoroDoc();
+    for (const doc of peers) all.import(doc.export({ mode: "update" }));
+    concurrent.push(record(seed, all));
+  }
+  writeFileSync(join(outDir, "seq_concurrent_corpus.json"), JSON.stringify(concurrent, null, 1) + "\n");
+  console.log(`seq_concurrent_corpus: ${concurrent.length} histories`);
+}

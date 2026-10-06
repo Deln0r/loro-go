@@ -89,11 +89,13 @@ func numFromF64(f float64) any {
 // scanning it, so long concurrent branches cost time proportional to the
 // product of their sizes; past seqWorkLimit steps MergeState returns an error.
 //
-// Honest limits: Fugue's right origin is not recorded, so the non-interleaving
-// guarantee for concurrent multi-element inserts at the same position is not
-// fully general. A delete is applied by its recorded ids where loro applies it
-// by position, so a delete that loro-crdt's WASM build up to 1.16.3 wrote with
-// wrong ids (loro-dev/loro#1149) removes the wrong characters here. MovableList positions are resolved without its moves, and
+// Honest limits: concurrent inserts at the same place are ordered newest
+// first, where loro uses Fugue's rule (peer ids and the element to the right of
+// the insertion point); 185 of the 300 random concurrent histories in
+// testdata/fixtures/seq_concurrent_corpus.json come out as loro has them. A
+// delete is applied by its recorded ids where loro applies it by position, so
+// a delete that loro-crdt's WASM build up to 1.16.3 wrote with wrong ids
+// (loro-dev/loro#1149) removes the wrong characters here. MovableList positions are resolved without its moves, and
 // moves are then applied by index, which is wrong for an insert made after a
 // move.
 func MergeState(u *Updates) (map[string]any, error) {

@@ -45,9 +45,14 @@ jobs:
             target: FuzzDecompressFrame
     steps:
       - uses: actions/checkout@v7
+      # Fuzzing runs on Go 1.27, not on the go.mod minimum. Go 1.26's fuzzer can
+      # fail a run with "context deadline exceeded" at the moment -fuzztime ends,
+      # with no input at fault and nothing saved (golang/go#75804, fixed in 1.27
+      # and not backported to 1.26). The nightly hit it on FuzzBlobDecoders on
+      # 8 Oct 2026: four minutes at a steady rate, then that failure at 240s.
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: '1.27.x'
 
       - name: locate the fuzz corpus
         id: cache-dir

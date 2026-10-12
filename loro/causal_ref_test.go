@@ -92,7 +92,12 @@ type refAnchor struct{}
 // causalRefSeq is a brute-force reference for Text and List merge, kept as an
 // oracle for MergeState. Every insert resolves its position against a view
 // rebuilt from scratch: the elements in the op's causal past, in merged order,
-// minus those a delete in that past had removed. Rich-text style anchors take
+// minus those a delete in that past had removed. Concurrent inserts between the
+// same origins are placed by Fugue's rule as loro applies it, written here over
+// a plain list with linear searches and no shortcut for the common case.
+// Deletes are read by the ids they recorded. On a history whose ids are right
+// that names the same elements as the positions the merge reads, so the random
+// test also checks the merge's positional deletes against the ids. Rich-text style anchors take
 // positions like characters do. It returns the elements no delete removed,
 // anchors included; refRender gives the value a document shows. Quadratic or
 // worse; tests only. It assumes a clean, causally closed history with no
@@ -139,33 +144,31 @@ func causalRefSeq(changes []Change, container string, isText bool) []elem {
 	})
 	// deleted reports whether a delete atom inside version v (nil: every
 	// delete) removes e.
-	deleted := func(e elem, v refVV) bool {
+	deleted := func(e *elem, v refVV) bool {
 		for _, d := range deletes {
-			if id, ok := refDeleter(d.op, e); ok && (v == nil || v.has(id.Peer, id.Counter)) {
+			if id, ok := refDeleter(d.op, *e); ok && (v == nil || v.has(id.Peer, id.Counter)) {
 				return true
 			}
 		}
 		return false
 	}
 
-	var all []elem
+	// list is the merged sequence in document order, elements that deletes
+	// removed included, each with the origins its author saw.
+	var list []*elem
+	indexOf := func(e *elem) int {
+		for i, x := range list {
+			if x == e {
+				return i
+			}
+		}
+		return -1
+	}
 	// A mark start op adds its start anchor at Start and leaves the end anchor
 	// to the mark-end op that follows it, which carries no position of its own:
 	// the end goes at Start+Len+1, the +1 being the start anchor itself.
 	pendingEnd := map[ID]int{}
 	for _, in := range inserts {
-		var known []elem
-		for _, e := range all {
-			if in.past.has(e.peer, e.counter) {
-				known = append(known, e)
-			}
-		}
-		var view []elem
-		for _, e := range flatten(known) {
-			if !deleted(e, in.past) {
-				view = append(view, e)
-			}
-		}
 		op := in.op
 		pos := int(op.Pos)
 		var items []any
@@ -184,20 +187,89 @@ func causalRefSeq(changes []Change, container string, isText bool) []elem {
 		default:
 			items = expandItems(op, isText)
 		}
-		for k := range items {
-			e := elem{peer: op.Peer, counter: op.Counter + int64(k), lamport: op.Lamport + int64(k), value: items[k]}
-			if k > 0 {
-				e.hasLeft, e.leftPeer, e.leftCounter = true, op.Peer, op.Counter+int64(k-1)
-			} else if pos > 0 && pos <= len(view) {
-				e.hasLeft, e.leftPeer, e.leftCounter = true, view[pos-1].peer, view[pos-1].counter
-			}
-			all = append(all, e)
+		if len(items) == 0 {
+			continue
 		}
+		// The author's view, rebuilt from scratch: what it had seen and no
+		// delete it had seen removed.
+		var view []*elem
+		for _, e := range list {
+			if in.past.has(e.peer, e.counter) && !deleted(e, in.past) {
+				view = append(view, e)
+			}
+		}
+		var left *elem
+		if p := min(pos, len(view)); p > 0 {
+			left = view[p-1]
+		}
+		start := indexOf(left) + 1
+		end := start
+		for end < len(list) && !in.past.has(list[end].peer, list[end].counter) {
+			end++
+		}
+		var right *elem
+		if end < len(list) {
+			right = list[end]
+		}
+		// Fugue's placement among the concurrent elements list[start:end], as
+		// loro does it. rightParent is r's index when r's own left origin is the
+		// run's left origin, else -1, which sorts after any index.
+		rightParent := func(r *elem) int {
+			if r == nil || r.left != left {
+				return -1
+			}
+			return indexOf(r)
+		}
+		order := func(a, b int) int {
+			switch {
+			case a >= 0 && b >= 0:
+				return a - b
+			case a >= 0:
+				return -1
+			case b >= 0:
+				return 1
+			}
+			return 0
+		}
+		at, scanning := start, false
+		visited := map[*elem]bool{}
+		for i := start; i < end; i++ {
+			other := list[i]
+			if other.left != left && (other.left == nil || !visited[other.left]) {
+				break
+			}
+			visited[other] = true
+			if other.left == left {
+				if other.right == right {
+					if other.peer > op.Peer {
+						break
+					}
+					scanning = false
+				} else if c := order(rightParent(other.right), rightParent(right)); c < 0 {
+					scanning = true
+				} else if c == 0 && other.peer > op.Peer {
+					break
+				} else {
+					scanning = false
+				}
+			}
+			if !scanning {
+				at = i + 1
+			}
+		}
+		run := make([]*elem, len(items))
+		for k, v := range items {
+			run[k] = &elem{peer: op.Peer, counter: op.Counter + int64(k), value: v, left: left, right: right}
+			if k > 0 {
+				run[k].left = run[k-1]
+			}
+		}
+		list = append(list[:at], append(run, list[at:]...)...)
 	}
 	var out []elem
-	for _, e := range flatten(all) {
+	for _, e := range list {
 		if !deleted(e, nil) {
-			out = append(out, e)
+			out = append(out, *e)
 		}
 	}
 	return out
@@ -224,65 +296,13 @@ func refRender(seq []elem, isText bool) any {
 	return out
 }
 
-// elem is one element of the reference's sequence, with its left origin.
+// elem is one element of the reference's sequence, with the origins its
+// author saw on either side of it.
 type elem struct {
-	peer, leftPeer       uint64
-	counter, leftCounter int64
-	lamport              int64
-	value                any
-	hasLeft              bool
-}
-
-// siblingLess orders elements that share a left origin: the causally later
-// insert first (lamport descending), concurrent ones by ascending peer.
-func siblingLess(a, b elem) bool {
-	if a.lamport != b.lamport {
-		return a.lamport > b.lamport
-	}
-	if a.peer != b.peer {
-		return a.peer < b.peer
-	}
-	return a.counter > b.counter
-}
-
-type parentKey struct {
-	has     bool
-	peer    uint64
-	counter int64
-}
-
-// flatten orders elements as a pre-order walk of the left-origin tree, each id
-// emitted once.
-func flatten(all []elem) []elem {
-	children := map[parentKey][]elem{}
-	for _, e := range all {
-		k := parentKey{e.hasLeft, e.leftPeer, e.leftCounter}
-		children[k] = append(children[k], e)
-	}
-	for k := range children {
-		cs := children[k]
-		sort.SliceStable(cs, func(i, j int) bool { return siblingLess(cs[i], cs[j]) })
-	}
-	type elemID struct {
-		peer    uint64
-		counter int64
-	}
-	seen := map[elemID]bool{}
-	var out []elem
-	var dfs func(p parentKey)
-	dfs = func(p parentKey) {
-		for _, e := range children[p] {
-			id := elemID{e.peer, e.counter}
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			out = append(out, e)
-			dfs(parentKey{true, e.peer, e.counter})
-		}
-	}
-	dfs(parentKey{has: false})
-	return out
+	peer        uint64
+	counter     int64
+	value       any
+	left, right *elem
 }
 
 // expandItems splits an insert's value into its atoms: runes for Text, items

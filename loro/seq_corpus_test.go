@@ -76,30 +76,21 @@ func TestSingleCorpusAgainstLoro(t *testing.T) {
 	}
 }
 
-// concurrentMatched is how many concurrent-corpus histories match loro-crdt
-// today. The rest differ in how concurrent inserts at the same place are
-// ordered: this merge puts the newer one first, loro uses Fugue's rule, which
-// looks at peer ids and at the element to the right of the insertion point.
-// Three peers each putting one item into an empty list without seeing the
-// others come out by ascending peer in loro and newest first here. Raise the
-// number when a change makes more histories match; a drop is a regression.
-const concurrentMatched = 185
-
 // TestConcurrentCorpusAgainstLoro replays 300 random histories in which two or
-// three peers edit their own replicas and now and then import one another's.
+// three peers edit their own replicas and now and then import one another's,
+// so inserts land concurrently at the same place. All 300 must match loro-crdt.
+// Under the earlier rule, which put the newer of two concurrent inserts first,
+// 185 did: three peers that each put one item into an empty list came out
+// [29, 56, 83] where loro, ordering by Fugue's rule, gives [56, 29, 83].
 func TestConcurrentCorpusAgainstLoro(t *testing.T) {
 	corpus := loadCorpus(t, "seq_concurrent_corpus.json")
 	seeds, got, want := divergences(t, corpus)
-	matched := len(corpus) - len(seeds)
-	if matched < concurrentMatched {
-		for i := range seeds {
-			if i < 3 {
-				t.Logf("seed %d diverged:\n got  %s\n want %s", seeds[i], got[i], want[i])
-			}
+	for i := range seeds {
+		if i < 3 {
+			t.Errorf("seed %d diverged:\n got  %s\n want %s", seeds[i], got[i], want[i])
 		}
-		t.Fatalf("%d of %d concurrent histories match loro-crdt, down from %d", matched, len(corpus), concurrentMatched)
 	}
-	if matched > concurrentMatched {
-		t.Errorf("%d of %d concurrent histories match loro-crdt, up from %d: raise concurrentMatched", matched, len(corpus), concurrentMatched)
+	if len(seeds) > 0 {
+		t.Errorf("%d of %d concurrent histories diverge from loro-crdt", len(seeds), len(corpus))
 	}
 }

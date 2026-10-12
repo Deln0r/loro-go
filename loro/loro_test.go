@@ -103,7 +103,7 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		// position counts what its author had seen and nothing else.
 		"post_merge_edits", "insert_after_delete", "insert_after_foreign_delete",
 		"insert_concurrent_with_delete", "delete_split_by_dep",
-		"insert_after_mark", "insert_after_foreign_mark",
+		"insert_after_mark", "insert_after_foreign_mark", "delete_backwards_split_by_dep",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

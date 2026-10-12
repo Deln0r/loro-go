@@ -197,8 +197,10 @@ What in 1.16.4 touches a reader of these bytes:
   a delete by its id span, so it removes the wrong characters:
   `testdata/fixtures/frozen/delete_astral_ids_1163`, written by 1.16.3, gives
   `"x!"` here where loro gives `"b!"`. Reading deletes by position needs the
-  merged order of concurrent inserts to match loro's first; until then the id
-  span is the more reliable of the two, and the README lists the gap.
+  merged order of concurrent inserts to match loro's first. Both are done since
+  2026-10-12: concurrent inserts are ordered by Fugue as loro orders them, and
+  a Text or List delete is applied at its position when the history is
+  complete, so the frozen fixture gives `"b!"`.
 - **Hard limit on sequence positions.** loro now rejects insert, delete and
   move positions of 1 073 741 822 or more in a List, MovableList or Text op at
   decode. This library does not reject them; such a position resolves to no

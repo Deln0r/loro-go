@@ -914,3 +914,36 @@ function emitDoc(name, doc) {
   writeFileSync(join(outDir, "seq_concurrent_corpus.json"), JSON.stringify(concurrent, null, 1) + "\n");
   console.log(`seq_concurrent_corpus: ${concurrent.length} histories`);
 }
+
+// A backwards delete another peer saw only in part. Peer 1 backspaces over "c"
+// and then "b" of "abcd", which loro folds into one backwards op whose first
+// atom removed "c". Peer 3 had put "Y" between "b" and "c" concurrently. Peer 2
+// sees the first backspace and "Y", so its view is "abYd", and types "X" at 2,
+// after "b". A merge that reads the first atom as removing "b" (the lowest id)
+// sees "aYcd" instead and puts "X" after "Y".
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  const c = new LoroDoc();
+  c.setPeerId(3n);
+  a.getText("t").insert(0, "abcd");
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  c.import(a.export({ mode: "update" }));
+  c.getText("t").insert(2, "Y");
+  c.commit();
+  b.import(c.export({ mode: "update" }));
+  a.getText("t").delete(2, 1);
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  a.getText("t").delete(1, 1);
+  a.commit();
+  b.getText("t").insert(2, "X");
+  b.commit();
+  for (const p of [b, c]) a.import(p.export({ mode: "update" }));
+  emitDoc("delete_backwards_split_by_dep", a);
+  const dels = a.exportJsonUpdates().changes.flatMap((ch) => ch.ops.map((o) => `${ch.id}/${o.counter}:${JSON.stringify(o.content)}`)).filter((x) => x.includes("delete"));
+  console.log(`delete_backwards_split_by_dep deletes: ${dels.join(" ")}`);
+}

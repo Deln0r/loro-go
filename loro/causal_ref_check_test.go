@@ -3,6 +3,7 @@ package loro
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -33,8 +34,8 @@ func refState(u *Updates) map[string]any {
 }
 
 // TestCausalRefMatchesLoro holds the reference itself to loro-crdt: on every
-// fixture, every ordering-corpus history and the post-sync history, its Text
-// and List containers must equal loro's own toJSON. An oracle that disagreed
+// fixture and on every history of the three random corpora, its Text and List
+// containers must equal loro's own toJSON. An oracle that disagreed
 // with loro would only make the merge agree with the oracle.
 func TestCausalRefMatchesLoro(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
@@ -79,28 +80,18 @@ func TestCausalRefMatchesLoro(t *testing.T) {
 		check(name, u, want)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(dir, "ordering_corpus.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var corpus []struct {
-		Seed     int            `json:"seed"`
-		Update   string         `json:"update"`
-		Expected map[string]any `json:"expected"`
-	}
-	if err := json.Unmarshal(raw, &corpus); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range corpus {
-		blob, err := base64.StdEncoding.DecodeString(c.Update)
-		if err != nil {
-			t.Fatal(err)
+	for _, name := range []string{"ordering_corpus.json", "seq_single_corpus.json", "seq_concurrent_corpus.json"} {
+		for _, c := range loadCorpus(t, name) {
+			blob, err := base64.StdEncoding.DecodeString(c.Update)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, err := DecodeUpdates(blob)
+			if err != nil {
+				t.Fatalf("%s seed %d decode: %v", name, c.Seed, err)
+			}
+			check(fmt.Sprintf("%s seed %d", name, c.Seed), u, c.Expected)
 		}
-		u, err := DecodeUpdates(blob)
-		if err != nil {
-			t.Fatalf("seed %d decode: %v", c.Seed, err)
-		}
-		check("ordering seed", u, c.Expected)
 	}
 	t.Logf("%d containers compared", compared)
 }

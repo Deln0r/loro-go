@@ -46,6 +46,9 @@ type causalIndex struct {
 	cache  map[*seqChange]map[uint64]int64
 	cached int
 	work   *seqWork
+	// complete says every change's deps, and its author's own earlier ops,
+	// are present in the input, so each author's view can be rebuilt exactly.
+	complete bool
 }
 
 func newCausalIndex(all []*seqChange, work *seqWork) (*causalIndex, error) {
@@ -71,13 +74,24 @@ func newCausalIndex(all []*seqChange, work *seqWork) (*causalIndex, error) {
 	// A change's deps must all come before it. loro gives a change a lamport
 	// above every op it depends on, so a dep whose own lamport is not below
 	// the change's is forward or circular, and nothing honest produces one.
+	ix.complete = true
 	for _, sc := range all {
+		if sc.start > 0 {
+			z, err := ix.find(ID{Peer: sc.ch.ID.Peer, Counter: sc.start - 1})
+			if err != nil {
+				return nil, err
+			}
+			if z == nil {
+				ix.complete = false
+			}
+		}
 		for _, d := range sc.ch.Deps {
 			z, err := ix.find(d)
 			if err != nil {
 				return nil, err
 			}
 			if z == nil {
+				ix.complete = false
 				continue
 			}
 			if l := z.ch.Lamport + (d.Counter - z.start); l >= sc.ch.Lamport {
@@ -173,32 +187,23 @@ func (p pastView) has(peer uint64, counter int64) bool {
 }
 
 // seqNode is one element of a Text, List or MovableList sequence: a character,
-// a list item, or one of the two anchors a rich-text mark adds.
+// a list item, or one of the two anchors a rich-text mark adds. Its origins are
+// the elements its author saw on either side of it: left, the element just
+// before the insertion point in the author's view, and right, the next element
+// after that point the author had seen, deleted or not. Concurrent inserts are
+// ordered from these, as loro orders them.
 type seqNode struct {
 	peer     uint64
 	counter  int64
-	lamport  int64
-	depth    int // in the left-origin tree; children of the root are 1
+	left     *seqNode
+	right    *seqNode
 	value    any
 	anchor   bool
 	deleters []ID // the delete atoms that removed it
 }
 
-// before orders two inserts that share a left origin. RGA puts the causally
-// later one first, so lamport descends; equal lamports mean the two were
-// concurrent, and those go by ascending peer.
-func (a *seqNode) before(b *seqNode) bool {
-	if a.lamport != b.lamport {
-		return a.lamport > b.lamport
-	}
-	if a.peer != b.peer {
-		return a.peer < b.peer
-	}
-	return a.counter > b.counter
-}
-
-// seqState is one container's merged sequence, held in pre-order of the
-// left-origin tree, which is the document order.
+// seqState is one container's merged sequence in document order, including
+// elements deletes removed.
 type seqState struct {
 	nodes      []*seqNode
 	byID       map[ID]*seqNode
@@ -206,6 +211,19 @@ type seqState struct {
 	live       int          // nodes no merged delete removed, anchors included
 	pendingEnd map[ID]int64 // mark-end op -> where its anchor goes
 	work       *seqWork
+	cursor     seqCursor
+}
+
+// seqCursor remembers where the fast path last found an element: before is
+// how many elements no delete removed lie ahead of index idx. Edits cluster,
+// so the next position asked for is usually near the last one, and walking
+// from here crosses fewer removed elements than walking from either end. It is
+// kept exact on every insert and delete, and dropped when a delete's indexes
+// are not known.
+type seqCursor struct {
+	ok     bool
+	idx    int
+	before int64
 }
 
 func newSeqState(work *seqWork) *seqState {
@@ -226,10 +244,17 @@ func isSeqOp(op Op) bool {
 }
 
 // apply merges one op. all says the op's author had seen every op merged so
-// far and nothing else; otherwise past says what it had seen.
-func (s *seqState) apply(op Op, all bool, past pastView) error {
+// far and nothing else; otherwise past says what it had seen. byPosition says
+// the author's view can be rebuilt exactly, so a delete is applied where its
+// position says, as loro applies it, rather than by the ids it recorded.
+func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error {
 	switch op.VKind {
 	case change.VKDeleteSeq:
+		if byPosition && op.Kind != change.CMovableList {
+			if done, err := s.removeAt(op, all, past); err != nil || done {
+				return err
+			}
+		}
 		return s.remove(op)
 	case change.VKMarkStart:
 		// A mark adds a start anchor at Start and an end anchor that its
@@ -264,48 +289,78 @@ func (s *seqState) apply(op Op, all bool, past pastView) error {
 }
 
 // locate returns the index of the pos-th element (counting from 1) the op's
-// author could see, or -1 if it saw fewer, which only an input missing part of
-// its history produces.
+// author could see. A position past the end of that view, which only an input
+// missing part of its history produces, takes the last element, as loro.js
+// does; -1 means the view is empty.
 func (s *seqState) locate(pos int64, all bool, past pastView) (int, error) {
 	if all {
 		// Everything merged so far is in view, minus what deletes removed.
-		// Walk from whichever end is nearer: typing at the end costs nothing.
-		if pos > int64(s.live) {
+		// Start from the front, the back or the cursor, whichever is nearest
+		// in such elements: typing at the end, or trimming the front of a
+		// text that is all removed elements there, costs nothing.
+		if s.live == 0 {
 			return -1, nil
 		}
-		if pos <= int64(s.live)/2 {
-			seen := int64(0)
-			for i, n := range s.nodes {
-				if len(n.deleters) == 0 {
-					if seen++; seen == pos {
-						return i, s.work.spend(i + 1)
-					}
-				}
-			}
-		} else {
-			after := int64(s.live) - pos
-			for i := len(s.nodes) - 1; i >= 0; i-- {
-				if len(s.nodes[i].deleters) == 0 {
-					if after == 0 {
-						return i, s.work.spend(len(s.nodes) - i)
-					}
-					after--
-				}
-			}
+		want := min(pos, int64(s.live)) - 1
+		idx, before, dist := 0, int64(0), want
+		if back := int64(s.live) - 1 - want; back < dist {
+			idx, before, dist = len(s.nodes), int64(s.live), back
 		}
-		return -1, nil
+		if c := s.cursor; c.ok && abs64(want-c.before) <= dist {
+			idx, before = c.idx, c.before
+		}
+		i, steps := s.walkLive(idx, before, want)
+		s.cursor = seqCursor{ok: true, idx: i, before: want}
+		return i, s.work.spend(steps)
 	}
-	seen, steps := int64(0), 0
+	seen, steps, last := int64(0), 0, -1
 	for i, n := range s.nodes {
 		steps += 1 + len(n.deleters)
 		if !past.has(n.peer, n.counter) || removedIn(n, past) {
 			continue
 		}
+		last = i
 		if seen++; seen == pos {
 			return i, s.work.spend(steps)
 		}
 	}
-	return -1, s.work.spend(steps)
+	return last, s.work.spend(steps)
+}
+
+// walkLive returns the index of the element no delete removed at position
+// want (from 0), walking from index idx, ahead of which lie before such
+// elements, and the steps taken. want must be a position that exists.
+func (s *seqState) walkLive(idx int, before, want int64) (int, int) {
+	steps := 0
+	if want >= before {
+		for i := idx; i < len(s.nodes); i++ {
+			steps++
+			if len(s.nodes[i].deleters) == 0 {
+				if before == want {
+					return i, steps
+				}
+				before++
+			}
+		}
+		return len(s.nodes) - 1, steps
+	}
+	for i := idx - 1; i >= 0; i-- {
+		steps++
+		if len(s.nodes[i].deleters) == 0 {
+			before--
+			if before == want {
+				return i, steps
+			}
+		}
+	}
+	return 0, steps
+}
+
+func abs64(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func removedIn(n *seqNode, past pastView) bool {
@@ -329,40 +384,40 @@ func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past 
 		}
 		left = i
 	}
-	depth := 1
+	// The right origin is the first element after the left origin that the
+	// author had seen, deleted or not. Everything between the two is
+	// concurrent with this insert; an author who saw everything merged has
+	// nothing there.
+	start, end := left+1, left+1
+	if !all {
+		for end < len(s.nodes) && !past.has(s.nodes[end].peer, s.nodes[end].counter) {
+			end++
+		}
+	}
+	var leftNode, rightNode *seqNode
 	if left >= 0 {
-		depth = s.nodes[left].depth + 1
+		leftNode = s.nodes[left]
+	}
+	if end < len(s.nodes) {
+		rightNode = s.nodes[end]
+	}
+	at, steps := s.integrate(start, end, leftNode, rightNode, op.Peer)
+	if err := s.work.spend(steps + end - start + len(items)); err != nil {
+		return err
 	}
 	run := make([]*seqNode, len(items))
 	for k, v := range items {
-		run[k] = &seqNode{
-			peer:    op.Peer,
-			counter: op.Counter + int64(k),
-			lamport: op.Lamport + int64(k),
-			depth:   depth + k, // each atom's left origin is the one before it
-			value:   v,
-			anchor:  anchor,
+		n := &seqNode{peer: op.Peer, counter: op.Counter + int64(k), left: leftNode, right: rightNode, value: v, anchor: anchor}
+		if k > 0 {
+			n.left = run[k-1] // each atom's left origin is the one before it
 		}
-	}
-	// The run becomes a child of its left origin. That origin's existing
-	// children follow it, each with its subtree; the run goes in front of the
-	// first child it sorts before.
-	at := left + 1
-	skipped := 0
-	for at < len(s.nodes) && s.nodes[at].depth >= depth {
-		c := s.nodes[at]
-		if !c.before(run[0]) {
-			break
-		}
-		for at++; at < len(s.nodes) && s.nodes[at].depth > c.depth; at++ {
-			skipped++
-		}
-		skipped++
-	}
-	if err := s.work.spend(skipped + len(run)); err != nil {
-		return err
+		run[k] = n
 	}
 	s.nodes = slices.Insert(s.nodes, at, run...)
+	if s.cursor.ok && at <= s.cursor.idx {
+		s.cursor.idx += len(run)
+		s.cursor.before += int64(len(run))
+	}
 	for _, n := range run {
 		id := ID{Peer: n.peer, Counter: n.counter}
 		if _, dup := s.byID[id]; !dup {
@@ -372,6 +427,170 @@ func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past 
 	}
 	s.live += len(run)
 	return nil
+}
+
+// integrate places a run whose origins are left and right among the elements
+// between them, nodes[start:end], all concurrent with it, and returns the
+// index it goes at with the steps spent. The rule is loro's (Fugue, by
+// YATA-style scanning; the same branches as loro.js's scannedFugueInsertion):
+// walk the elements that share the run's left origin, together with their
+// descendants; between two with the same right origin the lower peer goes
+// first; otherwise the one whose right origin is a nearer direct right child of
+// the shared left origin goes first.
+func (s *seqState) integrate(start, end int, left, right *seqNode, peer uint64) (int, int) {
+	if start == end {
+		return start, 0
+	}
+	steps := 0
+	// rightParent is the index of r when r is a direct right child of the
+	// run's left origin, that is when r's own left origin is that same
+	// element. ok is false otherwise, and false sorts after every index. A
+	// right origin always lies after the element naming it, so the search
+	// starts at start, and it goes only as far as the furthest origin asked
+	// for, so a large document behind the insertion point costs nothing.
+	index := map[*seqNode]int{}
+	indexed := start
+	rightParent := func(r *seqNode) (int, bool) {
+		if r == nil || r.left != left {
+			return 0, false
+		}
+		if i, ok := index[r]; ok {
+			return i, true
+		}
+		for ; indexed < len(s.nodes); indexed++ {
+			steps++
+			index[s.nodes[indexed]] = indexed
+			if s.nodes[indexed] == r {
+				indexed++
+				return indexed - 1, true
+			}
+		}
+		return 0, false
+	}
+	ours, oursOK := rightParent(right)
+	at, scanning := start, false
+	visited := map[*seqNode]bool{}
+scan:
+	for i := start; i < end; i++ {
+		steps++
+		other := s.nodes[i]
+		if other.left != left && (other.left == nil || !visited[other.left]) {
+			break
+		}
+		visited[other] = true
+		if other.left == left {
+			if other.right == right {
+				if other.peer > peer {
+					break
+				}
+				scanning = false
+			} else {
+				theirs, theirsOK := rightParent(other.right)
+				switch c := comparePositions(theirs, theirsOK, ours, oursOK); {
+				case c < 0:
+					scanning = true
+				case c == 0 && other.peer > peer:
+					break scan
+				default:
+					scanning = false
+				}
+			}
+		}
+		if !scanning {
+			at = i + 1
+		}
+	}
+	return at, steps
+}
+
+// comparePositions orders two optional indexes, an absent one after any index.
+func comparePositions(a int, aok bool, b int, bok bool) int {
+	switch {
+	case aok && bok:
+		return a - b
+	case aok:
+		return -1
+	case bok:
+		return 1
+	}
+	return 0
+}
+
+// removeAt applies a Text or List delete by position, the way loro's import
+// does: the |Len| elements of the author's view starting at the delete's lowest
+// position. A backwards delete is recorded at the last element it removed and
+// removed the highest first, so its atom k takes the k-th from the top. Atom
+// ids are recorded as remove records them. This is what makes a delete that
+// loro-crdt's WASM build up to 1.16.3 wrote with wrong ids
+// (loro-dev/loro#1149) remove the characters loro removes. It reports false,
+// changing nothing, when the view is too short for the position, which only an
+// input missing part of its history produces; the caller then reads the ids.
+func (s *seqState) removeAt(op Op, all bool, past pastView) (bool, error) {
+	span, ok := op.Value.(DeleteSpan)
+	if !ok {
+		return false, nil
+	}
+	_, n := span.Normalize()
+	low := op.Pos
+	if span.Len < 0 {
+		low = op.Pos - n + 1
+	}
+	if n == 0 || low < 0 || (all && low+n > int64(s.live)) {
+		return false, nil
+	}
+	// Walk the view from its low-th element, collecting n.
+	var targets []*seqNode
+	var at []int // index of each target
+	seen, steps := int64(0), 0
+	visible := func(nd *seqNode) bool {
+		if all {
+			return len(nd.deleters) == 0
+		}
+		return past.has(nd.peer, nd.counter) && !removedIn(nd, past)
+	}
+	from := 0
+	if all {
+		// Find the first target through locate, which can start from the
+		// cursor, rather than walking from the front across every element
+		// removed there.
+		i, err := s.locate(low+1, true, past)
+		if err != nil {
+			return false, err
+		}
+		from, seen = i, low
+	}
+	for i := from; i < len(s.nodes) && int64(len(targets)) < n; i++ {
+		nd := s.nodes[i]
+		steps += 1 + len(nd.deleters)
+		if !visible(nd) {
+			continue
+		}
+		if seen >= low {
+			targets = append(targets, nd)
+			at = append(at, i)
+		}
+		seen++
+	}
+	if err := s.work.spend(steps); err != nil {
+		return false, err
+	}
+	if int64(len(targets)) < n {
+		return false, nil
+	}
+	for k, nd := range targets {
+		atom := int64(k)
+		if span.Len < 0 {
+			atom = n - 1 - int64(k)
+		}
+		if len(nd.deleters) == 0 {
+			s.live--
+			if s.cursor.ok && at[k] < s.cursor.idx {
+				s.cursor.before--
+			}
+		}
+		nd.deleters = append(nd.deleters, ID{Peer: op.Peer, Counter: op.Counter + atom})
+	}
+	return true, nil
 }
 
 // remove applies a delete: each of its atoms removes one element of its span.
@@ -392,6 +611,7 @@ func (s *seqState) remove(op Op) error {
 		// would make many deletes of one element quadratic.
 		if len(n.deleters) == 0 {
 			s.live--
+			s.cursor.ok = false // the element's index is not known here
 		}
 		n.deleters = append(n.deleters, ID{Peer: op.Peer, Counter: op.Counter + k})
 	}
@@ -513,7 +733,7 @@ func mergeSequences(all, units []*seqChange, work *seqWork) (map[string]*seqStat
 					s = newSeqState(work)
 					seqs[op.Container] = s
 				}
-				if err := s.apply(op, inView, past); err != nil {
+				if err := s.apply(op, inView, past, ix.complete); err != nil {
 					return nil, err
 				}
 			}

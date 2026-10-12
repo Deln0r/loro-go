@@ -151,3 +151,61 @@ func TestManyDeletesOfOneElementStayLinear(t *testing.T) {
 		t.Fatalf("t = %q, want empty", state["t"])
 	}
 }
+
+// TestConcurrentInsertsBeforeALargeDocumentStayCheap puts 300 concurrent
+// one-character inserts at the front of a 200 000-character text. Each is
+// placed among the others by Fugue's rule, which needs the position of its
+// right origin; that origin sits right after the earlier inserts, so finding it
+// must not cost a pass over the 200 000 characters behind it.
+func TestConcurrentInsertsBeforeALargeDocumentStayCheap(t *testing.T) {
+	text := func(peer uint64, s string) Op {
+		return Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr,
+			Value: s, Len: int64(len(s)), Peer: peer}
+	}
+	const size = 200000
+	changes := []Change{{ID: ID{Peer: 1}, Ops: []Op{text(1, strings.Repeat("x", size))}}}
+	for peer := uint64(2); peer <= 301; peer++ {
+		op := text(peer, "y")
+		op.Lamport = size
+		changes = append(changes, Change{ID: ID{Peer: peer}, Lamport: size, Deps: []ID{{Peer: 1, Counter: size - 1}}, Ops: []Op{op}})
+	}
+	state, err := mergeState(&Updates{Changes: changes}, 2*size)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if got := state["t"].(string); len(got) != size+300 || strings.Count(got[:300], "y") != 300 {
+		t.Fatalf("t has %d characters, %d of the first 300 are y", len(got), strings.Count(got[:min(300, len(got))], "y"))
+	}
+}
+
+// TestFrontEditsStayLinear trims a text from the front while typing after it,
+// like a log that drops its oldest line: 20 000 times, insert one character
+// at 1, then delete the one at 0. Every delete leaves a removed element at the
+// front, so a merge that counts positions from the start crosses all of them
+// on each edit and goes quadratic. It has to stay within a budget proportional
+// to the edits.
+func TestFrontEditsStayLinear(t *testing.T) {
+	const n = 20000
+	text := func(counter int64, pos int64) Op {
+		return Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr,
+			Value: "x", Len: 1, Pos: pos, Peer: 1, Counter: counter, Lamport: counter}
+	}
+	ops := []Op{text(0, 0)}
+	live := []int64{0}
+	for i := int64(0); i < n; i++ {
+		c := int64(len(ops))
+		ops = append(ops, text(c, 1))
+		live = append(live, c)
+		ops = append(ops, Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKDeleteSeq,
+			Pos: 0, Len: 1, Peer: 1, Counter: c + 1, Lamport: c + 1,
+			Value: DeleteSpan{Peer: 1, Counter: live[0], Len: 1}})
+		live = live[1:]
+	}
+	state, err := mergeState(&Updates{Changes: []Change{{ID: ID{Peer: 1}, Ops: ops}}}, 64*len(ops))
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if state["t"] != "x" {
+		t.Fatalf("t = %q, want %q", state["t"], "x")
+	}
+}

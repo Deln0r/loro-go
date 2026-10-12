@@ -50,38 +50,32 @@ func numFromF64(f float64) any {
 // MergeState reconstructs document state with CRDT semantics, so it is correct
 // for CONCURRENT / multi-peer histories (unlike BuildState which applies in
 // order). Map containers resolve by last-writer-wins on (lamport, peer); Text,
-// List and MovableList inserts go into a tree parented by left origin, walked
-// pre-order; Tree replays moves with cycle-closing ones skipped.
+// List and MovableList are merged the way loro merges them; Tree replays moves
+// with cycle-closing ones skipped.
 //
 // An insert records only a position: the index in the sequence as its author
 // saw it. So each one is resolved against that view, the elements in the op's
 // causal past (the closure of its change's deps, plus the author's own earlier
 // atoms) minus those removed by a delete atom inside that past, with the two
-// anchors a rich-text mark adds taking positions like characters. The left
-// origin is the element just before the position in that view.
+// anchors a rich-text mark adds taking positions like characters. Its left
+// origin is the element just before the position in that view and its right
+// origin the next element after it that the author had seen, deleted or not;
+// inserts made concurrently between the same origins are ordered by Fugue, as
+// loro orders them. A Text or List delete removes the elements at its position
+// in its author's view, as loro's import applies it.
 //
-// Siblings under one origin order NEWEST FIRST: descending lamport, with an
-// equal lamport meaning the two inserts were concurrent and broken by ascending
-// peer. That asymmetry is the whole rule. An earlier version ordered siblings
-// ascending throughout, which is right for concurrent inserts and wrong for
-// sequential ones, so every insert that was not an append came out reversed:
-// "BBB" then "Z" at position 0 produced "BBBZ" where loro gives "ZBBB".
-//
-// Measured against loro-crdt on the 300 random insert-anywhere histories in
-// testdata/fixtures/ordering_corpus.json, counting how many matched:
-//
-//	ascending siblings, splice at subtree end (as shipped)      8
-//	ascending siblings, splice after the origin                 6
-//	descending siblings, splice at subtree end                107
-//	descending siblings, splice after the origin (this code)  300
-//
-// All 52 fixtures passed in every one of those four states, because a fixture
-// that only appends cannot tell the rules apart.
+// Checked against loro-crdt on three corpora of 300 random histories each in
+// testdata/fixtures: one author inserting anywhere; one author with deletes,
+// backspace runs and marks; two or three peers editing concurrently and
+// syncing. All 900 match. Under the earlier rule, which put the newer of two
+// concurrent inserts first, 185 of the 300 concurrent histories did.
 //
 // MergeState assumes the changes it is given are causally closed: every dep
 // is either among them or absent from all of them. A missing change is not an
-// error, but positions that counted its elements cannot be resolved, and such
-// an insert lands at the front.
+// error, but positions that counted its elements cannot be resolved exactly:
+// an insert past the end of its author's rebuilt view goes after the view's
+// last element, and every delete is read by the ids it recorded instead of by
+// its position.
 //
 // Cost: an op made with everything already merged in view (one peer typing,
 // or a peer editing after a sync) resolves at the nearer end of the merged
@@ -89,14 +83,8 @@ func numFromF64(f float64) any {
 // scanning it, so long concurrent branches cost time proportional to the
 // product of their sizes; past seqWorkLimit steps MergeState returns an error.
 //
-// Honest limits: concurrent inserts at the same place are ordered newest
-// first, where loro uses Fugue's rule (peer ids and the element to the right of
-// the insertion point); 185 of the 300 random concurrent histories in
-// testdata/fixtures/seq_concurrent_corpus.json come out as loro has them. A
-// delete is applied by its recorded ids where loro applies it by position, so
-// a delete that loro-crdt's WASM build up to 1.16.3 wrote with wrong ids
-// (loro-dev/loro#1149) removes the wrong characters here. MovableList positions are resolved without its moves, and
-// moves are then applied by index, which is wrong for an insert made after a
+// Honest limits: MovableList positions are resolved without its moves, and
+// moves are then applied by index, which is wrong for an edit made after a
 // move.
 func MergeState(u *Updates) (map[string]any, error) {
 	return mergeState(u, seqWorkLimit)

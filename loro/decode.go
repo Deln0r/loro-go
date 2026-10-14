@@ -16,7 +16,7 @@ import (
 
 // fmtID formats a (peerIdx, counter) op id as "counter@peer", matching loro toJSON.
 func fmtID(peers []uint64, peerIdx, counter int64) string {
-	if peerIdx < 0 || int(peerIdx) >= len(peers) {
+	if peerIdx < 0 || peerIdx >= int64(len(peers)) {
 		return fmt.Sprintf("%d@?", counter)
 	}
 	return fmt.Sprintf("%d@%d", counter, peers[peerIdx])
@@ -26,7 +26,7 @@ func fmtID(peers []uint64, peerIdx, counter int64) string {
 // which uses UPPERCASE hex. Every fixture before tree_wide happened to have an
 // index of "80", so the case never showed until indices grew letter digits.
 func fiHex(positions [][]byte, idx int64) string {
-	if idx < 0 || int(idx) >= len(positions) {
+	if idx < 0 || idx >= int64(len(positions)) {
 		return ""
 	}
 	return strings.ToUpper(hex.EncodeToString(positions[idx]))
@@ -34,7 +34,7 @@ func fiHex(positions [][]byte, idx int64) string {
 
 // markKey resolves a mark's style-key index against the key pool.
 func markKey(keys []string, idx int64) string {
-	if idx >= 0 && int(idx) < len(keys) {
+	if idx >= 0 && idx < int64(len(keys)) {
 		return keys[idx]
 	}
 	return ""
@@ -276,13 +276,13 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			chIdx++
 		}
 		ci := ops.ContainerIdx[i]
-		if ci < 0 || int(ci) >= len(conts) {
+		if ci < 0 || ci >= int64(len(conts)) {
 			return nil, fmt.Errorf("loro: container index %d out of range", ci)
 		}
 		c := conts[ci]
 		name := ""
 		if c.IsRoot {
-			if c.KeyOrCounter >= 0 && int(c.KeyOrCounter) < len(keys) {
+			if c.KeyOrCounter >= 0 && c.KeyOrCounter < int64(len(keys)) {
 				name = keys[c.KeyOrCounter]
 			}
 		} else {
@@ -314,7 +314,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			}
 			d := deleteIDs[delConsumed]
 			delConsumed++
-			if d.PeerIdx < 0 || int(d.PeerIdx) >= len(hdr.Peers) {
+			if d.PeerIdx < 0 || d.PeerIdx >= int64(len(hdr.Peers)) {
 				return nil, fmt.Errorf("loro: delete peer index %d out of range", d.PeerIdx)
 			}
 			span := DeleteSpan{Peer: hdr.Peers[d.PeerIdx], Counter: d.Counter, Len: d.Len}
@@ -324,7 +324,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			op.Value = span
 		}
 		if c.Kind == change.CMap {
-			if p := ops.Prop[i]; p >= 0 && int(p) < len(keys) {
+			if p := ops.Prop[i]; p >= 0 && p < int64(len(keys)) {
 				op.MapKey = keys[p]
 			}
 		} else {

@@ -947,3 +947,84 @@ function emitDoc(name, doc) {
   const dels = a.exportJsonUpdates().changes.flatMap((ch) => ch.ops.map((o) => `${ch.id}/${o.counter}:${JSON.stringify(o.content)}`)).filter((x) => x.includes("delete"));
   console.log(`delete_backwards_split_by_dep deletes: ${dels.join(" ")}`);
 }
+
+// Acceptance corpora for MovableList and Tree: random histories with
+// loro-crdt's own replay as the answer. A MovableList history inserts,
+// deletes, moves and sets values; a Tree history creates nodes under random
+// parents at random indexes, moves them, deletes them and writes their meta
+// maps. A step loro refuses (a move under the node's own descendant, an index
+// out of range) is skipped. The concurrent corpora spread the steps over two or
+// three peers that now and then import one another's updates.
+{
+  const rng = (seed) => { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; };
+  const pickOf = (r, xs) => xs[Math.floor(r() * xs.length)];
+  const editList = (doc, r) => {
+    const l = doc.getMovableList("ml");
+    const n = l.length;
+    const pick = r();
+    if (pick < 0.35 || n === 0) l.insert(Math.floor(r() * (n + 1)), Math.floor(r() * 100));
+    else if (pick < 0.55) {
+      const k = Math.floor(r() * n);
+      l.delete(k, 1 + Math.floor(r() * Math.min(2, n - k)));
+    } else if (pick < 0.8) l.move(Math.floor(r() * n), Math.floor(r() * n));
+    else l.set(Math.floor(r() * n), 100 + Math.floor(r() * 100));
+  };
+  const editTree = (doc, r) => {
+    const t = doc.getTree("tr");
+    const alive = t.nodes().filter((n) => !n.isDeleted());
+    const pick = r();
+    try {
+      if (pick < 0.35 || alive.length === 0) {
+        const parent = alive.length > 0 && r() < 0.6 ? pickOf(r, alive) : undefined;
+        const count = parent ? parent.children()?.length ?? 0 : t.roots().length;
+        const index = Math.floor(r() * (count + 1));
+        if (parent) parent.createNode(index);
+        else t.createNode(undefined, index);
+      } else if (pick < 0.65) {
+        const node = pickOf(r, alive);
+        const parent = r() < 0.3 ? undefined : pickOf(r, alive);
+        const count = parent ? parent.children()?.length ?? 0 : t.roots().length;
+        node.move(parent, Math.floor(r() * (count + 1)));
+      } else if (pick < 0.8) t.delete(pickOf(r, alive).id);
+      else pickOf(r, alive).data.set("k" + Math.floor(r() * 3), Math.floor(r() * 100));
+    } catch {
+      // loro refused the step: a cycle, or an index that no longer exists.
+    }
+  };
+  const record = (seed, doc) => {
+    const update = doc.export({ mode: "update" });
+    const replay = new LoroDoc();
+    replay.import(update);
+    return { seed, update: Buffer.from(update).toString("base64"), expected: replay.toJSON() };
+  };
+  const corpus = (name, edit, peersFor, salt) => {
+    const out = [];
+    for (let seed = 1; seed <= 300; seed++) {
+      const r = rng(seed * salt);
+      const peers = [];
+      for (let p = 0; p < peersFor(seed); p++) {
+        const doc = new LoroDoc();
+        doc.setPeerId(BigInt(p + 1));
+        peers.push(doc);
+      }
+      for (let i = 4 + Math.floor(r() * 24); i > 0; i--) {
+        const doc = pickOf(r, peers);
+        if (peers.length > 1 && r() < 0.25) {
+          const other = pickOf(r, peers);
+          if (other !== doc) doc.import(other.export({ mode: "update" }));
+          continue;
+        }
+        edit(doc, r);
+        doc.commit();
+      }
+      const all = new LoroDoc();
+      for (const doc of peers) all.import(doc.export({ mode: "update" }));
+      out.push(record(seed, all));
+    }
+    writeFileSync(join(outDir, name), JSON.stringify(out, null, 1) + "\n");
+    console.log(`${name}: ${out.length} histories`);
+  };
+  corpus("movable_single_corpus.json", editList, () => 1, 15485863);
+  corpus("movable_concurrent_corpus.json", editList, (seed) => 2 + (seed % 2), 32452843);
+  corpus("tree_corpus.json", editTree, (seed) => 1 + (seed % 3), 49979687);
+}

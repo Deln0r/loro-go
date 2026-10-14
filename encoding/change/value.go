@@ -311,6 +311,13 @@ func (w *ValueWriter) ListMove(m ListMove) {
 	w.U64(uint64(m.Lamport))
 }
 
+// ListSet writes a MovableList set value (inverse of ReadListSet).
+func (w *ValueWriter) ListSet(s ListSet) error {
+	w.U64(uint64(s.PeerIdx))
+	w.U64(uint64(s.Lamport))
+	return w.LoroValue(s.Value)
+}
+
 // RawTreeMove writes a Tree create/move value (inverse of ReadRawTreeMove).
 func (w *ValueWriter) RawTreeMove(m RawTreeMove) {
 	w.U64(uint64(m.SubjectPeerIdx))
@@ -379,6 +386,12 @@ func (w *ValueWriter) OpContent(vk ValueKind, v any) error {
 			return bad()
 		}
 		w.ListMove(x)
+	case VKListSet:
+		x, ok := v.(ListSet)
+		if !ok {
+			return bad()
+		}
+		return w.ListSet(x)
 	case VKRawTreeMove:
 		x, ok := v.(RawTreeMove)
 		if !ok {
@@ -405,6 +418,14 @@ type ListMove struct {
 	From    int64
 	FromIdx int64
 	Lamport int64
+}
+
+// ListSet is a MovableList set op (VKListSet): the element named by the peer
+// index and lamport of the op that created it takes Value.
+type ListSet struct {
+	PeerIdx int64
+	Lamport int64
+	Value   any
 }
 
 // RawTreeMove is a Tree create/move op (VKRawTreeMove).
@@ -453,6 +474,27 @@ func (v *ValueReader) ReadListMove() (ListMove, error) {
 		return ListMove{}, err
 	}
 	return ListMove{From: int64(from), FromIdx: int64(fromIdx), Lamport: int64(lamport)}, nil
+}
+
+// ReadListSet reads a ListSet value: the element's peer index and lamport as
+// LEB128, then the value it takes.
+func (v *ValueReader) ReadListSet() (ListSet, error) {
+	peerIdx, err := v.r.Uvarint()
+	if err != nil {
+		return ListSet{}, err
+	}
+	lamport, err := v.r.Uvarint()
+	if err != nil {
+		return ListSet{}, err
+	}
+	if lamport > math.MaxUint32 || peerIdx > math.MaxInt32 {
+		return ListSet{}, ErrBlock
+	}
+	val, err := v.LoroValue()
+	if err != nil {
+		return ListSet{}, err
+	}
+	return ListSet{PeerIdx: int64(peerIdx), Lamport: int64(lamport), Value: val}, nil
 }
 
 // ReadRawTreeMove reads a RawTreeMove value.
@@ -514,6 +556,8 @@ func (v *ValueReader) OpContent(vk ValueKind) (any, error) {
 		return v.ReadMark()
 	case VKListMove:
 		return v.ReadListMove()
+	case VKListSet:
+		return v.ReadListSet()
 	case VKRawTreeMove:
 		return v.ReadRawTreeMove()
 	case VKDeltaInt:

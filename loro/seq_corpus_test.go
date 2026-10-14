@@ -94,3 +94,25 @@ func TestConcurrentCorpusAgainstLoro(t *testing.T) {
 		t.Errorf("%d of %d concurrent histories diverge from loro-crdt", len(seeds), len(corpus))
 	}
 }
+
+// TestMovableAndTreeCorporaAgainstLoro replays 300 random histories each of
+// MovableList edits by one author, MovableList edits by two or three peers
+// with syncs, and Tree edits (create, move, delete, meta writes) by one to
+// three peers. Every history must come out as loro-crdt has it. Before
+// MovableList kept positions and elements apart, as loro does, 71 and 96 of
+// the two MovableList corpora matched, and a history with a set() did not
+// decode at all.
+func TestMovableAndTreeCorporaAgainstLoro(t *testing.T) {
+	for _, name := range []string{"movable_single_corpus.json", "movable_concurrent_corpus.json", "tree_corpus.json"} {
+		corpus := loadCorpus(t, name)
+		seeds, got, want := divergences(t, corpus)
+		for i := range seeds {
+			if i < 3 {
+				t.Errorf("%s seed %d diverged:\n got  %s\n want %s", name, seeds[i], got[i], want[i])
+			}
+		}
+		if len(seeds) > 0 {
+			t.Errorf("%s: %d of %d histories diverge from loro-crdt", name, len(seeds), len(corpus))
+		}
+	}
+}

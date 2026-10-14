@@ -3,6 +3,7 @@ package loro
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -156,7 +157,9 @@ func TestManyDeletesOfOneElementStayLinear(t *testing.T) {
 // one-character inserts at the front of a 200 000-character text. Each is
 // placed among the others by Fugue's rule, which needs the position of its
 // right origin; that origin sits right after the earlier inserts, so finding it
-// must not cost a pass over the 200 000 characters behind it.
+// must not cost a pass over the 200 000 characters behind it. The budget
+// allows for what the inserts do cost: shifting those characters in memory,
+// counted at a step per 64, about 940 000 steps over the 300.
 func TestConcurrentInsertsBeforeALargeDocumentStayCheap(t *testing.T) {
 	text := func(peer uint64, s string) Op {
 		return Op{Container: "t", IsRoot: true, Kind: change.CText, VKind: change.VKStr,
@@ -169,7 +172,7 @@ func TestConcurrentInsertsBeforeALargeDocumentStayCheap(t *testing.T) {
 		op.Lamport = size
 		changes = append(changes, Change{ID: ID{Peer: peer}, Lamport: size, Deps: []ID{{Peer: 1, Counter: size - 1}}, Ops: []Op{op}})
 	}
-	state, err := mergeState(&Updates{Changes: changes}, 2*size)
+	state, err := mergeState(&Updates{Changes: changes}, 16*size)
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -207,5 +210,35 @@ func TestFrontEditsStayLinear(t *testing.T) {
 	}
 	if state["t"] != "x" {
 		t.Fatalf("t = %q, want %q", state["t"], "x")
+	}
+}
+
+// TestRepeatedMovesToTheFrontAreCounted moves the second element of a list to
+// the front 30 000 times. Each move adds a position at the front and leaves
+// the old one behind, so every insert shifts the whole history in memory.
+// That shifting has to be counted against the step limit: under a budget sized
+// for the ops alone the merge must stop, not copy half a billion pointers.
+func TestRepeatedMovesToTheFrontAreCounted(t *testing.T) {
+	const n = 30000
+	ops := []Op{{Container: "ml", IsRoot: true, Kind: change.CMovableList, VKind: change.VKLoroValue,
+		Value: []any{int64(1), int64(2), int64(3)}, Len: 3, Peer: 1}}
+	for i := int64(0); i < n; i++ {
+		c := 3 + i
+		// Alternate which of the first two elements is moved, so each move is
+		// a real one: element 2 (lamport 1) and element 1 (lamport 0).
+		elem := ListElem{Peer: 1, Lamport: 1 - i%2}
+		ops = append(ops, Op{Container: "ml", IsRoot: true, Kind: change.CMovableList, VKind: change.VKListMove,
+			MoveFrom: 1, Pos: 0, Value: elem, Len: 1, Peer: 1, Counter: c, Lamport: c})
+	}
+	u := &Updates{Changes: []Change{{ID: ID{Peer: 1}, Ops: ops}}}
+	if _, err := mergeState(u, 64*len(ops)); err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("under a budget for the ops alone: err = %v", err)
+	}
+	state, err := MergeState(u)
+	if err != nil {
+		t.Fatalf("under the real limit: %v", err)
+	}
+	if got := state["ml"]; !reflect.DeepEqual(got, []any{int64(1), int64(2), int64(3)}) {
+		t.Fatalf("ml = %v", got)
 	}
 }

@@ -2,6 +2,9 @@ package change
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -177,6 +180,51 @@ func TestValuesRoundTrip(t *testing.T) {
 		}
 		if !bytes.Equal(vw.Bytes(), blk.Values) {
 			t.Errorf("%s: re-encoded values % x, want % x", name, vw.Bytes(), blk.Values)
+		}
+	}
+}
+
+// TestCorpusRoundTrip decodes and re-encodes every block of every history in
+// the random corpora, which hold the op kinds the named fixtures barely touch:
+// MovableList moves and sets, tree moves and deletes, marks, backwards
+// deletes. Each blob and each file must come back byte-identical.
+func TestCorpusRoundTrip(t *testing.T) {
+	for _, name := range []string{
+		"seq_single_corpus.json", "seq_concurrent_corpus.json", "ordering_corpus.json",
+		"movable_single_corpus.json", "movable_concurrent_corpus.json", "tree_corpus.json",
+	} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var corpus []struct {
+			Seed   int    `json:"seed"`
+			Update string `json:"update"`
+		}
+		if err := json.Unmarshal(raw, &corpus); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range corpus {
+			orig, err := base64.StdEncoding.DecodeString(c.Update)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h, err := fast.ParseHeader(orig)
+			if err != nil {
+				t.Fatalf("%s seed %d: %v", name, c.Seed, err)
+			}
+			blocks, err := SplitBlocks(h.Body)
+			if err != nil {
+				t.Fatalf("%s seed %d: %v", name, c.Seed, err)
+			}
+			label := fmt.Sprintf("%s seed %d", name, c.Seed)
+			reBlocks := make([][]byte, len(blocks))
+			for bi := range blocks {
+				reBlocks[bi] = roundTripBlock(t, label, blocks[bi])
+			}
+			if file := fast.Encode(fast.ModeFastUpdates, EncodeFastUpdates(reBlocks)); !bytes.Equal(file, orig) {
+				t.Errorf("%s: file round-trip mismatch", label)
+			}
 		}
 	}
 }

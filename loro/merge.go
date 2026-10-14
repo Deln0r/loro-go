@@ -64,10 +64,11 @@ func numFromF64(f float64) any {
 // loro orders them. A Text or List delete removes the elements at its position
 // in its author's view, as loro's import applies it.
 //
-// Checked against loro-crdt on three corpora of 300 random histories each in
-// testdata/fixtures: one author inserting anywhere; one author with deletes,
-// backspace runs and marks; two or three peers editing concurrently and
-// syncing. All 900 match. Under the earlier rule, which put the newer of two
+// Checked against loro-crdt on six corpora of 300 random histories each in
+// testdata/fixtures: Text and List by one author inserting anywhere, by one
+// author with deletes, backspace runs and marks, and by two or three peers
+// editing concurrently and syncing; MovableList by one author and by several;
+// Tree by one to three peers. All 1 800 match. Under the earlier rule, which put the newer of two
 // concurrent inserts first, 185 of the 300 concurrent histories did.
 //
 // MergeState assumes the changes it is given are causally closed: every dep
@@ -83,9 +84,10 @@ func numFromF64(f float64) any {
 // scanning it, so long concurrent branches cost time proportional to the
 // product of their sizes; past seqWorkLimit steps MergeState returns an error.
 //
-// Honest limits: MovableList positions are resolved without its moves, and
-// moves are then applied by index, which is wrong for an edit made after a
-// move.
+// A MovableList keeps its positions and its elements apart, as loro does: the
+// positions merge like a List, a move deletes the position it moves from and
+// adds one where it lands, and each element sits at its position with the
+// latest writer, (lamport, peer), showing the value of its latest set.
 func MergeState(u *Updates) (map[string]any, error) {
 	return mergeState(u, seqWorkLimit)
 }
@@ -201,14 +203,10 @@ func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 			}
 			return []any{}, nil
 		case change.CMovableList:
-			lst := []any{}
 			if s := seqs[name]; s != nil {
-				lst = s.values()
+				return s.values(), nil
 			}
-			for _, m := range sortedOps(opsOfKind(ci.ops, change.VKListMove)) {
-				lst = applyMove(lst, int(m.MoveFrom), int(m.Pos))
-			}
-			return lst, nil
+			return []any{}, nil
 		case change.CCounter:
 			return counterValue(ci.ops), nil
 		default:
@@ -255,31 +253,6 @@ func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 		}
 	}
 	return state, nil
-}
-
-func opsOfKind(ops []Op, vk change.ValueKind) []Op {
-	var out []Op
-	for _, op := range ops {
-		if op.VKind == vk {
-			out = append(out, op)
-		}
-	}
-	return out
-}
-
-func applyMove(lst []any, from, to int) []any {
-	if from < 0 || from >= len(lst) {
-		return lst
-	}
-	el := lst[from]
-	lst = append(lst[:from], lst[from+1:]...)
-	if to < 0 {
-		to = 0
-	}
-	if to > len(lst) {
-		to = len(lst)
-	}
-	return append(lst[:to], append([]any{el}, lst[to:]...)...)
 }
 
 // deletedTreeRoot is loro's TreeID::delete_root(), counter i32::MAX on peer

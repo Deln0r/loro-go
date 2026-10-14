@@ -199,7 +199,33 @@ type seqNode struct {
 	right    *seqNode
 	value    any
 	anchor   bool
-	deleters []ID // the delete atoms that removed it
+	deleters []ID     // the delete atoms that removed it
+	elem     *movElem // MovableList: the element this position holds
+}
+
+// movElem is a MovableList element. loro keeps a MovableList as two layers: a
+// sequence of positions, merged like any list, and elements, each created by
+// an insert. A move adds a new position for its element and deletes the one it
+// moved from; the element sits at whichever of its positions has the highest
+// writer, and shows the value with the highest writer among its insert and
+// sets. A writer is (lamport, peer), compared in that order.
+type movElem struct {
+	value       any
+	valueWriter writer
+	pos         *seqNode
+	posWriter   writer
+}
+
+type writer struct {
+	lamport int64
+	peer    uint64
+}
+
+func (a writer) after(b writer) bool {
+	if a.lamport != b.lamport {
+		return a.lamport > b.lamport
+	}
+	return a.peer > b.peer
 }
 
 // seqState is one container's merged sequence in document order, including
@@ -212,6 +238,7 @@ type seqState struct {
 	pendingEnd map[ID]int64 // mark-end op -> where its anchor goes
 	work       *seqWork
 	cursor     seqCursor
+	elems      map[ListElem]*movElem // MovableList elements by their creating op
 }
 
 // seqCursor remembers where the fast path last found an element: before is
@@ -227,7 +254,7 @@ type seqCursor struct {
 }
 
 func newSeqState(work *seqWork) *seqState {
-	return &seqState{byID: map[ID]*seqNode{}, byPeer: map[uint64][]*seqNode{}, pendingEnd: map[ID]int64{}, work: work}
+	return &seqState{byID: map[ID]*seqNode{}, byPeer: map[uint64][]*seqNode{}, pendingEnd: map[ID]int64{}, work: work, elems: map[ListElem]*movElem{}}
 }
 
 func isSeqOp(op Op) bool {
@@ -237,8 +264,13 @@ func isSeqOp(op Op) bool {
 		case change.VKStr, change.VKMarkStart, change.VKNull, change.VKDeleteSeq:
 			return true
 		}
-	case change.CList, change.CMovableList:
+	case change.CList:
 		return op.VKind == change.VKLoroValue || op.VKind == change.VKDeleteSeq
+	case change.CMovableList:
+		switch op.VKind {
+		case change.VKLoroValue, change.VKDeleteSeq, change.VKListMove, change.VKListSet:
+			return true
+		}
 	}
 	return false
 }
@@ -260,7 +292,7 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 		// A mark adds a start anchor at Start and an end anchor that its
 		// mark-end op places, at Start+Len+1: the end of the span, counted
 		// after the start anchor has gone in.
-		if err := s.insert(op, op.Pos, []any{nil}, true, all, past); err != nil {
+		if _, err := s.insert(op, op.Pos, []any{nil}, true, all, past); err != nil {
 			return err
 		}
 		if mi, ok := op.Value.(MarkInfo); ok {
@@ -274,18 +306,107 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 			return nil
 		}
 		delete(s.pendingEnd, id)
-		return s.insert(op, at, []any{nil}, true, all, past)
+		_, err := s.insert(op, at, []any{nil}, true, all, past)
+		return err
 	case change.VKStr:
 		str, _ := op.Value.(string)
 		var items []any
 		for _, r := range str {
 			items = append(items, string(r))
 		}
-		return s.insert(op, op.Pos, items, false, all, past)
+		_, err := s.insert(op, op.Pos, items, false, all, past)
+		return err
+	case change.VKListMove:
+		return s.move(op, all, past)
+	case change.VKListSet:
+		if set, ok := op.Value.(ListSetValue); ok {
+			if e := s.elems[set.Elem]; e != nil {
+				if w := (writer{op.Lamport, op.Peer}); w.after(e.valueWriter) {
+					e.value, e.valueWriter = set.Value, w
+				}
+			}
+		}
+		return nil
 	default:
 		items, _ := op.Value.([]any)
-		return s.insert(op, op.Pos, items, false, all, past)
+		run, err := s.insert(op, op.Pos, items, false, all, past)
+		if err != nil || op.Kind != change.CMovableList {
+			return err
+		}
+		for k, n := range run {
+			w := writer{op.Lamport + int64(k), op.Peer}
+			e := &movElem{value: items[k], valueWriter: w, pos: n, posWriter: w}
+			n.elem, n.value = e, nil
+			s.elems[ListElem{Peer: op.Peer, Lamport: w.lamport}] = e
+		}
+		return nil
 	}
+}
+
+// move applies a MovableList move the way loro does: the position at index
+// MoveFrom of its author's view is deleted by the move, a new position for the
+// element goes in at index Pos of that view with the old one gone, and the
+// element takes the new position if the move is its latest writer. A move of an
+// element or from an index the input does not have is skipped.
+func (s *seqState) move(op Op, all bool, past pastView) error {
+	le, ok := op.Value.(ListElem)
+	if !ok {
+		return nil
+	}
+	e := s.elems[le]
+	if e == nil {
+		return nil
+	}
+	src, err := s.nthVisible(op.MoveFrom, all, past)
+	if err != nil || src < 0 {
+		return err
+	}
+	if n := s.nodes[src]; len(n.deleters) == 0 {
+		s.live--
+		if s.cursor.ok && src < s.cursor.idx {
+			s.cursor.before--
+		}
+	}
+	s.nodes[src].deleters = append(s.nodes[src].deleters, ID{Peer: op.Peer, Counter: op.Counter})
+	// The destination counts the author's view after its own delete.
+	after := past
+	after.own = op.Counter + 1
+	run, err := s.insert(op, op.Pos, []any{nil}, false, all, after)
+	if err != nil || len(run) == 0 {
+		return err
+	}
+	n := run[0]
+	n.elem = e
+	if w := (writer{op.Lamport, op.Peer}); w.after(e.posWriter) {
+		e.pos, e.posWriter = n, w
+	}
+	return nil
+}
+
+// nthVisible returns the index of the element at position i (from 0) of the
+// op's author's view, or -1 if the view is shorter.
+func (s *seqState) nthVisible(i int64, all bool, past pastView) (int, error) {
+	if i < 0 {
+		return -1, nil
+	}
+	if all {
+		if i >= int64(s.live) {
+			return -1, nil
+		}
+		return s.locate(i+1, true, past)
+	}
+	seen, steps := int64(0), 0
+	for j, n := range s.nodes {
+		steps += 1 + len(n.deleters)
+		if !past.has(n.peer, n.counter) || removedIn(n, past) {
+			continue
+		}
+		if seen == i {
+			return j, s.work.spend(steps)
+		}
+		seen++
+	}
+	return -1, s.work.spend(steps)
 }
 
 // locate returns the index of the pos-th element (counting from 1) the op's
@@ -372,15 +493,15 @@ func removedIn(n *seqNode, past pastView) bool {
 	return false
 }
 
-func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past pastView) error {
+func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past pastView) ([]*seqNode, error) {
 	if len(items) == 0 {
-		return nil
+		return nil, nil
 	}
 	left := -1
 	if pos > 0 {
 		i, err := s.locate(pos, all, past)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		left = i
 	}
@@ -402,8 +523,12 @@ func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past 
 		rightNode = s.nodes[end]
 	}
 	at, steps := s.integrate(start, end, leftNode, rightNode, op.Peer)
-	if err := s.work.spend(steps + end - start + len(items)); err != nil {
-		return err
+	// slices.Insert shifts every node after at. It is a memmove, so it costs a
+	// step per 64 nodes moved rather than per node, but it is counted: a
+	// history of moves to the front of a long list moves the whole history on
+	// every op.
+	if err := s.work.spend(steps + end - start + len(items) + (len(s.nodes)-at)/64); err != nil {
+		return nil, err
 	}
 	run := make([]*seqNode, len(items))
 	for k, v := range items {
@@ -426,7 +551,7 @@ func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past 
 		}
 	}
 	s.live += len(run)
-	return nil
+	return run, nil
 }
 
 // integrate places a run whose origins are left and right among the elements
@@ -649,8 +774,17 @@ func (s *seqState) text() string {
 func (s *seqState) values() []any {
 	out := []any{}
 	for _, n := range s.nodes {
-		if len(n.deleters) == 0 && !n.anchor {
+		if len(n.deleters) != 0 || n.anchor {
+			continue
+		}
+		if n.elem == nil {
 			out = append(out, n.value)
+			continue
+		}
+		// A MovableList element shows at its current position only; its other
+		// positions are moved-from or lost a concurrent move.
+		if n.elem.pos == n {
+			out = append(out, n.elem.value)
 		}
 	}
 	return out

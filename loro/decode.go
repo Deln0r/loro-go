@@ -104,6 +104,20 @@ type TreeNode struct {
 	FI        string // fractional index, hex
 }
 
+// ListElem names a MovableList element the way loro does: the peer that
+// created it and the lamport of the op that did. A move or a set addresses its
+// element this way.
+type ListElem struct {
+	Peer    uint64
+	Lamport int64
+}
+
+// ListSetValue is a decoded MovableList set: element Elem takes Value.
+type ListSetValue struct {
+	Elem  ListElem
+	Value any
+}
+
 // MarkInfo is a decoded rich-text mark: the style key/value applied over the
 // visible range [Start, Start+Len). Info holds loro's expand flags (anchor
 // behavior), not yet interpreted.
@@ -339,8 +353,16 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			}
 			op.Value = node
 		case change.ListMove:
+			if tv.FromIdx < 0 || tv.FromIdx >= int64(len(hdr.Peers)) {
+				return nil, fmt.Errorf("loro: move peer index %d out of range", tv.FromIdx)
+			}
 			op.MoveFrom = tv.From
-			op.Value = nil
+			op.Value = ListElem{Peer: hdr.Peers[tv.FromIdx], Lamport: tv.Lamport}
+		case change.ListSet:
+			if tv.PeerIdx < 0 || tv.PeerIdx >= int64(len(hdr.Peers)) {
+				return nil, fmt.Errorf("loro: set peer index %d out of range", tv.PeerIdx)
+			}
+			op.Value = ListSetValue{Elem: ListElem{Peer: hdr.Peers[tv.PeerIdx], Lamport: tv.Lamport}, Value: tv.Value}
 		case change.Mark:
 			op.Value = MarkInfo{Start: op.Pos, Len: tv.Len, Info: tv.Info, Key: markKey(keys, tv.KeyIdx), Value: tv.Value}
 		}

@@ -94,7 +94,7 @@ Both are pinned in `loro/idempotence_test.go`. If you change the merge path, kee
 
 A third holds for Text, List and MovableList:
 
-- **Positions mean what the author saw.** An insert or delete records only an index, so it is resolved against its author's view: the elements in its causal past (the closure of its change's deps, plus the author's own earlier atoms), minus those removed by a delete atom inside that past, with rich-text mark anchors taking positions. Inserts made concurrently at the same place are then ordered by Fugue from the left and right origins their authors saw, as loro orders them.
+- **Positions mean what the author saw.** An insert or delete records only an index, so it is resolved against its author's view: the elements in its causal past (the closure of its change's deps, plus the author's own earlier atoms), minus those removed by a delete atom inside that past, with rich-text mark anchors taking positions. Inserts made concurrently at the same place are then ordered by Fugue from the left and right origins their authors saw, as loro orders them. In a MovableList those are positions: a move deletes the position it moves from and adds one, and each element sits at its position with the latest writer.
 
 `loro/causal_ref_test.go` is a brute-force reference for that rule, sharing no code with the merge. `TestCausalRefMatchesLoro` holds the reference to loro-crdt on every fixture, and `TestMergeMatchesCausalReference` holds the merge to the reference on random multi-peer histories. If you change the sequence merge, keep both passing.
 

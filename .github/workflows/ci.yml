@@ -131,6 +131,11 @@ jobs:
           go test ./encoding/change/ -run='^$' -fuzz='^FuzzLoroValue$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./encoding/kv/ -run='^$' -fuzz='^FuzzParseSSTable$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./encoding/lz4/ -run='^$' -fuzz='^FuzzDecompressFrame$' -fuzztime=15s -fuzzminimizetime=3s
+      # The Matrix transport is its own module; its fuzzer decodes one wire event
+      # the way Replay decodes every event a homeserver hands back.
+      - name: fuzz smoke (Matrix events from a homeserver)
+        working-directory: integration/matrix
+        run: go test . -run='^$' -fuzz='^FuzzCollectRaw$' -fuzztime=15s -fuzzminimizetime=3s
       - name: upload crashers on failure
         if: failure()
         uses: actions/upload-artifact@v7

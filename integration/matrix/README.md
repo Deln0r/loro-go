@@ -129,15 +129,18 @@ once. It took a real transport to produce the overlaps.
   Read room membership as full authority over the document. The checks buy
   availability of reading, not integrity of content, and
   `TestValidationIsNotAuthorisation` exists to keep that honest.
-- **Not hardened against a hostile homeserver.** mautrix parses a `/sync` or
-  `/messages` response into one typed tree, so a single event whose `content` is
-  a JSON string rather than an object fails the whole response, and with it
-  every legitimate update on that page. Because the event stays in the room, the
-  failure is permanent for that peer. Dendrite rejects such an event on `/send`
-  (`M_BAD_JSON`), so this needs a hostile or non-conforming server in a
-  federated room; the caller gets a loud error rather than a wrong document, so
-  this is availability, not data loss. Fixing it means decoding each event from
-  raw JSON instead of relying on the client library's typed parse.
+- **No defence against a homeserver that withholds or forges events.**
+  Withheld events cost availability, which the merge tolerates; an event forged
+  in the name of a member the server controls falls under the authorisation
+  boundary above. A malformed event no longer stops a replay: `Replay` reads
+  `/sync` and `/messages` only as far as it needs and decodes each event on its
+  own, so an event that is not a JSON object, or a `dev.loro.update` whose
+  content is not one, is reported in the error list while the rest of the page
+  replays (`TestReplaySurvivesAHostileEvent`, `FuzzCollectRaw`). An earlier
+  version handed the whole response to the client library's typed parse, which
+  failed on such an event and lost every update on that page for good; Dendrite
+  refuses those events on `/send`, so they take a hostile or non-conforming
+  server.
 - No compaction. Every update stays in the room, so replay cost grows with the
   room's history.
 

@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -164,26 +166,85 @@ func Collect(events []*event.Event) (*loro.Updates, []error) {
 		if evt == nil || evt.Type.Type != EventType {
 			continue
 		}
-		var content UpdateContent
-		if err := json.Unmarshal(evt.Content.VeryRaw, &content); err != nil {
-			errs = append(errs, fmt.Errorf("event %s: %w", evt.ID, err))
-			continue
-		}
-		blob, err := Decode(&content)
+		changes, err := decodeContent(evt.ID, evt.Content.VeryRaw)
 		if err != nil {
-			if !errors.Is(err, ErrForeignFormat) {
-				errs = append(errs, fmt.Errorf("event %s: %w", evt.ID, err))
-			}
+			errs = append(errs, err)
 			continue
 		}
-		u, err := loro.DecodeUpdates(blob)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("event %s: %w", evt.ID, err))
-			continue
-		}
-		merged.Changes = append(merged.Changes, u.Changes...)
+		merged.Changes = append(merged.Changes, changes...)
 	}
 	return merged, errs
+}
+
+// CollectRaw is Collect for events still in their wire form, one JSON value
+// each, as a /sync timeline or a /messages chunk holds them. Each event is
+// decoded on its own, so an event that is not an object, or whose content is
+// not one, is reported and the rest still merge. That is the difference from
+// handing the whole response to a typed parse, where one such event fails the
+// response and every update on it.
+func CollectRaw(events []json.RawMessage) (*loro.Updates, []error) {
+	merged := &loro.Updates{}
+	errs := collectRaw(events, merged, nil)
+	return merged, errs
+}
+
+// rawEvent is the part of a timeline event this package reads.
+type rawEvent struct {
+	ID      id.EventID      `json:"event_id"`
+	Type    string          `json:"type"`
+	Content json.RawMessage `json:"content"`
+}
+
+// collectRaw decodes each event, appends the changes of the Loro updates among
+// them to merged, and returns what failed. seen, when not nil, skips an event
+// id already handled, since a sync window and the first backfill page can
+// overlap.
+func collectRaw(events []json.RawMessage, merged *loro.Updates, seen map[id.EventID]bool) []error {
+	var errs []error
+	for _, raw := range events {
+		var evt rawEvent
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			errs = append(errs, fmt.Errorf("loromatrix: unreadable event: %w", err))
+			continue
+		}
+		if seen != nil && evt.ID != "" {
+			if seen[evt.ID] {
+				continue
+			}
+			seen[evt.ID] = true
+		}
+		if evt.Type != EventType {
+			continue
+		}
+		changes, err := decodeContent(evt.ID, evt.Content)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		merged.Changes = append(merged.Changes, changes...)
+	}
+	return errs
+}
+
+// decodeContent turns the content of one dev.loro.update event into changes.
+// An event in a format this package does not know yields none and no error.
+func decodeContent(evtID id.EventID, raw json.RawMessage) ([]loro.Change, error) {
+	var content UpdateContent
+	if err := json.Unmarshal(raw, &content); err != nil {
+		return nil, fmt.Errorf("event %s: %w", evtID, err)
+	}
+	blob, err := Decode(&content)
+	if err != nil {
+		if errors.Is(err, ErrForeignFormat) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("event %s: %w", evtID, err)
+	}
+	u, err := loro.DecodeUpdates(blob)
+	if err != nil {
+		return nil, fmt.Errorf("event %s: %w", evtID, err)
+	}
+	return u.Changes, nil
 }
 
 // Replay reads the whole room and merges every Loro update in it. This is what
@@ -223,28 +284,37 @@ func Replay(ctx context.Context, cli *mautrix.Client, roomID id.RoomID, pageSize
 	// the same event can be handed out twice. The merge tolerates a duplicate
 	// op, but there is no reason to decode and carry one, and counting events
 	// is how a caller can tell what it actually read.
-	seenEvents := map[id.EventID]bool{}
-	fresh := func(events []*event.Event) []*event.Event {
-		out := events[:0:0]
-		for _, evt := range events {
-			if evt == nil || seenEvents[evt.ID] {
-				continue
-			}
-			seenEvents[evt.ID] = true
-			out = append(out, evt)
-		}
-		return out
-	}
+	seen := map[id.EventID]bool{}
 
-	sync, err := cli.SyncRequest(ctx, 0, "", "", false, event.PresenceOnline)
-	if err != nil {
+	// Both responses are read only as far as this package needs and the
+	// events are kept raw, to be decoded one at a time by collectRaw. A typed
+	// parse of the whole response fails on a single event whose content is not
+	// an object, which a hostile or non-conforming server can serve, and takes
+	// every legitimate update on that page with it.
+	var sync struct {
+		Rooms struct {
+			Join map[id.RoomID]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	syncURL := cli.BuildURLWithQuery(mautrix.ClientURLPath{"v3", "sync"}, map[string]string{
+		"timeout":      "0",
+		"set_presence": string(event.PresenceOnline),
+	})
+	if _, err := cli.MakeRequest(ctx, http.MethodGet, syncURL, nil, &sync); err != nil {
 		return merged, errs, fmt.Errorf("loromatrix: replay: initial sync: %w", err)
 	}
 	from := ""
-	if joined := sync.Rooms.Join[roomID]; joined != nil {
-		u, syncErrs := Collect(fresh(joined.Timeline.Events))
-		merged.Changes = append(merged.Changes, u.Changes...)
-		errs = append(errs, syncErrs...)
+	if raw, ok := sync.Rooms.Join[roomID]; ok {
+		var joined struct {
+			Timeline struct {
+				Events    []json.RawMessage `json:"events"`
+				PrevBatch string            `json:"prev_batch"`
+			} `json:"timeline"`
+		}
+		if err := json.Unmarshal(raw, &joined); err != nil {
+			return merged, errs, fmt.Errorf("loromatrix: replay: initial sync: room %s: %w", roomID, err)
+		}
+		errs = append(errs, collectRaw(joined.Timeline.Events, merged, seen)...)
 		from = joined.Timeline.PrevBatch
 	}
 	if from == "" {
@@ -253,22 +323,28 @@ func Replay(ctx context.Context, cli *mautrix.Client, roomID id.RoomID, pageSize
 		return merged, errs, nil
 	}
 
-	seen := map[string]bool{}
+	tokens := map[string]bool{}
 	for {
-		resp, err := cli.Messages(ctx, roomID, from, "", mautrix.DirectionBackward, nil, pageSize)
-		if err != nil {
+		var page struct {
+			Chunk []json.RawMessage `json:"chunk"`
+			End   string            `json:"end"`
+		}
+		pageURL := cli.BuildURLWithQuery(mautrix.ClientURLPath{"v3", "rooms", roomID, "messages"}, map[string]string{
+			"dir":   string(mautrix.DirectionBackward),
+			"from":  from,
+			"limit": strconv.Itoa(pageSize),
+		})
+		if _, err := cli.MakeRequest(ctx, http.MethodGet, pageURL, nil, &page); err != nil {
 			return merged, errs, fmt.Errorf("loromatrix: replay: %w", err)
 		}
-		u, pageErrs := Collect(fresh(resp.Chunk))
-		merged.Changes = append(merged.Changes, u.Changes...)
-		errs = append(errs, pageErrs...)
+		errs = append(errs, collectRaw(page.Chunk, merged, seen)...)
 		// A server that keeps handing back the same token would otherwise spin
 		// here forever.
-		if resp.End == "" || resp.End == from || seen[resp.End] {
+		if page.End == "" || page.End == from || tokens[page.End] {
 			return merged, errs, nil
 		}
-		seen[from] = true
-		from = resp.End
+		tokens[from] = true
+		from = page.End
 	}
 }
 

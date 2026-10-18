@@ -42,6 +42,35 @@ type fakeHomeserver struct {
 	// stateBroken makes the state lookup fail with something other than a
 	// clean "not found", so the fail-closed path is exercised.
 	stateBroken bool
+	// raw holds events the double serves verbatim instead of the log entry at
+	// that index, so a test can put in front of the client what a hostile or
+	// non-conforming server would, which a real one refuses on /send.
+	raw map[int]json.RawMessage
+}
+
+// addRaw appends an event that is served exactly as given.
+func (f *fakeHomeserver) addRaw(raw string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.raw == nil {
+		f.raw = map[int]json.RawMessage{}
+	}
+	f.raw[len(f.log)] = json.RawMessage(raw)
+	f.log = append(f.log, &event.Event{})
+}
+
+// wire is how the log entries [start, end) go out on the wire. Callers hold mu.
+func (f *fakeHomeserver) wire(start, end int) []json.RawMessage {
+	out := make([]json.RawMessage, 0, end-start)
+	for i := start; i < end; i++ {
+		if raw, ok := f.raw[i]; ok {
+			out = append(out, raw)
+			continue
+		}
+		b, _ := json.Marshal(f.log[i])
+		out = append(out, b)
+	}
+	return out
 }
 
 func (f *fakeHomeserver) handler() http.Handler {
@@ -76,7 +105,7 @@ func (f *fakeHomeserver) sync(w http.ResponseWriter, r *http.Request) {
 	if start < 0 {
 		start = 0
 	}
-	newest := append([]*event.Event(nil), f.log[start:]...)
+	newest := f.wire(start, len(f.log))
 
 	resp := map[string]any{
 		"next_batch": "now",
@@ -190,7 +219,7 @@ func (f *fakeHomeserver) messages(w http.ResponseWriter, r *http.Request) {
 	if start < 0 {
 		start = 0
 	}
-	chunk := append([]*event.Event(nil), f.log[start:end]...)
+	chunk := f.wire(start, end)
 	if f.emptyPageAt > 0 && !f.emptyServed && end <= f.emptyPageAt {
 		// Hand back nothing for this page while still pointing further back.
 		f.emptyServed = true
@@ -580,5 +609,43 @@ func TestPublishFailsClosedOnUnknownState(t *testing.T) {
 	defer f.mu.Unlock()
 	if len(f.log) != 0 {
 		t.Errorf("refused, but %d event(s) still reached the room", len(f.log))
+	}
+}
+
+// TestReplaySurvivesAHostileEvent puts two events a conforming homeserver
+// refuses on /send into the room: one dev.loro.update whose content is a JSON
+// string rather than an object, and one that is not even an object. A client
+// that parses a whole /sync or /messages response into one typed tree fails
+// on either and loses every legitimate update on that page, for good, since
+// the events stay in the room. Each event is decoded on its own instead, so the
+// two are reported and everything else replays.
+func TestReplaySurvivesAHostileEvent(t *testing.T) {
+	for _, pageSize := range []int{0, 2} {
+		t.Run(fmt.Sprintf("page %d", pageSize), func(t *testing.T) {
+			f := &fakeHomeserver{pageSize: pageSize}
+			cli := newTestClient(t, f)
+			ctx := context.Background()
+			publish := func(peer uint64, text string) {
+				if _, err := Publish(ctx, cli, testRoomID, sampleBlob(t, peer, text)); err != nil {
+					t.Fatalf("Publish: %v", err)
+				}
+			}
+			publish(1, "first")
+			f.addRaw(`{"type":"dev.loro.update","event_id":"$bad1","sender":"@mallory:example.org","content":"not an object"}`)
+			publish(2, "second")
+			f.addRaw(`"not an event"`)
+			publish(3, "third")
+
+			u, errs, err := Replay(ctx, cli, testRoomID, pageSize)
+			if err != nil {
+				t.Fatalf("Replay: %v", err)
+			}
+			if len(errs) != 2 {
+				t.Errorf("reported %d bad events, want 2: %v", len(errs), errs)
+			}
+			if len(u.Changes) != 3 {
+				t.Errorf("replayed %d changes, want the 3 legitimate ones", len(u.Changes))
+			}
+		})
 	}
 }

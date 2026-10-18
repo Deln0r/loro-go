@@ -1,6 +1,6 @@
 name: Fuzz nightly
 
-# The per-push job in ci.yml is a smoke test: nine targets, fifteen seconds
+# The per-push job in ci.yml is a smoke test: ten targets, fifteen seconds
 # each, starting from an empty corpus every time. It catches a decoder that
 # breaks outright and nothing subtler.
 #
@@ -43,6 +43,10 @@ jobs:
             target: FuzzParseSSTable
           - pkg: ./encoding/lz4/
             target: FuzzDecompressFrame
+          # The Matrix transport is its own module, so it runs from its directory.
+          - pkg: .
+            dir: integration/matrix
+            target: FuzzCollectRaw
     steps:
       - uses: actions/checkout@v7
       # Fuzzing runs on Go 1.27, not on the go.mod minimum. Go 1.26's fuzzer can
@@ -70,6 +74,7 @@ jobs:
             fuzz-corpus-${{ matrix.target }}-
 
       - name: fuzz ${{ matrix.target }}
+        working-directory: ${{ matrix.dir || '.' }}
         run: go test ${{ matrix.pkg }} -run='^$' -fuzz='^${{ matrix.target }}$' -fuzztime=4m -fuzzminimizetime=30s
 
       # A failing input is written under the package's testdata/fuzz, which is

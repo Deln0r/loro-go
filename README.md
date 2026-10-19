@@ -99,6 +99,8 @@ cd testdata/gen && npm install && node gen.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 
+`testdata/gen/lorojs_check.mjs` runs the same fixtures and corpora through loro.js, the TypeScript implementation of Loro, as a second oracle. loro.js 0.3.0 agrees with loro-crdt on all of them except two tree fixtures with crossing concurrent moves, where its tree came out empty; that was reported as [loro-dev/loro#1182](https://github.com/loro-dev/loro/issues/1182) and fixed upstream in [loro-dev/loro#1205](https://github.com/loro-dev/loro/pull/1205), after 0.3.0.
+
 ## Contributing
 
 Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for scope, the byte-compatibility rule for codec changes, fixture regeneration, and fuzzing.

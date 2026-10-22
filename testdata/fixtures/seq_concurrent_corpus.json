@@ -9,7 +9,18 @@
     83
    ],
    "t": "dé😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dé"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 2,
@@ -19,21 +30,51 @@
     59
    ],
    "t": "é😀中中中é中😀db"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀中中中é中😀"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "b"
+   }
+  ]
  },
  {
   "seed": 3,
   "update": "bG9ybwAAAAAAAAAAAAAAAE4pjPEABD0AAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIABQRl5LitPQADAAMBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwAFBGTDqWU8AAIAAgEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgECAAQDw6lh",
   "expected": {
    "t": "e中déeéa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e中déeéa"
+   }
+  ]
  },
  {
   "seed": 4,
   "update": "bG9ybwAAAAAAAAAAAAAAANyZ2xkABIgBABMAEwEQAQEAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAIHBGJvbGQBdAAtAQQCFgAOAQAEAgMDCgQDBwEOBQENBAUDDAAGCQEFBAkBBQoEAwoBAQQEAQECEgEDAgoABwEKBAEDAwEEAQIIABoDZWVkBWPkuK1ihAEAAQhiY8Op8J+YgAJhYmMADAAMARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAaAQQCCgAGCQACAQAGBgkFCQUJBQYEAgUEAQMNAQMCBAADAwAIAwMDBhII8J+YgPCfmIAEZWNjYgNlYmU=",
   "expected": {
    "t": "bcéab😀dccbebe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bcéab😀dccbebe"
+   }
+  ]
  },
  {
   "seed": 5,
@@ -43,7 +84,12 @@
     27
    ],
    "t": "aa😀e😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aa😀e😀"
+   }
+  ]
  },
  {
   "seed": 6,
@@ -53,14 +99,30 @@
     12
    ],
    "t": "中ccba"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中ccb"
+   },
+   {
+    "insert": "a",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 7,
   "update": "bG9ybwAAAAAAAAAAAAAAAL37abEABFUABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAATAQQCCAACCAAFAwUJBAUEBgEBAwsBAwIBAAIBAAIBAg0D5LitAWEGYmTwn5iAXQAKAAoBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABoBBAIKAAYJAAIAAQYGBAUECQEFBgQDAQIEAQ0BAwIEAAMDBgUDAwQBDAXkuK1hYQNiZWQBY0oAAwoDARsCAwAAAAAAAAACAAAAAAAAAAEBAQEBARIAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwAHBmTwn5iAYQ==",
   "expected": {
    "t": "bd😀ad😀adaac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bd😀ad😀adaac"
+   }
+  ]
  },
  {
   "seed": 8,
@@ -70,7 +132,30 @@
     64
    ],
    "t": "dc😀b中eéad😀ddbad😀e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dc😀b"
+   },
+   {
+    "insert": "中eéa",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d😀ddbad"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "e"
+   }
+  ]
  },
  {
   "seed": 9,
@@ -81,14 +166,24 @@
     52
    ],
    "t": "😀中db中中e😀d😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀中db中中e😀d😀"
+   }
+  ]
  },
  {
   "seed": 10,
   "update": "bG9ybwAAAAAAAAAAAAAAAMPgSCgABFsABAAEAh8CAQAAAAAAAAACAAAAAAAAAAMBAQMAAQEBAQIAAQAABgEAAQAEAAYBBAECAAACAXQAEQEEAgQAAwMABAMDBQkDAwMBCwEDAgEAAgEEAgECBQRhZMOpQwADAAMBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABABBAIEAAMDAAQCBAUDAwIBAAkFZPCfmIACw6k=",
   "expected": {
    "t": "add😀é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "add😀é"
+   }
+  ]
  },
  {
   "seed": 11,
@@ -96,7 +191,21 @@
   "expected": {
    "l": [],
    "t": "cc😀😀cé😀aec中eeaa😀eca😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cc😀😀cé"
+   },
+   {
+    "insert": "😀aec中eeaa😀ec",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "a😀"
+   }
+  ]
  },
  {
   "seed": 12,
@@ -106,7 +215,12 @@
     42
    ],
    "t": "ca😀ceabééaé中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ca😀ceabééaé中"
+   }
+  ]
  },
  {
   "seed": 13,
@@ -117,7 +231,12 @@
     4
    ],
    "t": "😀ééé中😀dbdc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀ééé中😀dbdc"
+   }
+  ]
  },
  {
   "seed": 14,
@@ -131,7 +250,12 @@
     98
    ],
    "t": "béb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "béb😀"
+   }
+  ]
  },
  {
   "seed": 15,
@@ -141,7 +265,12 @@
     47
    ],
    "t": "adcbab"
-  }
+  },
+  "delta": [
+   {
+    "insert": "adcbab"
+   }
+  ]
  },
  {
   "seed": 16,
@@ -151,7 +280,12 @@
     96
    ],
    "t": "e😀中cbbd中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e😀中cbbd中"
+   }
+  ]
  },
  {
   "seed": 17,
@@ -161,7 +295,12 @@
     35
    ],
    "t": "😀😀aca中cdcb中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀😀aca中cdcb中"
+   }
+  ]
  },
  {
   "seed": 18,
@@ -171,14 +310,36 @@
     3
    ],
    "t": "😀中😀aeeb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀中",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀a"
+   },
+   {
+    "insert": "eeb😀",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 19,
   "update": "bG9ybwAAAAAAAAAAAAAAAM16d1QABF0ACgAKAh8CAQAAAAAAAAACAAAAAAAAAAcBAQMAAQEBAQAAAQAABgEAAQAEAAYBBAECAAACAXQAEgEEAgYABAUAAgwCBgUEBQUCAwARCcOpZcOpZOS4rQJhYQNkYWU9AAEAAQEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEBAAUE8J+YgHYABwMHASYDAwAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAQECAwECAQABoIAAAAUBAAABAAYBBAECAAACAXQAGwEEAgoABwEGBAEDAAEGBAkBBQQJBgQBAQMEARMBAwUEAgMDBAUHAAQAAwQBAgYACAfkuK3kuK1i",
   "expected": {
    "t": "aa中bed中dae"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aa中bed中dae"
+   }
+  ]
  },
  {
   "seed": 20,
@@ -189,7 +350,18 @@
     28
    ],
    "t": "cdéa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cdé",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "a"
+   }
+  ]
  },
  {
   "seed": 21,
@@ -200,7 +372,12 @@
     6
    ],
    "t": "b中aé中中ded😀中中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中aé中中ded😀中中"
+   }
+  ]
  },
  {
   "seed": 22,
@@ -211,7 +388,12 @@
     85
    ],
    "t": "a中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a中"
+   }
+  ]
  },
  {
   "seed": 23,
@@ -222,7 +404,40 @@
     53
    ],
    "t": "a😀e😀😀中dddcbdcb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀e😀😀"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ddd"
+   },
+   {
+    "insert": "cbd",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "c",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 24,
@@ -233,7 +448,12 @@
     90
    ],
    "t": "bb中中e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bb中中e"
+   }
+  ]
  },
  {
   "seed": 25,
@@ -244,7 +464,12 @@
     6
    ],
    "t": "dbdadadcaééaec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dbdadadcaééaec"
+   }
+  ]
  },
  {
   "seed": 26,
@@ -254,14 +479,36 @@
     13
    ],
    "t": "cded"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cde"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 27,
   "update": "bG9ybwAAAAAAAAAAAAAAAAV2kAcABEkAAwADARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAEAEEAgYAAgYABAUFDAACBgEACAPkuK2EAQABUQAHAAcBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABIBBAIGAAIGAAQFBQkFBAQDAQELAQMCAQACAQACAQYKB2TDqfCfmIABYQ==",
   "expected": {
    "t": "中a"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "a"
+   }
+  ]
  },
  {
   "seed": 28,
@@ -271,14 +518,39 @@
     98
    ],
    "t": "中éé中😀ébdeda😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中éé中😀ébde"
+   },
+   {
+    "insert": "da😀",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 29,
   "update": "bG9ybwAAAAAAAAAAAAAAAN5Sle8ABFsACgAKARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAXAQQCCgAFBgADBAEEBgUECQYEAwECBAENAQMCBAADAwYIAwMCAA0DZWFjBMOpZWUDw6ljXgAKAAoBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgACBwRib2xkAXQAGwEEAgoABgkABAMCAAYFBQwABAUHAQMEAQMDAgAUA2VjYYQBAAEH5LitZeS4rQPDqWE6AAEAAQEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEBAAIBYw==",
   "expected": {
    "t": "éeeeaceéa中e中cac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éeeeaceéa中e中c"
+   },
+   {
+    "insert": "a",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "c"
+   }
+  ]
  },
  {
   "seed": 30,
@@ -288,14 +560,33 @@
     89
    ],
    "t": "ad中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ad中"
+   }
+  ]
  },
  {
   "seed": 31,
   "update": "bG9ybwAAAAAAAAAAAAAAAOsnv50ABI0BABEAEQIfAgEAAAAAAAAAAgAAAAAAAAANAQEDAAEBAQECAAEAAAYBAAEABAAGAQQBAgACBwRib2xkAXQAIQEEAhIACgQADQIADA0EFAEHCAUDDAAGCQgBAgYDCAEBAhEBAwQFAAIBBAUSEQAEBQIABRwDw6lhBmHwn5iAZQZj8J+YgGQFZWXkuK2EAgABUAAFAAUBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABQBBAIGAAQFAAIABAUFCQUEBQIBAgsBAwIBAAIBAgIBAgcDw6llAmJlPQAEAAQBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBBAAFBGVkYWE=",
   "expected": {
    "t": "ae中c😀d😀ebeedaa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ae中c😀d"
+   },
+   {
+    "insert": "😀e",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "beedaa"
+   }
+  ]
  },
  {
   "seed": 32,
@@ -306,7 +597,12 @@
     28
    ],
    "t": "é😀cécé😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é😀cécé😀"
+   }
+  ]
  },
  {
   "seed": 33,
@@ -316,14 +612,30 @@
     52
    ],
    "t": "dé😀中中bé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dé😀中中b",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "é"
+   }
+  ]
  },
  {
   "seed": 34,
   "update": "bG9ybwAAAAAAAAAAAAAAAP/NCtoABF0ACAAIARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAWAQQCCAAEBgABBgUDBQkEBQUEAQMEAgsBAwIBAAIBAAIBAhID5LitCGJiw6nwn5iABOS4rWE=",
   "expected": {
    "t": "bbé中a😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bbé中a😀"
+   }
+  ]
  },
  {
   "seed": 35,
@@ -335,7 +647,15 @@
     77
    ],
    "t": "中bb😀ec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中bb😀ec",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 36,
@@ -345,14 +665,27 @@
     94
    ],
    "t": "ada😀😀ca中aeéec中bé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ada😀😀ca中aeéec中bé"
+   }
+  ]
  },
  {
   "seed": 37,
   "update": "bG9ybwAAAAAAAAAAAAAAAK++gfwABIEBAA8CDwEbAgEAAAAAAAAAAwAAAAAAAAABAQEBAQECAAAABQEAAAEABgEEAQIAAAIBdAAkAQQCEAAJDwAIAQMEAQMACgEFBAkBBQYJAQUJAQMEAQYCAwEDFwEDBgUCAAEEAAYJAAIACAkGCQIAAgcGEQRhZcOpAmVkCOS4rfCfmIBlgwEACwALAyUCAgAAAAAAAAADAAAAAAAAAAICAQIBAAQBBAEBAgGggAEAAaCABgEAAgAGAAYBBAECAAIHBGJvbGQBdAAhAQQCDgAICQAEAwIBBAAIDQUMAAkFDAAJAQIEAQMCAwQBCwEDAgEAAgEAAgEDEgJlZIQBAAEGYfCfmIBlhAMAAXAACAAIAh8CAwAAAAAAAAACAAAAAAAAAAcBAQMAAQEBAQgAAQAABgEAAQAEAAYBBAECAAACAXQAGwEEAgwABwQAAwIBBAAHBAUECQMFCQUIAQMDAREBAwQEAAECBAUAAgEEAQIEAAoBYgFhBWVl5Lit",
   "expected": {
    "t": "a😀e中😀eee中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀e中😀eee中",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 38,
@@ -363,7 +696,18 @@
     55
    ],
    "t": "bé😀ee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bé😀e"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 39,
@@ -373,7 +717,12 @@
     33
    ],
    "t": "中edcec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中edcec"
+   }
+  ]
  },
  {
   "seed": 40,
@@ -383,7 +732,18 @@
     21
    ],
    "t": "中daccdée"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中daccdé"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 41,
@@ -394,7 +754,12 @@
     75
    ],
    "t": "😀中cébcc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀中cébcc"
+   }
+  ]
  },
  {
   "seed": 42,
@@ -404,7 +769,27 @@
     9
    ],
    "t": "eccdé中a中bc中é中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ec",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "cd"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中a中bc中é中d"
+   }
+  ]
  },
  {
   "seed": 43,
@@ -414,14 +799,24 @@
     39
    ],
    "t": "😀eé😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀eé😀"
+   }
+  ]
  },
  {
   "seed": 44,
   "update": "bG9ybwAAAAAAAAAAAAAAAOZdmPcABFYACAAIARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAATAQQCCAACCAAFBwUJBQkEBAEEAw0BAwIEAAMDAAQDAwIEDATwn5iABmVi8J+YgDsAAgACARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIAAwJjYw==",
   "expected": {
    "t": "cc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cc"
+   }
+  ]
  },
  {
   "seed": 45,
@@ -433,14 +828,42 @@
     86
    ],
    "t": "é😀😀😀éaééccb😀ba"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é😀😀😀"
+   },
+   {
+    "insert": "éaééc",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "c"
+   },
+   {
+    "insert": "b😀b",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "a"
+   }
+  ]
  },
  {
   "seed": 46,
   "update": "bG9ybwAAAAAAAAAAAAAAAJCyux4ABFIABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAASAQQCBgACBgAEBQUJBQQFAgEDCwEDAgEAAgEAAgECCwNiw6kGYvCfmIBiaAAGAAYCHwICAAAAAAAAAAEAAAAAAAAAAgEBAwABAQEBAgABAAAGAQABAAQABgEEAQIAAAIBdAAWAQQCCAAFAwAEBAEEAQUGCQUHAgECAREBAwQFAAIBBAQAAQIEBQIFBgcGw6nwn5iA",
   "expected": {
    "t": "b😀b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b😀b"
+   }
+  ]
  },
  {
   "seed": 47,
@@ -451,7 +874,12 @@
     40
    ],
    "t": "中ebb😀cdcad😀éab"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中ebb😀cdcad😀éab"
+   }
+  ]
  },
  {
   "seed": 48,
@@ -461,14 +889,42 @@
     65
    ],
    "t": "béc😀bddb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bé"
+   },
+   {
+    "insert": "c😀b",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "b"
+   }
+  ]
  },
  {
   "seed": 49,
   "update": "bG9ybwAAAAAAAAAAAAAAAL8fhrkABEQABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAADAwACAgQFAgQDAAsG5LitY8OpA2FhZUYAAgACARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAACBAADAwUJAgQBCwEDAgEAAgEAAgECAgFi",
   "expected": {
    "t": "中aaecé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中aaecé"
+   }
+  ]
  },
  {
   "seed": 50,
@@ -479,14 +935,24 @@
     87
    ],
    "t": "cc😀中ecdbddb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cc😀中ecdbddb😀"
+   }
+  ]
  },
  {
   "seed": 51,
   "update": "bG9ybwAAAAAAAAAAAAAAAHlbpaIABFgABwAHARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAYAQQCCgAFBgADAgEFAwUJBgUGBAEEAgEBCwEDAgEAAgEAAgECCwFjAmFiA2XDqQFi",
   "expected": {
    "t": "baeéb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "baeéb"
+   }
+  ]
  },
  {
   "seed": 52,
@@ -496,7 +962,21 @@
     52
    ],
    "t": "aaaébdéd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "aaé",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "bdéd"
+   }
+  ]
  },
  {
   "seed": 53,
@@ -506,7 +986,12 @@
     70
    ],
    "t": "😀éaécd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀éaécd"
+   }
+  ]
  },
  {
   "seed": 54,
@@ -516,7 +1001,12 @@
     24
    ],
    "t": "éeé中c中cba中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éeé中c中cba中"
+   }
+  ]
  },
  {
   "seed": 55,
@@ -527,7 +1017,12 @@
     11
    ],
    "t": "ééb中ce"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ééb中ce"
+   }
+  ]
  },
  {
   "seed": 56,
@@ -537,7 +1032,12 @@
     79
    ],
    "t": "😀eaa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀eaa"
+   }
+  ]
  },
  {
   "seed": 57,
@@ -549,14 +1049,33 @@
     85
    ],
    "t": "eéaaa中😀eabdb中éd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eéaaa中😀eabdb中éd"
+   }
+  ]
  },
  {
   "seed": 58,
   "update": "bG9ybwAAAAAAAAAAAAAAAHpCBUQABH8AEQARARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgcEYm9sZAF0ACcBBAIUAAsEAA8CAAEEAAMIBwoGBQQJCQUMAAwACgQDAQIEAQEDCAENAQMCBAADAwwFAwMCABwGYmXwn5iABcOpZcOpAmJlA2FlZYQDAAGEBwABVAAFAAUBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABQBBAIIAAIIAAUHBQkFCQUEAQMCAQ0BAwIEAAMDAAQDAwIACQLDqQXwn5iAZA==",
   "expected": {
    "t": "eeaeeébe😀d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ee"
+   },
+   {
+    "insert": "aeeébe😀",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d"
+   }
+  ]
  },
  {
   "seed": 59,
@@ -566,7 +1085,18 @@
     44
    ],
    "t": "e中😀b😀😀ab中bb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e中😀b😀😀ab中bb"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 60,
@@ -576,14 +1106,24 @@
     34
    ],
    "t": "e😀éde中aéb😀中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e😀éde中aéb😀中"
+   }
+  ]
  },
  {
   "seed": 61,
   "update": "bG9ybwAAAAAAAAAAAAAAABWze08ABDwAAQABARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQEABAPkuK1MAAQABAEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAEgEEAgYAAgYABAUFCQUEBAEBAgsBAwIBAAIBAAIBAgUBYQJhY08AAwADARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAARAQQCBAADAwACAwMFCQMDAgELAQMCAQACAQICAQIJCPCfmIDwn5iA",
   "expected": {
    "t": "中ac😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中ac😀"
+   }
+  ]
  },
  {
   "seed": 62,
@@ -593,14 +1133,33 @@
     20
    ],
    "t": "eeacé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eeacé"
+   }
+  ]
  },
  {
   "seed": 63,
   "update": "bG9ybwAAAAAAAAAAAAAAAGJNm0wABFcACAAIARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAGAEEAggABQcAAgEABQcFDAAFBgEDBAEBAwAOA2VlZIQCAAEFYuS4rWVJAAQABAEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAEAEEAgQAAgQAAwMFCQMDAwELAQMCAQACAQACAQIEA2RlZDwAAwADARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABANkYWQ=",
   "expected": {
    "t": "b中eeededdad"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中ee"
+   },
+   {
+    "insert": "ed",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "eddad"
+   }
+  ]
  },
  {
   "seed": 64,
@@ -610,7 +1169,12 @@
     32
    ],
    "t": "céédc😀ec中😀baé😀cdcaé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "céédc😀ec中😀baé😀cdcaé"
+   }
+  ]
  },
  {
   "seed": 65,
@@ -620,14 +1184,36 @@
     40
    ],
    "t": "baeacc😀😀c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "baea"
+   },
+   {
+    "insert": "cc",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀😀c"
+   }
+  ]
  },
  {
   "seed": 66,
   "update": "bG9ybwAAAAAAAAAAAAAAAK/OCX0ABEkAAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAARAQQCBAADAwACAwMFCQMDAgELAQMCAQACAQICAQIDAmRjVwAEAgQBGwICAAAAAAAAAAEAAAAAAAAAAQEBAQEBAgAAAAUBAAABAAYBBAECAAIHBGJvbGQBdAAUAQQCBgAEBAABBAQFDAAFBAQBAQIACYQCAAEEYuS4rQ==",
   "expected": {
    "t": "db中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "db中",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 67,
@@ -637,14 +1223,24 @@
     13
    ],
    "t": "é😀ébd中a中😀éaadd中ea"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é😀ébd中a中😀éaadd中ea"
+   }
+  ]
  },
  {
   "seed": 68,
   "update": "bG9ybwAAAAAAAAAAAAAAAAdSM+UABF4ABAAFAh8CAQAAAAAAAAACAAAAAAAAAAIBAQMAAQEBAQQAAQAABgEAAQAEAAYBBAECAAACAXQAFAEEAgYABAUACAEEBAUBCQQBAgQBCwEDAgECAgECAgECBQJkYwFlZwAGAAYCHwICAAAAAAAAAAEAAAAAAAAAAwEBAwABAQEBAgABAAAGAQABAAQABgEEAQIAAAIBdAAUAQQCBgAEBAABCAQFBQkFBAUDAQILAQMCAQICAQACAQIOCGLwn5iA5LitBGTkuK0=",
   "expected": {
    "t": "cbe中d中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cbe中d中"
+   }
+  ]
  },
  {
   "seed": 69,
@@ -657,7 +1253,12 @@
     30
    ],
    "t": "éec中é中中😀éeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éec中é中中😀éeb"
+   }
+  ]
  },
  {
   "seed": 70,
@@ -667,7 +1268,12 @@
     11
    ],
    "t": "😀😀cb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀😀cb"
+   }
+  ]
  },
  {
   "seed": 71,
@@ -678,7 +1284,12 @@
     63
    ],
    "t": "ebbébd中中ééccadbb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ebbébd中中ééccadbb😀"
+   }
+  ]
  },
  {
   "seed": 72,
@@ -688,14 +1299,24 @@
     10
    ],
    "t": "ceeedbb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ceeedbb"
+   }
+  ]
  },
  {
   "seed": 73,
   "update": "bG9ybwAAAAAAAAAAAAAAAGYAaIwABEMABAAEARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAQAQQCBAADAwAEAgQFAwMDAQAJBuS4rcOpZQFjOwABAAEBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAQADAsOpTAADAAMBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABABBAIGAAIGAAQFBQkFAgYBCwEDAgEAAgEAAgECBwTwn5iAAWM=",
   "expected": {
    "t": "中éceéc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中éceéc"
+   }
+  ]
  },
  {
   "seed": 74,
@@ -705,14 +1326,36 @@
     62
    ],
    "t": "déadaa中eecéeaa😀中e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "déadaa中eec",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "éeaa😀中e"
+   }
+  ]
  },
  {
   "seed": 75,
   "update": "bG9ybwAAAAAAAAAAAAAAAJpXNcgABFQABQAFARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAFQEEAggABAYAAQQFBwUMAAUEBgEBAgAOA+S4rYQBAAEF8J+YgGNRAAgACAEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAEgEEAggABAQABAIEBgUBCQIIAgsBAwIBAAIBCAIBAwoCYmQCY2QDw6lk",
   "expected": {
    "t": "中😀ccdbd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中😀c",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "cdbd"
+   }
+  ]
  },
  {
   "seed": 76,
@@ -722,21 +1365,42 @@
     35
    ],
    "t": "中ab😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中ab"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 77,
   "update": "bG9ybwAAAAAAAAAAAAAAAGHqCrcABHQACgALAh8CAQAAAAAAAAACAAAAAAAAAAcBAQMAAQEBAQ4AAQAABgEAAQAEAAYBBAECAAACAXQAGAEEAgoABwMABgQAAQEEAQUICQUDBQIGARQBAwUHAAIAAQUHBgIEBwUDBAEEAA4Nw6nwn5iAw6ll8J+YgGwADAAMARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAgAQQCDgAIBgABAgQAAQEICQUJBQkFBAkIBAIFAwECBAERAQMCCAAFBwAKBgcFAwQBBAARBGPkuK0G8J+YgGJiBOS4rWE=",
   "expected": {
    "t": "é😀a"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é😀a"
+   }
+  ]
  },
  {
   "seed": 78,
   "update": "bG9ybwAAAAAAAAAAAAAAAESBrAcABEgAAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAQAQQCBAACBAADAwUJAwMCAQsBAwIBAAIBAAIBAgMCZGE6AAEAAQEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEBAAIBZQ==",
   "expected": {
    "t": "ae"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ae"
+   }
+  ]
  },
  {
   "seed": 79,
@@ -746,14 +1410,48 @@
     62
    ],
    "t": "aebééa中ee😀d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ae"
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ééa中"
+   },
+   {
+    "insert": "ee😀",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d"
+   }
+  ]
  },
  {
   "seed": 80,
   "update": "bG9ybwAAAAAAAAAAAAAAAFKyA+UABFgABwAHARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAWAQQCCgAGCQACBAEDBAQFBgkEBAIGAQ8BAwIGAAQFAgQFBAECBAAJAmVjBWTwn5iAZgAKAAoBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgACBwRib2xkAXQAGgEEAgoABgkAAgEEAQYJBQwACQUGAQQGAQEDCwEDAgEAAgECAgECEgZl5LitYWSEAwABBmRk8J+YgA==",
   "expected": {
    "t": "dedd😀ad"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dedd😀"
+   },
+   {
+    "insert": "ad",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 81,
@@ -763,7 +1461,18 @@
     86
    ],
    "t": "eébac中débaaab"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eébac中débaa"
+   },
+   {
+    "insert": "ab",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 82,
@@ -775,14 +1484,30 @@
     88
    ],
    "t": "中😀de😀中cé中é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中😀de😀中cé中"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 83,
   "update": "bG9ybwAAAAAAAAAAAAAAAD4Ycy4ABDwAAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIABAPDqWI/AAIAAgEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgECAAcGw6nwn5iAPQADAAMBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwAFBMOpZWI=",
   "expected": {
    "t": "ébé😀éeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ébé😀éeb"
+   }
+  ]
  },
  {
   "seed": 84,
@@ -792,7 +1517,27 @@
     0
    ],
    "t": "ed中中😀aéc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中中😀"
+   },
+   {
+    "insert": "aéc",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 85,
@@ -802,7 +1547,18 @@
     9
    ],
    "t": "d中中😀😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d中中"
+   },
+   {
+    "insert": "😀😀",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 86,
@@ -814,7 +1570,30 @@
     86
    ],
    "t": "c中中éaeacé中e中ecaac😀e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c中"
+   },
+   {
+    "insert": "中é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "eacé中e中e",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "caac😀e"
+   }
+  ]
  },
  {
   "seed": 87,
@@ -826,7 +1605,18 @@
     15
    ],
    "t": "a中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 88,
@@ -836,7 +1626,18 @@
     32
    ],
    "t": "edbeacéééd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ed"
+   },
+   {
+    "insert": "beacéééd",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 89,
@@ -847,14 +1648,30 @@
     26
    ],
    "t": "eabbea中ébé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eabbea中ébé"
+   }
+  ]
  },
  {
   "seed": 90,
   "update": "bG9ybwAAAAAAAAAAAAAAAI20RRoABE0ABQAFARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAASAQQCBgAEBQACAQIGBQQBAwQBABEK5Lit5Lit8J+YgAFjA+S4rUoABAAEARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAEgEEAgYAAgYABAUFDAAEAQIEAQAHAmNihAIAAQ==",
   "expected": {
    "t": "中中c中😀cb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中中c中😀"
+   },
+   {
+    "insert": "cb",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 91,
@@ -864,14 +1681,30 @@
     65
    ],
    "t": "😀c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀c"
+   }
+  ]
  },
  {
   "seed": 92,
   "update": "bG9ybwAAAAAAAAAAAAAAAL4fYtQABGEABwAHARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAGAEEAgoABgkABAMABAYEBQUMAAkEAQMIAQsBAwIBAAIBAgIBAg0GZPCfmIBkAWGEBAABVQAHAAcBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABQBBAIKAAIKAAYJBQkFCQUEBAIGAQ0BAwIEAAMDAAgDAwQBCgVh8J+YgAFjAWU=",
   "expected": {
    "t": "dade"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dad",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "e"
+   }
+  ]
  },
  {
   "seed": 93,
@@ -881,7 +1714,18 @@
     44
    ],
    "t": "d中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中"
+   }
+  ]
  },
  {
   "seed": 94,
@@ -889,14 +1733,24 @@
   "expected": {
    "l": [],
    "t": "éeéédd😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éeéédd😀"
+   }
+  ]
  },
  {
   "seed": 95,
   "update": "bG9ybwAAAAAAAAAAAAAAANdF/6gABDwAAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCBAACBAACBAUCBAEABAFjAWM7AAEAAQEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEBAAMCw6k8AAIAAgEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgECAAQDw6lh",
   "expected": {
    "t": "ccééa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ccééa"
+   }
+  ]
  },
  {
   "seed": 96,
@@ -906,7 +1760,18 @@
     17
    ],
    "t": "éé中adacéa中bc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éé中"
+   },
+   {
+    "insert": "adacéa中bc",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 97,
@@ -916,7 +1781,18 @@
     95
    ],
    "t": "béd😀bd中cbcé😀😀中a"
-  }
+  },
+  "delta": [
+   {
+    "insert": "béd😀bd中cbc"
+   },
+   {
+    "insert": "é😀😀中a",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 98,
@@ -926,7 +1802,18 @@
     14
    ],
    "t": "b中d😀éaaeeé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中d😀"
+   },
+   {
+    "insert": "éaaeeé",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 99,
@@ -937,14 +1824,33 @@
     74
    ],
    "t": "é中aeb😀😀ebabdé😀addcc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é中a"
+   },
+   {
+    "insert": "eb😀😀",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ebabdé😀addcc"
+   }
+  ]
  },
  {
   "seed": 100,
   "update": "bG9ybwAAAAAAAAAAAAAAAM3c4T4ABEIAAwADARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAACBAACBAUDAwECAAkD5LitBOS4rWU=",
   "expected": {
    "t": "中e中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中e中"
+   }
+  ]
  },
  {
   "seed": 101,
@@ -954,7 +1860,12 @@
     31
    ],
    "t": "da中中中c😀abbé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "da中中中c😀abbé"
+   }
+  ]
  },
  {
   "seed": 102,
@@ -966,7 +1877,12 @@
     10
    ],
    "t": "e😀eb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e😀eb😀"
+   }
+  ]
  },
  {
   "seed": 103,
@@ -977,14 +1893,30 @@
     33
    ],
    "t": "中aa中ea中😀cbc中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中aa中ea中😀cbc"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 104,
   "update": "bG9ybwAAAAAAAAAAAAAAAFwjbIkABFIABQMFARsCAQAAAAAAAAACAAAAAAAAAAEBAQEBAQQAAAAFAQAAAQAGAQQBAgAAAgF0ABIBBAIGAAQFBgEDAgYFBAUBAwEACwFjA2FkYwTwn5iAcQALAA8CHwICAAAAAAAAAAEAAAAAAAAABAEBAwABAQEBCAABAAAGAQABAAQABgEEAQIAAAIBdAAcAQQCDAAHCwACDgEHAgYEBQQJBAUHAQMGAQMCAw4BAwMDAgEDAwAEAwMCAA0DZGJiAWMCZGIDYWVk",
   "expected": {
    "t": "😀dcdaedbbadc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀dcdaedbbadc"
+   }
+  ]
  },
  {
   "seed": 105,
@@ -994,7 +1926,18 @@
     4
    ],
    "t": "😀ee😀é😀écbé😀中中中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀e"
+   },
+   {
+    "insert": "e😀é😀écbé😀中中中",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 106,
@@ -1005,7 +1948,27 @@
     5
    ],
    "t": "d😀e中adcd😀e中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀"
+   },
+   {
+    "insert": "e中adcd😀",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "e中"
+   }
+  ]
  },
  {
   "seed": 107,
@@ -1015,7 +1978,12 @@
     24
    ],
    "t": "daacbbdedéc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "daacbbdedéc"
+   }
+  ]
  },
  {
   "seed": 108,
@@ -1027,14 +1995,24 @@
     22
    ],
    "t": "bc中edé中a中aééabb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bc中edé中a中aééabb"
+   }
+  ]
  },
  {
   "seed": 109,
   "update": "bG9ybwAAAAAAAAAAAAAAADwbChwABE0ABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAARAQQCBAADAwACAwMFCQMDBAILAQMCAQACAQICAQQHBmTDqWTDqWYACQAJAh8CAgAAAAAAAAABAAAAAAAAAAYBAQMAAQEBAQAAAQAABgEAAQAEAAYBBAECAAACAXQAFgEEAggABQcAAggBBAQFBAkFBAMDAgENAQMCBAADAwIIAwMEAQkEw6lhYwNkYmRBAAQABAEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgQAAgQAAgQFAgQCAAkF5Litw6kCZGU=",
   "expected": {
    "t": "déédbde中é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "déédbde中é"
+   }
+  ]
  },
  {
   "seed": 110,
@@ -1045,7 +2023,31 @@
     60
    ],
    "t": "eb😀d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "b"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 111,
@@ -1055,14 +2057,43 @@
     15
    ],
    "t": "de😀中ébcé😀😀😀a中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "de😀中ébc",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "é😀😀",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀a",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中"
+   }
+  ]
  },
  {
   "seed": 112,
   "update": "bG9ybwAAAAAAAAAAAAAAAMp/eVsABFsABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgcEYm9sZAF0ABgBBAIKAAYJAAIBBAMGBQUMAAQJBAECCAENAQMCBAADAwIBAwMCAAcCZWSEAQABTwAHAAcBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABIBBAIGAAQFAAIIAgYFBAEDBAIAEwVhZOS4rQfwn5iA5LitBOS4rWI=",
   "expected": {
    "t": "a😀中d中中b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀中d中中b"
+   }
+  ]
  },
  {
   "seed": 113,
@@ -1072,7 +2103,18 @@
     37
    ],
    "t": "中b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中"
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 114,
@@ -1082,7 +2124,21 @@
     37
    ],
    "t": "béca😀中dd😀deécd😀caé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "béca😀中d"
+   },
+   {
+    "insert": "d😀deécd",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀caé"
+   }
+  ]
  },
  {
   "seed": 115,
@@ -1092,7 +2148,12 @@
     40
    ],
    "t": "c中acaeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c中acaeb"
+   }
+  ]
  },
  {
   "seed": 116,
@@ -1103,14 +2164,24 @@
     64
    ],
    "t": "aeec中c中ccé😀ad中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aeec中c中ccé😀ad中"
+   }
+  ]
  },
  {
   "seed": 117,
   "update": "bG9ybwAAAAAAAAAAAAAAAM6dhxwABDwAAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABANkY2E=",
   "expected": {
    "t": "dca"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dca"
+   }
+  ]
  },
  {
   "seed": 118,
@@ -1121,7 +2192,12 @@
     21
    ],
    "t": "ecébe中eéé中dbccd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ecébe中eéé中dbccd"
+   }
+  ]
  },
  {
   "seed": 119,
@@ -1131,7 +2207,12 @@
     54
    ],
    "t": "ebe中eebe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ebe中eebe"
+   }
+  ]
  },
  {
   "seed": 120,
@@ -1142,7 +2223,12 @@
     19
    ],
    "t": "中😀d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中😀d"
+   }
+  ]
  },
  {
   "seed": 121,
@@ -1152,7 +2238,21 @@
     36
    ],
    "t": "dbd😀dd😀cc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dbd😀"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "d😀cc"
+   }
+  ]
  },
  {
   "seed": 122,
@@ -1160,7 +2260,12 @@
   "expected": {
    "l": [],
    "t": "cbb😀中eébé中é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cbb😀中eébé中é"
+   }
+  ]
  },
  {
   "seed": 123,
@@ -1170,14 +2275,33 @@
     40
    ],
    "t": "dcécé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dc"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "cé"
+   }
+  ]
  },
  {
   "seed": 124,
   "update": "bG9ybwAAAAAAAAAAAAAAAG98gAwABEgAAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAACBAADAwUJAgQBCwEDAgEAAgEAAgECBAPkuK1bAAoACgEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAFQEEAggABAYAAQQFAwUJBAUEBgMBAQsBAwIBAAIBAAIBBhEGZGTwn5iABmXDqeS4rQLDqQ==",
   "expected": {
    "t": "eéé中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eéé中"
+   }
+  ]
  },
  {
   "seed": 125,
@@ -1188,7 +2312,21 @@
     45
    ],
    "t": "e😀éebée😀中a中ebd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e"
+   },
+   {
+    "insert": "😀éeb",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "ée😀中a中ebd"
+   }
+  ]
  },
  {
   "seed": 126,
@@ -1196,7 +2334,12 @@
   "expected": {
    "l": [],
    "t": "éa😀dce中d😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éa😀dce中d😀"
+   }
+  ]
  },
  {
   "seed": 127,
@@ -1206,7 +2349,12 @@
     1
    ],
    "t": "a😀beb😀中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀beb😀中"
+   }
+  ]
  },
  {
   "seed": 128,
@@ -1216,14 +2364,40 @@
     53
    ],
    "t": "b😀😀中ee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b😀"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ee"
+   }
+  ]
  },
  {
   "seed": 129,
   "update": "bG9ybwAAAAAAAAAAAAAAAGXgu8cABD0AAQABARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQEABQTwn5iAQQADAAMBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABABBAIEAAMDAAICBAUDAwIBAAcEY+S4rQFj",
   "expected": {
    "t": "😀cc中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀cc中"
+   }
+  ]
  },
  {
   "seed": 130,
@@ -1234,21 +2408,54 @@
     4
    ],
    "t": "bc😀a😀ae中aaedcé😀😀中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bc😀a😀ae",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中aaedcé😀😀中"
+   }
+  ]
  },
  {
   "seed": 131,
   "update": "bG9ybwAAAAAAAAAAAAAAAP8Bx0IABEkAAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAQAQQCBAACBAADAwUJAwMCAQsBAwIBAAIBAAIBAgQDZMOpTgAGAAYBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgACCQZpdGFsaWMBdAATAQQCCAACCAAFBwUMAAUEBgEBAwAKAWSEAQABA2NiZWQABQYFASYDAwAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAQECAwECAQoBnYAAAAUBAAABAAYBBAECAAACAXQAFAEEAgYABAUEAQYEBAkBBQQBAQQCDQEDAgQCAwMGBQMDAgUDAmNk",
   "expected": {
    "t": "bedcd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "be"
+   },
+   {
+    "insert": "dcd",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 132,
   "update": "bG9ybwAAAAAAAAAAAAAAABMO61IABI0BAA4ADgIfAgEAAAAAAAAAAgAAAAAAAAANAQEDAAEBAQEMAAEAAAYBAAEABAAGAQQBAgACBwRib2xkAXQAJQEEAhQACAoACQgHDAUDCw8FCQUMAAwABQQJCgQBAQMIAQEDBAEPAQMCBgAEBQAGAQQBAgQAGgFhB2LkuK3kuK2EAQABhAEAAQfDqfCfmIBlfQAKAQ8CIAICAAAAAAAAAAEAAAAAAAAABwEBBAEEAQEAAaWAAQIABgEAAQAEAAYBBAECAAACAXQAHQEEAg4ABwYABwYEBwoHAQkIBQMJBQcHAQIBAwYBDgEDAwMCAAMDAAQDAwIAFwVl8J+YgALDqQZkYvCfmIAE8J+YgAFi",
   "expected": {
    "t": "中😀éb😀eée😀db😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中😀éb😀e",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "ée😀db😀"
+   }
+  ]
  },
  {
   "seed": 133,
@@ -1258,14 +2465,33 @@
     36
    ],
    "t": "d中ddd😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "中d",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "dd😀"
+   }
+  ]
  },
  {
   "seed": 134,
   "update": "bG9ybwAAAAAAAAAAAAAAACqXEcgABEkAAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAACBAADAwUJAgQBCwEDAgEAAgEAAgECBQTwn5iATAAFAAUBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABEBBAIEAAMDAAIDAwUJAwMDAgsBAwIBAAIBAAIBAwYFZGXkuK0=",
   "expected": {
    "t": "中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中"
+   }
+  ]
  },
  {
   "seed": 135,
@@ -1275,7 +2501,18 @@
     49
    ],
    "t": "😀😀é中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀😀é中"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 136,
@@ -1285,14 +2522,48 @@
     53
    ],
    "t": "é中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中d"
+   }
+  ]
  },
  {
   "seed": 137,
   "update": "bG9ybwAAAAAAAAAAAAAAAEC2CP0ABF4ACwALARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgcEYm9sZAF0ABsBBAIMAAcLAAIACAcBBQgFAwwABwcDAgEDBAEAFANkYWQE5LitYgFjBGHDqWWEBQABXwAMAAwBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABgBBAIKAAYFAAIBBAIEBgUECQYFAwIDBAINAQMCBAADAwwFAwMEABAGw6li5LitA2TDqQRjw6limgEAEQARAioDAwAAAAAAAAACAAAAAAAAAAEAAAAAAAAABQEBAwACAwECAQQBoIABAAAGAQABAAQABgEEAQIAAgkGaXRhbGljAXQAJwEEAhIAChEAAgQGAAEJDgEKDQUJBQkFDAAECQsFAwIBBAMEAQMCARQBAwUHAAIBBAUEAAMSDQUDAwoEARMDZWNiAWMIZPCfmIDkuK2EBAAB",
   "expected": {
    "t": "dc中bcaaée中cb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "c中bcaa",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "ée"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "cb"
+   }
+  ]
  },
  {
   "seed": 138,
@@ -1302,7 +2573,18 @@
     67
    ],
    "t": "be😀bedaa😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "be😀bed"
+   },
+   {
+    "insert": "aa😀",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 139,
@@ -1313,7 +2595,21 @@
     98
    ],
    "t": "éd😀déédd中中b😀d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éd😀d"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "édd中中b😀d"
+   }
+  ]
  },
  {
   "seed": 140,
@@ -1325,14 +2621,24 @@
     11
    ],
    "t": "中cbbedeeébcdb😀中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中cbbedeeébcdb😀中"
+   }
+  ]
  },
  {
   "seed": 141,
   "update": "bG9ybwAAAAAAAAAAAAAAAM9lcUMABFMABwAHARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAUAQQCBgAEBQACAQQFBQkFBAQCAQMLAQMCAQACAQACAQMKBGTkuK0Ew6llYzsAAgACARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIAAwJjYTsAAgACARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIAAwJlYg==",
   "expected": {
    "t": "éeccaeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éeccaeb"
+   }
+  ]
  },
  {
   "seed": 142,
@@ -1342,14 +2648,36 @@
     4
    ],
    "t": "😀中中aébcéaec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀中中aébcé"
+   },
+   {
+    "insert": "aec",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 143,
   "update": "bG9ybwAAAAAAAAAAAAAAAPsrGRkABF0ACAAIARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAFwEEAgoABAgAAQIGCQUJDAAJBQMDAgYBDQEDAgQAAwMABAMDBAEIA2JjYoQBAAFTAAYABgEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAIJBml0YWxpYwF0ABYBBAIIAAUHAAQDAgUHBQwABQQBAwYBAAwFZGLkuK2EAQABAWE=",
   "expected": {
    "t": "dab中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dab"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 144,
@@ -1360,14 +2688,48 @@
     8
    ],
    "t": "éabdbc中bae"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éabdb"
+   },
+   {
+    "insert": "c中b",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 145,
   "update": "bG9ybwAAAAAAAAAAAAAAAIEsGjwABGEACAAIARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAbAQQCDAAHBAADAgEEAAcEBQQJAwUJBQgBAwMBDwEDAgYABAUAAgYEAQIEAA0BYgPkuK0GYWHwn5iAPAADAAMBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwAEA2JiZVoACAAIARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgcEYm9sZAF0ABkBBAIKAAYJAAQBBAUFBgUDDAAGBQMBAgQBABIDZWVjA+S4rQXwn5iAZIQBAAE=",
   "expected": {
    "t": "a😀bbee😀de中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀bbee😀d"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中c"
+   }
+  ]
  },
  {
   "seed": 146,
@@ -1377,7 +2739,12 @@
     2
    ],
    "t": "😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀"
+   }
+  ]
  },
  {
   "seed": 147,
@@ -1387,14 +2754,24 @@
     50
    ],
    "t": "a😀中eébdbbcea"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀中eébdbbcea"
+   }
+  ]
  },
  {
   "seed": 148,
   "update": "bG9ybwAAAAAAAAAAAAAAABbWSU4ABEcABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAASAQQCBgAEBAABBAIGBQQFAQMCAAsBYQNiZGQEZOS4rV0ACgAKARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAWAQQCCAAEBgABAgQGBQEJBgECBAMBAgsBAwIBAAIBCgIBAxIF8J+YgGEG5Litw6liBMOpZGQ=",
   "expected": {
    "t": "bdd中dad中éb😀a"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bdd中dad中éb😀a"
+   }
+  ]
  },
  {
   "seed": 149,
@@ -1404,7 +2781,18 @@
     78
    ],
    "t": "cé中😀ce中cd中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cé中"
+   },
+   {
+    "insert": "😀ce中cd中",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 150,
@@ -1416,14 +2804,24 @@
     19
    ],
    "t": "中😀abac😀éba😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中😀abac😀éba😀"
+   }
+  ]
  },
  {
   "seed": 151,
   "update": "bG9ybwAAAAAAAAAAAAAAAFASD9kABD0AAQABARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQEABQTwn5iAQwAEAAQBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA8BBAIEAAMDAAICBAUCBAIACgRh5LitBOS4rWI=",
   "expected": {
    "t": "😀a中b中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀a中b中"
+   }
+  ]
  },
  {
   "seed": 152,
@@ -1431,7 +2829,12 @@
   "expected": {
    "l": [],
    "t": "eécb😀céc😀éd中eéé中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eécb😀céc😀éd中eéé中"
+   }
+  ]
  },
  {
   "seed": 153,
@@ -1441,7 +2844,12 @@
     9
    ],
    "t": "b😀😀ec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b😀😀ec"
+   }
+  ]
  },
  {
   "seed": 154,
@@ -1452,7 +2860,21 @@
     26
    ],
    "t": "中eaa😀b中ab"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中eaa😀b中"
+   },
+   {
+    "insert": "a",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "b"
+   }
+  ]
  },
  {
   "seed": 155,
@@ -1463,7 +2885,21 @@
     25
    ],
    "t": "caabdaeéa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "caabda"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "éa"
+   }
+  ]
  },
  {
   "seed": 156,
@@ -1473,7 +2909,30 @@
     69
    ],
    "t": "deé😀b中acbcédbdbcé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "eé",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀b中"
+   },
+   {
+    "insert": "acbcédbdbc",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "é"
+   }
+  ]
  },
  {
   "seed": 157,
@@ -1483,14 +2942,48 @@
     94
    ],
    "t": "中cé中b😀😀中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中cé中b😀"
+   },
+   {
+    "insert": "😀中",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d"
+   }
+  ]
  },
  {
   "seed": 158,
   "update": "bG9ybwAAAAAAAAAAAAAAAMg34m4ABE0ABQAFARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAEwEEAggAAggABQcFDAAFBAYBAQIACQFjhAEAAQJlYU8ABAAEARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAFAEEAgYABAUAAgEEBQUMAAQBAgQBAAoFY/CfmICEAQAB",
   "expected": {
    "t": "eacc😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ea"
+   },
+   {
+    "insert": "c",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "c"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 159,
@@ -1501,14 +2994,24 @@
     80
    ],
    "t": "é中ac😀éde中abe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é中ac😀éde中abe"
+   }
+  ]
  },
  {
   "seed": 160,
   "update": "bG9ybwAAAAAAAAAAAAAAABLE7mgABFYACAAIARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAUAQQCBgAEBAABAgQEBQEJBAQDAQILAQMCAQACAQYCAQMNBmTwn5iAYgVi5LitYmoADQANARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAdAQQCEAAJBAAHAgQBAAQBBgUFCQUKCQYFBQECCgESAQMCDAAHCwAECgcGCQQBAgoAEQrwn5iAYWLkuK1kBfCfmIBi",
   "expected": {
    "t": "bd😀bd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bd😀bd"
+   }
+  ]
  },
  {
   "seed": 161,
@@ -1519,14 +3022,45 @@
     6
    ],
    "t": "adbcbbéadddcd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "adbcbb"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "ad"
+   },
+   {
+    "insert": "ddcd",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 162,
   "update": "bG9ybwAAAAAAAAAAAAAAAMZQeh4ABHwACgAKAyUCAQAAAAAAAAACAAAAAAAAAAMGAQIBAAQBBAEBAAGhgAEAAaEABgEAAgAGAAYBBAECAAACAXQAHwEEAhAACQQACwIAAQIBBAgFBQkFCAkBBQYFAgECCgEUAQMFBgADAgEGCQAGAwEIBAECCAAJA8OpZQJkYwFkZwAFAAcCHwICAAAAAAAAAAEAAAAAAAAAAQEBAwABAQEBBAABAAAGAQABAAQABgEEAQIAAgkGaXRhbGljAXQAFwEEAggABQcABAADBQQFAwwABQMBAgQBAA8BZAjwn5iA8J+YgIQBAAE=",
   "expected": {
    "t": "😀d😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀d",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀"
+   }
+  ]
  },
  {
   "seed": 163,
@@ -1536,14 +3070,24 @@
     80
    ],
    "t": "b中cebaé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中cebaé"
+   }
+  ]
  },
  {
   "seed": 164,
   "update": "bG9ybwAAAAAAAAAAAAAAAJgFCKIABGwACAAIAh8CAQAAAAAAAAACAAAAAAAAAAcBAQMAAQEBAQoAAQAABgEAAQAEAAYBBAECAAACAXQAFwEEAgoABgkABAYFBgQIBQEJBQMDAgYBCwEDAgEAAgEEAgECEANlY2IH8J+YgOS4rQFlAWKFAQAPAA8CHwICAAAAAAAAAAEAAAAAAAAACgEBAwABAQEBDgABAAAGAQABAAQABgEEAQIAAAIBdAAnAQQCFgAMBAANAgAGAgAFGAQBBwMFCQwFBgkMAQMGAQECBAEBAgYBEAEDAggABQcAEAIFBAECBgAUA2RhZQFkAWEE5LitZQFjAWECYWE=",
   "expected": {
    "t": "ecaab😀中eaadee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ecaab😀中eaadee"
+   }
+  ]
  },
  {
   "seed": 165,
@@ -1553,7 +3097,12 @@
     53
    ],
    "t": "😀ceca中eeb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀ceca中eeb😀"
+   }
+  ]
  },
  {
   "seed": 166,
@@ -1565,7 +3114,21 @@
     53
    ],
    "t": "d😀cbab中ad😀ab"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d😀cbab"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ad😀ab"
+   }
+  ]
  },
  {
   "seed": 167,
@@ -1575,7 +3138,21 @@
     63
    ],
    "t": "edcc中😀中ab😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "edcc中😀中a"
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀"
+   }
+  ]
  },
  {
   "seed": 168,
@@ -1585,14 +3162,33 @@
     2
    ],
    "t": "cccaéd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cccaéd"
+   }
+  ]
  },
  {
   "seed": 169,
   "update": "bG9ybwAAAAAAAAAAAAAAAK/1VdkABH8AEAAQARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAHwEEAg4ACQUABAMEAAMCBAcHBQkMAAYFBwMDAgQBBgMLAQMCAQACAQICAQMkCPCfmIBk5LithAEAAQbwn5iAZGIIYvCfmIDkuK0GYeS4rcOpWAAHAAcBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABcBBAIIAAQGAAEGBQMFCQQFBgEDBAEBAgsBAwIBAAIBAAIBAgwFYWLkuK0BZQPDqWNZAAoACgEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAFgEEAggABQcABAMCBQMFCQQFBAQDBAILAQMCAQACAQACAQUOBWTkuK1jBOS4rWMCZGE=",
   "expected": {
    "t": "😀b😀a中é中db😀eb中éc中dac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀b😀a中é中db"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "eb中éc中dac"
+   }
+  ]
  },
  {
   "seed": 170,
@@ -1602,7 +3198,12 @@
     85
    ],
    "t": "bbcae中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bbcae中d"
+   }
+  ]
  },
  {
   "seed": 171,
@@ -1612,7 +3213,18 @@
     73
    ],
    "t": "écéeedcécaceb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "écéeedcécace"
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 172,
@@ -1624,7 +3236,18 @@
     3
    ],
    "t": "😀aaa中db"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀aaa中d"
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 173,
@@ -1635,7 +3258,21 @@
     32
    ],
    "t": "b中中c😀中écd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中中c"
+   },
+   {
+    "insert": "😀中éc",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "d"
+   }
+  ]
  },
  {
   "seed": 174,
@@ -1646,14 +3283,33 @@
     17
    ],
    "t": "éc中dbaéa😀b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éc中d"
+   },
+   {
+    "insert": "baéa",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀b"
+   }
+  ]
  },
  {
   "seed": 175,
   "update": "bG9ybwAAAAAAAAAAAAAAAFrZ26MABDwAAwADARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABANhZWRLAAMAAwEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAEAEEAgYAAgYABAUFCQUCBgELAQMCAQACAQACAQIGAWID5Lit",
   "expected": {
    "t": "aed中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aed中"
+   }
+  ]
  },
  {
   "seed": 176,
@@ -1663,14 +3319,36 @@
     48
    ],
    "t": "😀中acddé中中dce"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀"
+   },
+   {
+    "insert": "中acddé中中dce",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 177,
   "update": "bG9ybwAAAAAAAAAAAAAAAIidmowABE0AAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAARAQQCBAADAwACAwMFCQMDAgELAQMCAQACAQICAQIHBsOp8J+YgDoAAQABARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQEAAgFkYAAJAAkBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgACCQZpdGFsaWMBdAAXAQQCCgACCgAGCQUJDAAFBwMDAgQBAQILAQMCAQACAQACAQQNBWFj5LithAEAAQJlYw==",
   "expected": {
    "t": "édec中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "édec"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 178,
@@ -1681,7 +3359,21 @@
     98
    ],
    "t": "ebec😀ce中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ebec"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ce中"
+   }
+  ]
  },
  {
   "seed": 179,
@@ -1689,14 +3381,33 @@
   "expected": {
    "l": [],
    "t": "😀c😀a中b😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀c😀a"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "b😀"
+   }
+  ]
  },
  {
   "seed": 180,
   "update": "bG9ybwAAAAAAAAAAAAAAAPYfiwUABEAAAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAACBAACBAUDAwIBAAcEw6nDqQFjOgABAAEBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAQACAWQ=",
   "expected": {
    "t": "cééd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cééd"
+   }
+  ]
  },
  {
   "seed": 181,
@@ -1706,7 +3417,21 @@
     21
    ],
    "t": "ac😀bd中中😀😀ebcdéd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ac😀"
+   },
+   {
+    "insert": "bd中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中😀😀ebcdéd"
+   }
+  ]
  },
  {
   "seed": 182,
@@ -1717,7 +3442,12 @@
     10
    ],
    "t": "eecbdbé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eecbdbé"
+   }
+  ]
  },
  {
   "seed": 183,
@@ -1730,7 +3460,12 @@
     53
    ],
    "t": "écaacdbeca"
-  }
+  },
+  "delta": [
+   {
+    "insert": "écaacdbeca"
+   }
+  ]
  },
  {
   "seed": 184,
@@ -1741,14 +3476,24 @@
     34
    ],
    "t": "ecb中becdadeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ecb中becdadeb"
+   }
+  ]
  },
  {
   "seed": 185,
   "update": "bG9ybwAAAAAAAAAAAAAAAPjdDpgABD0AAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIABQRk5LitOgABAAEBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAQACAWU=",
   "expected": {
    "t": "d中e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d中e"
+   }
+  ]
  },
  {
   "seed": 186,
@@ -1758,7 +3503,12 @@
     43
    ],
    "t": "éd😀eéedédbcac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éd😀eéedédbcac"
+   }
+  ]
  },
  {
   "seed": 187,
@@ -1768,7 +3518,12 @@
     44
    ],
    "t": "bbbéb中中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bbbéb中中"
+   }
+  ]
  },
  {
   "seed": 188,
@@ -1776,7 +3531,12 @@
   "expected": {
    "l": [],
    "t": "e中a中dbc中éé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e中a中dbc中éé"
+   }
+  ]
  },
  {
   "seed": 189,
@@ -1788,7 +3548,21 @@
     94
    ],
    "t": "ccc中a😀d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c"
+   },
+   {
+    "insert": "cc",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中a😀d"
+   }
+  ]
  },
  {
   "seed": 190,
@@ -1798,7 +3572,15 @@
     70
    ],
    "t": "中é😀ebcc😀ad"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中é😀ebcc😀ad",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 191,
@@ -1808,7 +3590,12 @@
     41
    ],
    "t": "edbbbé中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "edbbbé中c"
+   }
+  ]
  },
  {
   "seed": 192,
@@ -1818,7 +3605,12 @@
     46
    ],
    "t": "ada😀dbab"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ada😀dbab"
+   }
+  ]
  },
  {
   "seed": 193,
@@ -1831,7 +3623,18 @@
     99
    ],
    "t": "dbe中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dbe"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 194,
@@ -1841,7 +3644,21 @@
     92
    ],
    "t": "cadeaee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cad"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "aee"
+   }
+  ]
  },
  {
   "seed": 195,
@@ -1852,7 +3669,21 @@
     14
    ],
    "t": "aéeeedeeé中cdéddé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aéeeedee"
+   },
+   {
+    "insert": "é中cdé",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "ddé"
+   }
+  ]
  },
  {
   "seed": 196,
@@ -1863,14 +3694,24 @@
     26
    ],
    "t": "aa😀ca😀dbéé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aa😀ca😀dbéé"
+   }
+  ]
  },
  {
   "seed": 197,
   "update": "bG9ybwAAAAAAAAAAAAAAAOwTz9UABEwABAAEARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAARAQQCBAADAwAEAwMFCQMDAwELAQMCAQACAQQCAQIGBWXkuK1jPAACAAIBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAgAEA8OpZEAAAwADARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMACAfwn5iAw6li",
   "expected": {
    "t": "e中éd😀éb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e中éd😀éb"
+   }
+  ]
  },
  {
   "seed": 198,
@@ -1880,7 +3721,18 @@
     3
    ],
    "t": "b中😀a😀é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中"
+   },
+   {
+    "insert": "😀a😀é",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 199,
@@ -1890,7 +3742,12 @@
     86
    ],
    "t": "abaaaa中abcc😀ec😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "abaaaa中abcc😀ec😀"
+   }
+  ]
  },
  {
   "seed": 200,
@@ -1900,7 +3757,18 @@
     41
    ],
    "t": "aac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "ac",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 201,
@@ -1910,7 +3778,15 @@
     86
    ],
    "t": "bdd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bdd",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 202,
@@ -1921,7 +3797,12 @@
     9
    ],
    "t": "é中中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é中中d"
+   }
+  ]
  },
  {
   "seed": 203,
@@ -1935,7 +3816,18 @@
     75
    ],
    "t": "édc中a😀é😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "édc中a😀",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "é😀"
+   }
+  ]
  },
  {
   "seed": 204,
@@ -1945,7 +3837,12 @@
     94
    ],
    "t": "😀b😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀b😀"
+   }
+  ]
  },
  {
   "seed": 205,
@@ -1956,14 +3853,24 @@
     98
    ],
    "t": "dee中中中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dee中中中"
+   }
+  ]
  },
  {
   "seed": 206,
   "update": "bG9ybwAAAAAAAAAAAAAAAJCM6fwABGEACgAKAh8CAQAAAAAAAAACAAAAAAAAAAQBAQMAAQEBAQQAAQAABgEAAQAEAAYBBAECAAACAXQAEgEEAgYABAUADgMCBgUEAQQEAwAVB2Rlw6nkuK0I8J+YgGXkuK0DYWNiZQAFAAgCHwICAAAAAAAAAAEAAAAAAAAABAEBAwABAQEBDAABAAAGAQABAAQABgEEAQIAAAIBdAAUAQQCBgAEBQAEAQQBBQQJBAEDBAEOAQMDAwACAwMEAQMDAgAJCOS4rWPwn5iA",
   "expected": {
    "t": "dé中中acbc😀e中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dé中中acbc😀e中"
+   }
+  ]
  },
  {
   "seed": 207,
@@ -1974,7 +3881,18 @@
     25
    ],
    "t": "éec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ée"
+   },
+   {
+    "insert": "c",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 208,
@@ -1984,14 +3902,24 @@
     70
    ],
    "t": "c😀中😀a"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c😀中😀a"
+   }
+  ]
  },
  {
   "seed": 209,
   "update": "bG9ybwAAAAAAAAAAAAAAAHQvd1AABEEABAAEARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAACBAACBAUDAwEDAAgBZQXkuK1jZEsABQAFARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAARAQQCBAADAwAEAwMFCQMDAwILAQMCAQACAQICAQMFBGFlw6k=",
   "expected": {
    "t": "中cdea"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中cdea"
+   }
+  ]
  },
  {
   "seed": 210,
@@ -2001,7 +3929,18 @@
     19
    ],
    "t": "中eéb😀éaeadc中dbcede😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中eéb😀éaeadc中dbced"
+   },
+   {
+    "insert": "e😀",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 211,
@@ -2012,7 +3951,18 @@
     25
    ],
    "t": "ac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "c",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 212,
@@ -2023,7 +3973,18 @@
     55
    ],
    "t": "déacca"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dé"
+   },
+   {
+    "insert": "acca",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 213,
@@ -2035,14 +3996,24 @@
     86
    ],
    "t": "😀éeé中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀éeé中c"
+   }
+  ]
  },
  {
   "seed": 214,
   "update": "bG9ybwAAAAAAAAAAAAAAABSJDpAABE4AAQEBARsCAQAAAAAAAAACAAAAAAAAAAEBAQEBAQAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBCQIBAQsBAwIBAgIBAAIBAgBBAAMAAwEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAEAEEAgQAAwMAAgIEBQMDAQIABwPkuK0CYmQ=",
   "expected": {
    "t": "bd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bd"
+   }
+  ]
  },
  {
   "seed": 215,
@@ -2052,7 +4023,21 @@
     18
    ],
    "t": "daéeebadé中中ééd😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "daéeeb"
+   },
+   {
+    "insert": "adé中",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中ééd😀"
+   }
+  ]
  },
  {
   "seed": 216,
@@ -2062,7 +4047,12 @@
     90
    ],
    "t": "écba😀é中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "écba😀é中"
+   }
+  ]
  },
  {
   "seed": 217,
@@ -2070,7 +4060,18 @@
   "expected": {
    "l": [],
    "t": "cc中éb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cc",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中éb"
+   }
+  ]
  },
  {
   "seed": 218,
@@ -2080,14 +4081,33 @@
     21
    ],
    "t": "de😀cbad"
-  }
+  },
+  "delta": [
+   {
+    "insert": "de"
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "cbad"
+   }
+  ]
  },
  {
   "seed": 219,
   "update": "bG9ybwAAAAAAAAAAAAAAANvs1UIABEYABgAGARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAPAQQCBAADAwACAgQFAgQDAA0GY2Hwn5iABeS4rWRjPgADAAMBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwAGBWLkuK1j",
   "expected": {
    "t": "c中dca😀b中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c中dca😀b中c"
+   }
+  ]
  },
  {
   "seed": 220,
@@ -2098,28 +4118,69 @@
     47
    ],
    "t": "aaddédeaeaa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aaddédeaeaa"
+   }
+  ]
  },
  {
   "seed": 221,
   "update": "bG9ybwAAAAAAAAAAAAAAAHQDdtYABEgABAAEARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgcEYm9sZAF0ABIBBAIGAAIGAAQFBQwABAECBAEABwJiYoQCAAE6AAEAAQEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEBAAIBZUsAAwADARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAASAQQCBgAEBAABAgQEBQEJAgYBCwEDAgEAAgEAAgECBAFkAWQ=",
   "expected": {
    "t": "bbed"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bb",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "ed"
+   }
+  ]
  },
  {
   "seed": 222,
   "update": "bG9ybwAAAAAAAAAAAAAAAMnAt/gABG4ADQANARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAHwEEAg4ACQUAAgEEAAMEAwgNBQkFCQUMAAYIAgEDBAENAQMCBAADAwAIAwMDCBEDw6llAmJhBWNh5LithAEAAaABABUAFQIfAgIAAAAAAAAAAQAAAAAAAAAQAQEDAAEBAQEKAAEAAAYBAAEABAAGAQQBAgACCQZpdGFsaWMBdAAsAQQCFAAMBAAHCAIJBAQAAwEQCwsFCQUMAAUGCQEFDQUGAQIEAQMDAgQBAQMTAQMEBgABAgUHABYTCAUEAgMBACALYmRj5Litw6nkuK0CZGGEAgABBmLwn5iAYQXkuK1lZQ==",
   "expected": {
    "t": "ca中ca中éda中中ee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ca"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "ca中éd"
+   },
+   {
+    "insert": "a中中ee",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 223,
   "update": "bG9ybwAAAAAAAAAAAAAAAFKuGHEABFIAAwAEAh8CAQAAAAAAAAADAAAAAAAAAAIBAQMAAQEBAQQAAQAABgEAAQAEAAYBBAECAAACAXQAEAEEAgQAAwMABgIEBQMDAgEACAJiYQTwn5iAQwADAAMBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwALCvCfmIDkuK3kuK0/AAMAAwEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEDAAcG8J+YgGFh",
   "expected": {
    "t": "ba😀中中😀😀aa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ba😀中中😀😀aa"
+   }
+  ]
  },
  {
   "seed": 224,
@@ -2130,7 +4191,21 @@
     37
    ],
    "t": "dbb😀cebc😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dbb😀ce"
+   },
+   {
+    "insert": "bc",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀"
+   }
+  ]
  },
  {
   "seed": 225,
@@ -2138,14 +4213,24 @@
   "expected": {
    "l": [],
    "t": "e😀中dcbabe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e😀中dcbabe"
+   }
+  ]
  },
  {
   "seed": 226,
   "update": "bG9ybwAAAAAAAAAAAAAAAJMFXoYABEoABAAEARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAQAQQCBAACBAADAwUJAwMDAQsBAwIBAAIBAAIBAgUEw6llYz0AAgACARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIABQTkuK1h",
   "expected": {
    "t": "ec中a"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ec中a"
+   }
+  ]
  },
  {
   "seed": 227,
@@ -2153,14 +4238,36 @@
   "expected": {
    "l": [],
    "t": "b😀中😀ceacé😀c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b😀中😀ceacé"
+   },
+   {
+    "insert": "😀c",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 228,
   "update": "bG9ybwAAAAAAAAAAAAAAAJbu4LMABGkACgAKARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgcEYm9sZAF0AB0BBAIMAAYFAAIBBgAIAQUECQUFDAAHBwMCAQIEAQ0BAwIEAAMDAgEDAwQBEAVjw6nDqQVl8J+YgIQCAAFAAAMAAwEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADgEEAgEAAgEAAgEFAgEDAAgH5LitYeS4rQ==",
   "expected": {
    "t": "e😀中a中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e😀",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "中a中"
+   }
+  ]
  },
  {
   "seed": 229,
@@ -2171,7 +4278,30 @@
     94
    ],
    "t": "aa中cdbeééée中😀中d😀b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aa中"
+   },
+   {
+    "insert": "cdb",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "eéé"
+   },
+   {
+    "insert": "ée",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中😀中d😀b"
+   }
+  ]
  },
  {
   "seed": 230,
@@ -2181,14 +4311,33 @@
     79
    ],
    "t": "中cacdbb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中cacdbb"
+   }
+  ]
  },
  {
   "seed": 231,
   "update": "bG9ybwAAAAAAAAAAAAAAACxhKdMABE8ABwAHARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAgkGaXRhbGljAXQAFAEEAgYABAUABAMEBQUMAAQBBQQBAAoFZWNhYWKEAwABPAADAAMBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAwAEA2RlYjoAAQABARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQEAAgFi",
   "expected": {
    "t": "ecaabdebb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ec"
+   },
+   {
+    "insert": "aab",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "debb"
+   }
+  ]
  },
  {
   "seed": 232,
@@ -2199,7 +4348,21 @@
     44
    ],
    "t": "ééb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "b"
+   }
+  ]
  },
  {
   "seed": 233,
@@ -2209,7 +4372,12 @@
     65
    ],
    "t": "a中ccebeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a中ccebeb"
+   }
+  ]
  },
  {
   "seed": 234,
@@ -2219,7 +4387,15 @@
     39
    ],
    "t": "ddéééececdé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ddéééececdé",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 235,
@@ -2229,7 +4405,12 @@
     47
    ],
    "t": "ecdaéaa😀béaadd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ecdaéaa😀béaadd"
+   }
+  ]
  },
  {
   "seed": 236,
@@ -2239,7 +4420,18 @@
     95
    ],
    "t": "ée中abcédbcbee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ée中abc"
+   },
+   {
+    "insert": "édbcbee",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 237,
@@ -2249,7 +4441,24 @@
     15
    ],
    "t": "中d😀éabe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "😀éabe",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 238,
@@ -2261,7 +4470,12 @@
     32
    ],
    "t": "aebdcc😀😀é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aebdcc😀😀é"
+   }
+  ]
  },
  {
   "seed": 239,
@@ -2273,7 +4487,22 @@
     89
    ],
    "t": "dad中😀ee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dad"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀ee"
+   }
+  ]
  },
  {
   "seed": 240,
@@ -2283,14 +4512,50 @@
     20
    ],
    "t": "中aeb😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中aeb",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 241,
   "update": "bG9ybwAAAAAAAAAAAAAAALBxFL0ABJQBABAAEAIfAgEAAAAAAAAAAwAAAAAAAAAKAQEDAAEBAQECAAEAAAYBAAEABAAGAQQBAgACCQZpdGFsaWMBdAAkAQQCEgAKBAAJAgQDCgsEAAoRBQkFCQUMAAwACAkEAgMBAggBDQEDAgQAAwMAEAMDBAEiCeS4rWTwn5iAZAjwn5iA5LitZQbwn5iAw6mEAgABhAgAAXAABQIOAiACAgAAAAAAAAADAAAAAAAAAAIBAQQBBAEBAgGlAAEEAAYBAAEABAAGAQQBAgAEDgZpdGFsaWMEYm9sZAF0ABYBBAIKAAYJAgECAQoGCQwADAAJAgoBCwEDAgECAgECAgECCIQBAAGEAQEBcgASABIBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AB8BBAIOAAgEAAUEAgEEAAYEBQYJBAUJBQIGAwQBAwMCDwEDAgYABAUEAw4EBQUIABoF8J+YgGIJZGTkuK1kYsOpBmJl8J+YgAJiYg==",
   "expected": {
    "t": "😀😀é😀中ddbbbbe😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀😀é😀中dd",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "bbbe😀",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 242,
@@ -2301,14 +4566,40 @@
     50
    ],
    "t": "aac中😀ca"
-  }
+  },
+  "delta": [
+   {
+    "insert": "aac中😀ca"
+   }
+  ]
  },
  {
   "seed": 243,
   "update": "bG9ybwAAAAAAAAAAAAAAABhx6vUABHMACwALARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIABA4EYm9sZAZpdGFsaWMBdAAdAQQCDgAHBgADAgEEAAgNBQkFDAAMAAYEAgEDCAELAQMCAQACAQACAQQVAmJhCWPwn5iA8J+YgIQBAAGEBQEB",
   "expected": {
    "t": "c😀😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "😀",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 244,
@@ -2316,14 +4607,30 @@
   "expected": {
    "l": [],
    "t": "ccb😀中bec中éaaeéa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c"
+   },
+   {
+    "insert": "cb😀中bec中éaaeéa",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 245,
   "update": "bG9ybwAAAAAAAAAAAAAAAE+vM/YABIEBAA4ADgEQAQEAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAQOBml0YWxpYwRib2xkAXQAKAEEAhQADAQACQIBCAcMBAUBAAsEBQcMAAwABgkBBQkDAQMKAQUCAQIPAQMCBgAEBQAEAQQFAgUGFAFjA2FkY4QCAAGEAgEBBWLwn5iAOwACAAIBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAgADAmNlPAACAAIBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAgAEA8OpZQ==",
   "expected": {
    "t": "b😀ceée"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b😀ceée"
+   }
+  ]
  },
  {
   "seed": 246,
@@ -2336,7 +4643,12 @@
     90
    ],
    "t": "éd中b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "éd中b"
+   }
+  ]
  },
  {
   "seed": 247,
@@ -2347,14 +4659,24 @@
     71
    ],
    "t": "é😀cddébb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é😀cddébb"
+   }
+  ]
  },
  {
   "seed": 248,
   "update": "bG9ybwAAAAAAAAAAAAAAADxN/iQABD0AAgACARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQIABQRl5LitRQAFAAUBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0ABABBAIEAAMDAAICBAUDAwIDAAsCYWMHZPCfmIDDqQ==",
   "expected": {
    "t": "e中ad😀éc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e中ad😀éc"
+   }
+  ]
  },
  {
   "seed": 249,
@@ -2365,7 +4687,12 @@
     16
    ],
    "t": "ec中é😀éecédé中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ec中é😀éecédé中"
+   }
+  ]
  },
  {
   "seed": 250,
@@ -2373,7 +4700,12 @@
   "expected": {
    "l": [],
    "t": "ébaabb😀b😀e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ébaabb😀b😀e"
+   }
+  ]
  },
  {
   "seed": 251,
@@ -2384,14 +4716,34 @@
     20
    ],
    "t": "ead😀db😀😀a😀dbdbecc😀db"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ead😀db😀😀a😀dbdbecc😀db"
+   }
+  ]
  },
  {
   "seed": 252,
   "update": "bG9ybwAAAAAAAAAAAAAAAAaYJaMABFAABQUFARsCAQAAAAAAAAACAAAAAAAAAAEBAQEBAQgAAAAFAQAAAQAGAQQBAgAAAgF0ABABBAIEAAMDBAACBAUDAwIDAAsE5LitYQViZeS4rYkBAAwADAIfAgIAAAAAAAAAAQAAAAAAAAAKAQEDAAEBAQEIAAEAAAYBAAEABAAGAQQBAgAEDgZpdGFsaWMEYm9sZAF0ACQBBAIQAAkPAAIBAAQAEhUKBwUJDAAEBQMMAAkBAgYBAwIDBAELAQMCAQACAQICAQIUA8OpYYQBAAEDw6llA2VkYoQBAQE=",
   "expected": {
    "t": "ébe中中aedbée"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ébe中中aedbé",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 253,
@@ -2403,7 +4755,12 @@
     85
    ],
    "t": "daca😀中eéb😀😀é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "daca😀中eéb😀😀é"
+   }
+  ]
  },
  {
   "seed": 254,
@@ -2413,7 +4770,21 @@
     18
    ],
    "t": "ed中😀c😀ccacbcécdcbddc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ed中😀c😀"
+   },
+   {
+    "insert": "c",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "cacbcécdcbddc"
+   }
+  ]
  },
  {
   "seed": 255,
@@ -2423,7 +4794,12 @@
     29
    ],
    "t": "acaaabe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "acaaabe"
+   }
+  ]
  },
  {
   "seed": 256,
@@ -2434,7 +4810,21 @@
     13
    ],
    "t": "bbeéd中ée"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bbeéd中"
+   },
+   {
+    "insert": "é",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "e"
+   }
+  ]
  },
  {
   "seed": 257,
@@ -2445,7 +4835,21 @@
     94
    ],
    "t": "dbba😀中bd中eé😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dbb"
+   },
+   {
+    "insert": "a",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "😀中bd中eé😀"
+   }
+  ]
  },
  {
   "seed": 258,
@@ -2455,7 +4859,21 @@
     61
    ],
    "t": "eddc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e"
+   },
+   {
+    "insert": "dd",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "c"
+   }
+  ]
  },
  {
   "seed": 259,
@@ -2466,7 +4884,21 @@
     73
    ],
    "t": "ccéde中aa"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c"
+   },
+   {
+    "insert": "c",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "éde中aa"
+   }
+  ]
  },
  {
   "seed": 260,
@@ -2474,7 +4906,12 @@
   "expected": {
    "l": [],
    "t": "😀d中d"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀d中d"
+   }
+  ]
  },
  {
   "seed": 261,
@@ -2486,7 +4923,21 @@
     78
    ],
    "t": "😀ebb😀e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀"
+   },
+   {
+    "insert": "e",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "bb😀e"
+   }
+  ]
  },
  {
   "seed": 262,
@@ -2498,7 +4949,12 @@
     81
    ],
    "t": "😀ecb中b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀ecb中b"
+   }
+  ]
  },
  {
   "seed": 263,
@@ -2509,7 +4965,18 @@
     71
    ],
    "t": "😀😀acé中cé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀😀"
+   },
+   {
+    "insert": "acé中cé",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 264,
@@ -2520,14 +4987,33 @@
     63
    ],
    "t": "dd中b😀b中ed中a中中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dd中b😀b中e"
+   },
+   {
+    "insert": "d中",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "a中中c"
+   }
+  ]
  },
  {
   "seed": 265,
   "update": "bG9ybwAAAAAAAAAAAAAAADiVVTAABDwAAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABANjY2JDAAQABAEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADwEEAgQAAgQAAgQFAwMDAQAKB2HkuK3kuK0BYz8AAwADARABAwAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABwZj8J+YgGU=",
   "expected": {
    "t": "ccbca中中c😀e"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ccbca中中c😀e"
+   }
+  ]
  },
  {
   "seed": 266,
@@ -2538,7 +5024,18 @@
     55
    ],
    "t": "ba中😀中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "a中😀中c"
+   }
+  ]
  },
  {
   "seed": 267,
@@ -2549,7 +5046,12 @@
     76
    ],
    "t": "中écdécbbdbdé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中écdécbbdbdé"
+   }
+  ]
  },
  {
   "seed": 268,
@@ -2560,7 +5062,12 @@
     3
    ],
    "t": "b"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b"
+   }
+  ]
  },
  {
   "seed": 269,
@@ -2570,7 +5077,12 @@
     98
    ],
    "t": "édd😀dd😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "édd😀dd😀"
+   }
+  ]
  },
  {
   "seed": 270,
@@ -2581,7 +5093,12 @@
     54
    ],
    "t": "eéé中ébdbc😀éc😀edeb"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eéé中ébdbc😀éc😀edeb"
+   }
+  ]
  },
  {
   "seed": 271,
@@ -2591,7 +5108,12 @@
     6
    ],
    "t": "dda中cee😀中😀edccd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "dda中cee😀中😀edccd"
+   }
+  ]
  },
  {
   "seed": 272,
@@ -2601,7 +5123,12 @@
     42
    ],
    "t": "b中é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中é"
+   }
+  ]
  },
  {
   "seed": 273,
@@ -2614,7 +5141,12 @@
     89
    ],
    "t": "b中abeb😀dc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b中abeb😀dc"
+   }
+  ]
  },
  {
   "seed": 274,
@@ -2624,7 +5156,21 @@
     61
    ],
    "t": "中decéadcé中cecd😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中"
+   },
+   {
+    "insert": "de",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "céadcé中cecd😀"
+   }
+  ]
  },
  {
   "seed": 275,
@@ -2635,7 +5181,12 @@
     52
    ],
    "t": "bd中e中ccab😀😀eca"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bd中e中ccab😀😀eca"
+   }
+  ]
  },
  {
   "seed": 276,
@@ -2645,7 +5196,12 @@
     55
    ],
    "t": "deeeed"
-  }
+  },
+  "delta": [
+   {
+    "insert": "deeeed"
+   }
+  ]
  },
  {
   "seed": 277,
@@ -2655,7 +5211,12 @@
     34
    ],
    "t": "😀db😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀db😀"
+   }
+  ]
  },
  {
   "seed": 278,
@@ -2665,7 +5226,25 @@
     33
    ],
    "t": "ddb😀é中😀édéc"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "db😀é中😀é",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "déc",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 279,
@@ -2676,14 +5255,30 @@
     85
    ],
    "t": "😀cb中ede"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀cb中ede"
+   }
+  ]
  },
  {
   "seed": 280,
   "update": "bG9ybwAAAAAAAAAAAAAAAIDz6CEABIIBAAwADQQnAgEAAAAAAAAAAgAAAAAAAAAEAgEBAwEABgEGAQECAqAAAQACok8ABgEAAwAIAAYBBAECAAACAXQAHQEEAhAACQ8ABAMKAQoDAQQKBQYJCAkDAQIBAgYBDwEDAgYABAUEAgYEAQIEABQDYWFiAWQFw6nkuK0BZAVi8J+YgHkACAMIAiACAgAAAAAAAAABAAAAAAAAAAIBAQQBBAEBBAGgAAEGAAYBAAEABAAGAQQBAgACCQZpdGFsaWMBdAAbAQQCDAAHCwQDAgACDAcHDAAFCQQFBQgBAwMBCwEDAgEAAgEEAgECEYQBAAEE8J+YgAXkuK1hYgFk",
   "expected": {
    "t": "é中aab😀中abd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "é中aab😀中ab"
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 281,
@@ -2694,14 +5289,33 @@
     71
    ],
    "t": "eeéd中bd中中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "e"
+   },
+   {
+    "insert": "eéd",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "中bd中中"
+   }
+  ]
  },
  {
   "seed": 282,
   "update": "bG9ybwAAAAAAAAAAAAAAAPcWjI8ABEcABwAHARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAQAQQCBgACBgACBgUEBAMBAQANA2JlZQTDqWJlA+S4rUgABQAFARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAQAQQCBAADAwACAgQFAwMDAgAOCOS4reS4rcOpBGTkuK0=",
   "expected": {
    "t": "中ébebee中d中中é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中ébebee中d中中é"
+   }
+  ]
  },
  {
   "seed": 283,
@@ -2711,14 +5325,27 @@
     14
    ],
    "t": "bd😀中adé😀中ce中éddbb😀cb😀éé😀中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bd😀中adé😀中ce中éddbb😀cb😀éé😀中c"
+   }
+  ]
  },
  {
   "seed": 284,
   "update": "bG9ybwAAAAAAAAAAAAAAAJcpYg8ABFIAAwMDARsCAQAAAAAAAAACAAAAAAAAAAEBAQEBAQQAAAAFAQAAAQAGAQQBAgAAAgF0ABABBAIEAAIEAgMDBQkDAwECCwEDAgECAgECAgEEAgFjaAAMAAwBEAECAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgACBwRib2xkAXQAHgEEAgwABwsAAgEABAIHBwUJDAAEBQgDAwIEAQMDAgsBAwIBAAIBAAIBAxADY2JhhAEAAQRlY8OpAmJh",
   "expected": {
    "t": "cebacé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "cebacé",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 285,
@@ -2729,7 +5356,21 @@
     46
    ],
    "t": "eadcbaaéac"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eadcba",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "aéac",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 286,
@@ -2739,7 +5380,12 @@
     49
    ],
    "t": "中ébébbbe"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中ébébbbe"
+   }
+  ]
  },
  {
   "seed": 287,
@@ -2750,7 +5396,12 @@
     92
    ],
    "t": "bbddaab😀acbd😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "bbddaab😀acbd😀"
+   }
+  ]
  },
  {
   "seed": 288,
@@ -2761,14 +5412,30 @@
     60
    ],
    "t": "bda"
-  }
+  },
+  "delta": [
+   {
+    "insert": "b"
+   },
+   {
+    "insert": "da",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 289,
   "update": "bG9ybwAAAAAAAAAAAAAAAGN368sABD8AAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABwbwn5iAYWJBAAQABAEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQADwEEAgQAAwMAAgIEBQIEAgAIBOS4rWMCZGNBAAMAAwEQAQMAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAEAEEAgQAAwMAAgIEBQMDAgEABwTDqcOpAWM=",
   "expected": {
    "t": "😀ab中dccécé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "😀ab中dccécé"
+   }
+  ]
  },
  {
   "seed": 290,
@@ -2778,7 +5445,12 @@
     95
    ],
    "t": "d😀中beéeédad"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d😀中beéeédad"
+   }
+  ]
  },
  {
   "seed": 291,
@@ -2788,7 +5460,18 @@
     42
    ],
    "t": "ce😀é😀"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ce😀",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "é😀"
+   }
+  ]
  },
  {
   "seed": 292,
@@ -2799,7 +5482,40 @@
     49
    ],
    "t": "c中ab😀中c中bdédd"
-  }
+  },
+  "delta": [
+   {
+    "insert": "c中ab😀"
+   },
+   {
+    "insert": "中",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "c中"
+   },
+   {
+    "insert": "bdé",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true,
+     "bold": true
+    }
+   },
+   {
+    "insert": "d",
+    "attributes": {
+     "italic": true
+    }
+   }
+  ]
  },
  {
   "seed": 293,
@@ -2811,14 +5527,24 @@
     20
    ],
    "t": "ebbéa😀dedaba中😀中"
-  }
+  },
+  "delta": [
+   {
+    "insert": "ebbéa😀dedaba中😀中"
+   }
+  ]
  },
  {
   "seed": 294,
   "update": "bG9ybwAAAAAAAAAAAAAAAPSIGC0ABD8AAwADARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQMABwbkuK1kw6liAA4ADgEQAQIAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAECAAACAXQAGAEEAgoABgQABQQDCgUGBQMJBQUGAwMCAwsBAwIBAAIBBgIBBBUFYeS4rWMDZGVhBcOpZcOpBGLDqWU=",
   "expected": {
    "t": "中dééeéaabée中c"
-  }
+  },
+  "delta": [
+   {
+    "insert": "中dééeéaabée中c"
+   }
+  ]
  },
  {
   "seed": 295,
@@ -2828,7 +5554,21 @@
     79
    ],
    "t": "aeecedecabbee"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a"
+   },
+   {
+    "insert": "eec",
+    "attributes": {
+     "italic": true
+    }
+   },
+   {
+    "insert": "edecabbee"
+   }
+  ]
  },
  {
   "seed": 296,
@@ -2838,7 +5578,8 @@
     83
    ],
    "t": ""
-  }
+  },
+  "delta": []
  },
  {
   "seed": 297,
@@ -2848,7 +5589,12 @@
     95
    ],
    "t": "badd😀eddc😀é"
-  }
+  },
+  "delta": [
+   {
+    "insert": "badd😀eddc😀é"
+   }
+  ]
  },
  {
   "seed": 298,
@@ -2859,14 +5605,39 @@
     12
    ],
    "t": "a😀bé"
-  }
+  },
+  "delta": [
+   {
+    "insert": "a😀"
+   },
+   {
+    "insert": "b",
+    "attributes": {
+     "bold": true
+    }
+   },
+   {
+    "insert": "é"
+   }
+  ]
  },
  {
   "seed": 299,
   "update": "bG9ybwAAAAAAAAAAAAAAAIEfIiUABE0AAgECARsCAQAAAAAAAAADAAAAAAAAAAEBAQEBAQAAAAAFAQAAAQAGAQQBAgACBwRib2xkAXQADwEEAgQAAgQAAwMMAAIEAQAEhAEAAToAAQABARABAgAAAAAAAAABAQAAAAAABQEAAAEABgEEAQIAAAIBdAAOAQQCAQACAQACAQUCAQEAAgFkOgABAAEBEAEDAAAAAAAAAAEBAAAAAAAFAQAAAQAGAQQBAgAAAgF0AA4BBAIBAAIBAAIBBQIBAQACAWE=",
   "expected": {
    "t": "da"
-  }
+  },
+  "delta": [
+   {
+    "insert": "d"
+   },
+   {
+    "insert": "a",
+    "attributes": {
+     "bold": true
+    }
+   }
+  ]
  },
  {
   "seed": 300,
@@ -2876,6 +5647,11 @@
     25
    ],
    "t": "eb😀dbec"
-  }
+  },
+  "delta": [
+   {
+    "insert": "eb😀dbec"
+   }
+  ]
  }
 ]

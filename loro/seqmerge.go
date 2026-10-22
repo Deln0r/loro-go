@@ -253,6 +253,13 @@ type seqCursor struct {
 	before int64
 }
 
+// seqKey names a sequence: a container is its name and its kind, since a
+// root Text and a root List may share a name.
+type seqKey struct {
+	name string
+	kind change.ContainerType
+}
+
 func newSeqState(work *seqWork) *seqState {
 	return &seqState{byID: map[ID]*seqNode{}, byPeer: map[uint64][]*seqNode{}, pendingEnd: map[ID]int64{}, work: work, elems: map[ListElem]*movElem{}}
 }
@@ -292,10 +299,15 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 		// A mark adds a start anchor at Start and an end anchor that its
 		// mark-end op places, at Start+Len+1: the end of the span, counted
 		// after the start anchor has gone in.
-		if _, err := s.insert(op, op.Pos, []any{nil}, true, all, past); err != nil {
+		mi, ok := op.Value.(MarkInfo)
+		var start any
+		if ok {
+			start = markStart{info: mi, w: writer{lamport: op.Lamport, peer: op.Peer}}
+		}
+		if _, err := s.insert(op, op.Pos, []any{start}, true, all, past); err != nil {
 			return err
 		}
-		if mi, ok := op.Value.(MarkInfo); ok {
+		if ok {
 			s.pendingEnd[ID{Peer: op.Peer, Counter: op.Counter + 1}] = mi.Start + mi.Len + 1
 		}
 		return nil
@@ -306,7 +318,7 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 			return nil
 		}
 		delete(s.pendingEnd, id)
-		_, err := s.insert(op, at, []any{nil}, true, all, past)
+		_, err := s.insert(op, at, []any{markEnd{}}, true, all, past)
 		return err
 	case change.VKStr:
 		str, _ := op.Value.(string)
@@ -802,7 +814,7 @@ func (s *seqState) values() []any {
 // in constant time; then the view is the whole merged sequence and typing at
 // the end is a lookup at the end. Only an op made concurrently with something
 // already merged needs its causal past from the change DAG and a scan.
-func mergeSequences(all, units []*seqChange, work *seqWork) (map[string]*seqState, error) {
+func mergeSequences(all, units []*seqChange, work *seqWork) (map[seqKey]*seqState, error) {
 	ix, err := newCausalIndex(all, work)
 	if err != nil {
 		return nil, err
@@ -836,7 +848,7 @@ func mergeSequences(all, units []*seqChange, work *seqWork) (map[string]*seqStat
 		}
 		return a.Counter < b.Counter
 	})
-	seqs := map[string]*seqState{}
+	seqs := map[seqKey]*seqState{}
 	// frontier is the set of maximal ops merged so far. An op whose deps are
 	// exactly this set was made with everything merged in view.
 	var frontier []ID
@@ -862,10 +874,11 @@ func mergeSequences(all, units []*seqChange, work *seqWork) (map[string]*seqStat
 				past = pastView{vv: vv, peer: op.Peer, own: op.Counter}
 			}
 			if isSeqOp(op) {
-				s := seqs[op.Container]
+				key := seqKey{op.Container, op.Kind}
+				s := seqs[key]
 				if s == nil {
 					s = newSeqState(work)
-					seqs[op.Container] = s
+					seqs[key] = s
 				}
 				if err := s.apply(op, inView, past, ix.complete); err != nil {
 					return nil, err

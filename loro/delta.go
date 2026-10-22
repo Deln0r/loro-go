@@ -1,8 +1,10 @@
 package loro
 
 import (
-	"fmt"
-	"sort"
+	"bytes"
+	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 )
@@ -14,134 +16,239 @@ type DeltaOp struct {
 	Attributes map[string]any
 }
 
-// element kinds in the anchor-aware text sequence.
-const (
-	elChar = iota
-	elMarkStart
-	elMarkEnd
-)
-
-type tElem struct {
-	kind   int
-	r      string
-	key    string
-	value  any
-	markID int64
+// markStart is the value of a mark's start anchor in a merged Text: the mark,
+// and its writer, which decides between overlapping marks of one key.
+type markStart struct {
+	info MarkInfo
+	w    writer
 }
 
-// TextDelta reconstructs the Quill-style delta for a Text container, matching
-// loro's toDelta(). Loro encodes a mark as a span [start, start+len) in a
-// coordinate space that INCLUDES earlier marks' anchor elements, so the delta
-// cannot be derived from visible positions alone. We rebuild the sequence with
-// mark anchors as real elements (start anchor at op `start`, end anchor at
-// `start+len`), then walk it tracking active styles. The trailing mark_end op
-// (Null, position 0) carries no usable position and is ignored; the span comes
-// from the MarkStart op.
+// markEnd is the value of a mark's end anchor. It belongs to the mark whose
+// start anchor has the id just before its own.
+type markEnd struct{}
+
+// TextDelta returns a Text container's rich-text delta, as loro's
+// text.toDelta() gives it: the text MergeState shows for the container, split
+// into runs by the styles over it. It merges u as MergeState does, so it
+// assumes the same of u and stops at the same step limit.
 //
-// Exact for non-concurrent histories. Mark anchoring under concurrent edits
-// (expand rules) and deletes inside marked ranges are not yet modeled.
+// A mark is a pair of anchors in the merged sequence, placed like characters,
+// and it styles the text between them. A mark whose end anchor is missing, as
+// in an export that stops between the two, or was deleted styles nothing, as
+// in loro. Where marks of one key overlap, the one with the later (lamport,
+// peer) decides the value. A null value, which an unmark writes, leaves the key
+// out of the run's attributes, but the text under it stays a run of its own:
+// loro keeps it apart from text that no mark of that key covers. Adjacent runs
+// with equal styles are one run; values are equal when their contents are.
+//
+// Checked against loro-crdt's toDelta on three corpora of 300 random histories
+// each in testdata/fixtures: Text with bold and italic marks by one author and
+// by two or three peers editing concurrently, and rich text with marks of all
+// four expand rules, string, object and array values, unmarks, inserts at the
+// edges of styled runs and deletes of the whole text, by one to three peers.
+// All 900 match.
 func TextDelta(u *Updates, container string) ([]DeltaOp, error) {
-	var ops []Op
-	for _, ch := range u.Changes {
-		for _, op := range ch.Ops {
-			if op.Container != container || op.Kind != change.CText {
-				continue
-			}
-			if op.VKind == change.VKStr || op.VKind == change.VKMarkStart {
-				ops = append(ops, op)
+	c := collect(u)
+	seqs, err := mergeSequences(c.copies, c.units, &seqWork{limit: seqWorkLimit})
+	if err != nil {
+		return nil, err
+	}
+	s := seqs[seqKey{container, change.CText}]
+	if s == nil {
+		return nil, nil
+	}
+	return s.delta()
+}
+
+// delta renders a merged Text as TextDelta describes. Styles change only at
+// anchors, so they are worked out there, and the characters between two
+// anchors go into the current run as they come.
+func (s *seqState) delta() ([]DeltaOp, error) {
+	// A mark counts when both of its anchors are in, the start first, and
+	// neither was deleted.
+	begun := map[ID]bool{}
+	complete := map[ID]bool{}
+	for _, n := range s.nodes {
+		if !n.anchor || len(n.deleters) != 0 {
+			continue
+		}
+		switch n.value.(type) {
+		case markStart:
+			begun[ID{Peer: n.peer, Counter: n.counter}] = true
+		case markEnd:
+			if start := (ID{Peer: n.peer, Counter: n.counter - 1}); begun[start] {
+				complete[start] = true
 			}
 		}
 	}
-	ops = sortedOps(ops) // (lamport, peer, counter): replay order
-
-	var seq []tElem
-	for _, op := range ops {
-		switch op.VKind {
-		case change.VKStr:
-			s, ok := op.Value.(string)
-			if !ok {
-				return nil, fmt.Errorf("loro: text op value is %T, want string", op.Value)
-			}
-			rs := []rune(s)
-			ins := make([]tElem, len(rs))
-			for k, r := range rs {
-				ins[k] = tElem{kind: elChar, r: string(r)}
-			}
-			seq = splice(seq, int(op.Pos), ins...)
-		case change.VKMarkStart:
-			mi, ok := op.Value.(MarkInfo)
-			if !ok {
-				continue
-			}
-			start := int(mi.Start)
-			end := start + int(mi.Len)
-			// end anchor first; inserting the start anchor then shifts it right.
-			seq = splice(seq, end, tElem{kind: elMarkEnd, markID: op.Counter})
-			seq = splice(seq, start, tElem{kind: elMarkStart, key: mi.Key, value: mi.Value, markID: op.Counter})
-		}
+	if err := s.work.spend(len(s.nodes)); err != nil {
+		return nil, err
 	}
 
-	active := map[int64]MarkInfo{}
+	open := map[ID]*markStart{}        // marks begun and not yet ended
+	byKey := map[string][]*markStart{} // the open marks of each key
+	winner := map[string]*markStart{}  // the open mark that decides each key
+	changed := false
+	settle := func(key string) error {
+		var win *markStart
+		for _, m := range byKey[key] {
+			if win == nil || m.w.after(win.w) {
+				win = m
+			}
+		}
+		if win == nil {
+			delete(winner, key)
+		} else {
+			winner[key] = win
+		}
+		changed = true
+		// A key is hashed at each of its marks' anchors, and a long key costs
+		// its length each time.
+		return s.work.spend(len(byKey[key]) + 1 + len(key))
+	}
+
+	// A run's styles are every key a mark decides, a null value included;
+	// its attributes leave the null ones out.
 	var out []DeltaOp
-	for _, e := range seq {
-		switch e.kind {
-		case elMarkStart:
-			active[e.markID] = MarkInfo{Key: e.key, Value: e.value}
-		case elMarkEnd:
-			delete(active, e.markID)
-		case elChar:
-			attrs := activeAttrs(active)
-			if len(out) > 0 && sameAttrs(out[len(out)-1].Attributes, attrs) {
-				out[len(out)-1].Insert += e.r
+	var run strings.Builder
+	var runStyles map[string]any
+	flush := func() {
+		if run.Len() == 0 {
+			return
+		}
+		var attrs map[string]any
+		for key, v := range runStyles {
+			if v == nil {
 				continue
 			}
-			out = append(out, DeltaOp{Insert: e.r, Attributes: attrs})
+			if attrs == nil {
+				attrs = map[string]any{}
+			}
+			attrs[key] = v
+		}
+		out = append(out, DeltaOp{Insert: run.String(), Attributes: attrs})
+		run.Reset()
+	}
+	for _, n := range s.nodes {
+		if len(n.deleters) != 0 {
+			continue
+		}
+		if !n.anchor {
+			str, _ := n.value.(string)
+			if changed {
+				changed = false
+				styles := make(map[string]any, len(winner))
+				cost := len(winner)
+				for key, m := range winner {
+					styles[key] = m.info.Value
+					cost += len(key)
+				}
+				if !sameAttrs(runStyles, styles, &cost) {
+					flush()
+					runStyles = styles
+				}
+				if err := s.work.spend(cost); err != nil {
+					return nil, err
+				}
+			}
+			run.WriteString(str)
+			continue
+		}
+		switch v := n.value.(type) {
+		case markStart:
+			id := ID{Peer: n.peer, Counter: n.counter}
+			if !complete[id] {
+				continue
+			}
+			open[id] = &v
+			byKey[v.info.Key] = append(byKey[v.info.Key], &v)
+			if err := settle(v.info.Key); err != nil {
+				return nil, err
+			}
+		case markEnd:
+			id := ID{Peer: n.peer, Counter: n.counter - 1}
+			m, ok := open[id]
+			if !ok {
+				continue
+			}
+			delete(open, id)
+			key := m.info.Key
+			if i := slices.Index(byKey[key], m); i >= 0 {
+				byKey[key] = slices.Delete(byKey[key], i, i+1)
+			}
+			if err := settle(key); err != nil {
+				return nil, err
+			}
 		}
 	}
+	flush()
 	return out, nil
 }
 
-// activeAttrs flattens the active marks into an attribute map (nil if none).
-// Same-key marks resolve by ascending markID so the later mark wins.
-func activeAttrs(active map[int64]MarkInfo) map[string]any {
-	if len(active) == 0 {
-		return nil
-	}
-	ids := make([]int64, 0, len(active))
-	for id := range active {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	out := map[string]any{}
-	for _, id := range ids {
-		m := active[id]
-		out[m.Key] = m.Value
-	}
-	return out
-}
-
-func splice(s []tElem, at int, items ...tElem) []tElem {
-	if at < 0 {
-		at = 0
-	}
-	if at > len(s) {
-		at = len(s)
-	}
-	out := make([]tElem, 0, len(s)+len(items))
-	out = append(out, s[:at]...)
-	out = append(out, items...)
-	out = append(out, s[at:]...)
-	return out
-}
-
-func sameAttrs(a, b map[string]any) bool {
+// sameAttrs reports whether two runs' styles are equal, adding the elements it
+// compared to cost.
+func sameAttrs(a, b map[string]any, cost *int) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for k, va := range a {
-		if vb, ok := b[k]; !ok || vb != va {
+		vb, ok := b[k]
+		if !ok || !sameValue(va, vb, cost) {
 			return false
 		}
 	}
 	return true
+}
+
+// sameValue compares two style values by content, as loro does: lists and
+// maps element by element, and NaN equal to NaN. A list or map compared with
+// itself is equal at once, which is the usual case: a style that carries on
+// across an anchor is the same value on both sides. It adds what it compared
+// to cost, an element at a time and a byte at a time for keys and strings.
+func sameValue(a, b any, cost *int) bool {
+	*cost++
+	switch x := a.(type) {
+	case float64:
+		y, ok := b.(float64)
+		return ok && (x == y || x != x && y != y)
+	case string:
+		y, ok := b.(string)
+		*cost += len(x)
+		return ok && x == y
+	case []byte:
+		y, ok := b.([]byte)
+		*cost += len(x)
+		return ok && bytes.Equal(x, y)
+	case []any:
+		y, ok := b.([]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		if len(x) == 0 || &x[0] == &y[0] {
+			return true
+		}
+		for i := range x {
+			if !sameValue(x[i], y[i], cost) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		y, ok := b.(map[string]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		if reflect.ValueOf(x).UnsafePointer() == reflect.ValueOf(y).UnsafePointer() {
+			return true
+		}
+		for k, v := range x {
+			*cost += len(k)
+			w, ok := y[k]
+			if !ok || !sameValue(v, w, cost) {
+				return false
+			}
+		}
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }

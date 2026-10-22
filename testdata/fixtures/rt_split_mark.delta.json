@@ -1,0 +1,11 @@
+[
+  {
+    "insert": "a",
+    "attributes": {
+      "bold": true
+    }
+  },
+  {
+    "insert": "bc"
+  }
+]

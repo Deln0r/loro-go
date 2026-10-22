@@ -1,0 +1,19 @@
+[
+  {
+    "insert": "ab",
+    "attributes": {
+      "x": {
+        "k": 1
+      }
+    }
+  },
+  {
+    "insert": "cd",
+    "attributes": {
+      "y": [
+        1,
+        2
+      ]
+    }
+  }
+]

@@ -93,35 +93,48 @@ func MergeState(u *Updates) (map[string]any, error) {
 	return mergeState(u, seqWorkLimit)
 }
 
-// mergeState is MergeState with the sequence merge's step limit as a
-// parameter, so a test can reach it without a huge input.
-func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
-	type cinfo struct {
-		kind   change.ContainerType
-		isRoot bool
-		ops    []Op
-	}
+// cinfo is one container's ops, duplicates clipped away, in arrival order.
+type cinfo struct {
+	kind   change.ContainerType
+	isRoot bool
+	ops    []Op
+}
+
+// collected is a history ready to merge: each container's ops, and every
+// change as it arrived with the ops that were new in it. The sequence merge
+// needs to know which change an op came from, since that change's deps say
+// what its author had seen.
+type collected struct {
+	conts  map[string]*cinfo
+	order  []string
+	copies []*seqChange
+	units  []*seqChange
+}
+
+// collect gathers u's ops by container, each op at most once.
+//
+// An op is identified by the id RANGE it occupies: the peer that made it and
+// the counters [Counter, Counter+Len) that peer assigned to its atoms.
+// Re-applying an atom must be a no-op, or the document ends up corrupted
+// rather than merged, and duplicates are ordinary once updates travel over a
+// real transport that retries and hands back overlapping pagination windows.
+//
+// The range, not just its first counter, is what matters. loro coalesces
+// adjacent atoms from one peer into a single run, so two exports of the same
+// document taken at different moments share a first counter while covering
+// different spans: "ab" is counter 0 len 2 and "abcd" is counter 0 len 4.
+// Keying on the first counter alone made whichever arrived first win, so
+// "abcd" merged after "ab" silently lost "cd". The complement was as bad: a
+// tail delta re-sent at a later start counter missed the key entirely and its
+// atoms were applied a second time, which is the "hello" -> "hellooloo"
+// corruption this dedup exists to prevent.
+//
+// So each incoming op is clipped to the sub-ranges not already consumed, and
+// dropped only when its whole range is covered.
+func collect(u *Updates) collected {
 	conts := map[string]*cinfo{}
 	var order []string
 
-	// An op is identified by the id RANGE it occupies: the peer that made it and
-	// the counters [Counter, Counter+Len) that peer assigned to its atoms.
-	// Re-applying an atom must be a no-op, or the document ends up corrupted
-	// rather than merged, and duplicates are ordinary once updates travel over a
-	// real transport that retries and hands back overlapping pagination windows.
-	//
-	// The range, not just its first counter, is what matters. loro coalesces
-	// adjacent atoms from one peer into a single run, so two exports of the same
-	// document taken at different moments share a first counter while covering
-	// different spans: "ab" is counter 0 len 2 and "abcd" is counter 0 len 4.
-	// Keying on the first counter alone made whichever arrived first win, so
-	// "abcd" merged after "ab" silently lost "cd". The complement was as bad: a
-	// tail delta re-sent at a later start counter missed the key entirely and its
-	// atoms were applied a second time, which is the "hello" -> "hellooloo"
-	// corruption this dedup exists to prevent.
-	//
-	// So each incoming op is clipped to the sub-ranges not already consumed, and
-	// dropped only when its whole range is covered.
 	type spanKey struct {
 		peer      uint64
 		container string
@@ -129,9 +142,6 @@ func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 	}
 	consumed := map[spanKey][]idRange{}
 
-	// Every change as it arrived, with the ops that were new in it: the
-	// sequence merge needs to know which change an op came from, since that
-	// change's deps say what its author had seen.
 	copies := make([]*seqChange, len(u.Changes))
 	var units []*seqChange
 	for i := range u.Changes {
@@ -174,7 +184,15 @@ func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 			units = append(units, sc)
 		}
 	}
-	seqs, err := mergeSequences(copies, units, &seqWork{limit: seqLimit})
+	return collected{conts: conts, order: order, copies: copies, units: units}
+}
+
+// mergeState is MergeState with the sequence merge's step limit as a
+// parameter, so a test can reach it without a huge input.
+func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
+	c := collect(u)
+	conts, order := c.conts, c.order
+	seqs, err := mergeSequences(c.copies, c.units, &seqWork{limit: seqLimit})
 	if err != nil {
 		return nil, err
 	}
@@ -194,17 +212,17 @@ func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 			}
 			return m, nil
 		case change.CText:
-			if s := seqs[name]; s != nil {
+			if s := seqs[seqKey{name, ci.kind}]; s != nil {
 				return s.text(), nil
 			}
 			return "", nil
 		case change.CList:
-			if s := seqs[name]; s != nil {
+			if s := seqs[seqKey{name, ci.kind}]; s != nil {
 				return s.values(), nil
 			}
 			return []any{}, nil
 		case change.CMovableList:
-			if s := seqs[name]; s != nil {
+			if s := seqs[seqKey{name, ci.kind}]; s != nil {
 				return s.values(), nil
 			}
 			return []any{}, nil

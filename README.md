@@ -67,13 +67,13 @@ func main() {
 - Deletes: a text or list delete removes the elements at its position in its author's view, as loro's import does, so a delete that loro-crdt's WASM build up to 1.16.3 recorded with wrong ids (loro-dev/loro#1149) still removes the right characters; when part of the history is missing it falls back to the ids it recorded. Map key deletion (DeleteOnce), and deletes of other peers' elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered; every decoded change lamport is checked against the lamport loro-crdt itself recorded)
 - LZ4-compressed SSTable blocks (decompression, checksums verified)
-- Rich-text `toDelta`: styled runs reconstructed via the mark anchor model (`loro.TextDelta`)
+- Rich-text `toDelta` (`loro.TextDelta`): the merged text split into styled runs, with overlapping marks of one key decided by (lamport, peer), unmarks, marks whose two anchors arrive in different exports, and style values of any shape. It matches loro-crdt's `toDelta` on 300 of 300 one-author histories, 300 of 300 concurrent ones, and 300 of 300 rich-text histories by one to three peers with marks of all four expand rules, inserts at the edges of styled runs and deletes of the whole text
 - Values of any shape: objects and arrays nested in list items, map values and style values, with a nested map's keys read and written as indexes into the block's key arena, as loro does
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt, except for the key order of a map of two or more keys nested in a value (see Change blocks); loro-crdt imports it to the same document
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 - Malformed-input hardening: the decoders are fuzzed and bound every attacker-controlled length and RLE run count, and the key bytes that ops and nested maps reference by index, so a hostile blob errors out instead of panicking, hanging, or allocating without bound
 - Merge is order-independent and idempotent: the same changes in any order give the same state, and a duplicate or partially overlapping op is absorbed rather than applied twice, so a transport that retries or replays does not corrupt the document
-- Sequence merge checked against loro-crdt on random histories: 300 of 300 one-author histories with inserts anywhere (astral characters included), deletes, backspace runs, marks and list edits match, as do 300 of 300 histories in which two or three peers edit concurrently and sync, 300 of 300 insert-anywhere histories, and named histories with syncs, deletes, backwards deletes and marks. MovableList (inserts, deletes, moves, sets; one author and several) and Tree (creates, moves, deletes, meta writes) each match on 300 of 300 random histories; every block of every corpus history re-encodes byte-identically. The merge also matches a brute-force reference, itself held to loro-crdt, on 300 random multi-peer histories with real deps
+- Sequence merge checked against loro-crdt on random histories: 300 of 300 one-author histories with inserts anywhere (astral characters included), deletes, backspace runs, marks and list edits match, as do 300 of 300 histories in which two or three peers edit concurrently and sync, 300 of 300 insert-anywhere histories, and named histories with syncs, deletes, backwards deletes and marks. MovableList (inserts, deletes, moves, sets; one author and several), Tree (creates, moves, deletes, meta writes) and rich text (styled by one to three peers) each match on 300 of 300 random histories; every block of every corpus history re-encodes byte-identically. The merge also matches a brute-force reference, itself held to loro-crdt, on 300 random multi-peer histories with real deps
 
 ## Matrix transport
 
@@ -88,8 +88,8 @@ homeserver on every push. It is a separate Go module, so this library's own
 ## Not yet
 
 - Fast merging of long concurrent branches. An edit made with everything already merged in view (typing, or editing after a sync) resolves at once; one made concurrently with edits already merged is resolved by scanning the merged sequence. Two peers that each made thousands of changes offline therefore cost time proportional to the product of the two, and past 2^28 steps `MergeState` returns an error rather than run on.
-- Mark anchoring under concurrent edits (expand rules), and marks interacting with deletes in the same range
 - Nested containers other than tree-node meta maps (a container stored as a map or list value)
+- Two root containers of different kinds under one name, such as a Text and a List both called `t`. `TextDelta` keeps them apart, but `MergeState` returns one value per name and can show the other one than loro's `toJSON` does: in the one case checked, loro shows the List and `MergeState` the Text
 
 ## Cross-language fixtures
 
@@ -100,7 +100,7 @@ cd testdata/gen && npm install && node gen.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 
-`testdata/gen/lorojs_check.mjs` runs the same fixtures and corpora through loro.js, the TypeScript implementation of Loro, as a second oracle. loro.js 0.3.0 agrees with loro-crdt on all of them except two tree fixtures with crossing concurrent moves, where its tree came out empty; that was reported as [loro-dev/loro#1182](https://github.com/loro-dev/loro/issues/1182) and fixed upstream in [loro-dev/loro#1205](https://github.com/loro-dev/loro/pull/1205), after 0.3.0.
+`testdata/gen/lorojs_check.mjs` runs the same fixtures and corpora through loro.js, the TypeScript implementation of Loro, as a second oracle, comparing each document's `toJSON` and, where one was recorded, its `toDelta`. loro.js 0.3.0 agrees with loro-crdt on all of them except in three ways. Two tree fixtures with crossing concurrent moves came out as an empty tree; that was reported as [loro-dev/loro#1182](https://github.com/loro-dev/loro/issues/1182) and fixed upstream in [loro-dev/loro#1205](https://github.com/loro-dev/loro/pull/1205), after 0.3.0. In 20 of the 300 rich-text histories and two fixtures, loro.js gives the same text and styles but breaks the runs at different places: it joins text under an unmark with unstyled text beside it, and keeps apart runs whose style values are equal objects. And a mark whose end anchor was deleted, which only a hand-written history does, still styles its text in loro.js.
 
 ## Contributing
 

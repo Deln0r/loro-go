@@ -26,6 +26,7 @@ func TestFileRoundTrip(t *testing.T) {
 		"unicode_text", "map_mixed", "text_cjk_del", "counter",
 		"tree_simple", "tree_meta", "tree_wide", "mlist",
 		"richtext", "rt_one", "rt_two", "rt_overlap",
+		"rt_struct",
 	} {
 		orig, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {
@@ -192,11 +193,13 @@ func TestValuesRoundTrip(t *testing.T) {
 // TestCorpusRoundTrip decodes and re-encodes every block of every history in
 // the random corpora, which hold the op kinds the named fixtures barely touch:
 // MovableList moves and sets, tree moves and deletes, marks, backwards
-// deletes. Each blob and each file must come back byte-identical.
+// deletes, and style values that are objects of one key. Each blob and each
+// file must come back byte-identical.
 func TestCorpusRoundTrip(t *testing.T) {
 	for _, name := range []string{
 		"seq_single_corpus.json", "seq_concurrent_corpus.json", "ordering_corpus.json",
 		"movable_single_corpus.json", "movable_concurrent_corpus.json", "tree_corpus.json",
+		"rich_corpus.json",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name))
 		if err != nil {

@@ -1,0 +1,21 @@
+[
+  {
+    "insert": "abcd",
+    "attributes": {
+      "color": "red"
+    }
+  },
+  {
+    "insert": "e",
+    "attributes": {
+      "color": "blue"
+    }
+  },
+  {
+    "insert": "f",
+    "attributes": {
+      "italic": true,
+      "color": "blue"
+    }
+  }
+]

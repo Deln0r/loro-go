@@ -1,0 +1,14 @@
+[
+  {
+    "insert": "ab",
+    "attributes": {
+      "color": "red"
+    }
+  },
+  {
+    "insert": "cdef",
+    "attributes": {
+      "color": "blue"
+    }
+  }
+]

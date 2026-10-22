@@ -13,6 +13,7 @@ type corpusEntry struct {
 	Seed     int            `json:"seed"`
 	Update   string         `json:"update"`
 	Expected map[string]any `json:"expected"`
+	Delta    []any          `json:"delta"`
 }
 
 func loadCorpus(t *testing.T, name string) []corpusEntry {
@@ -114,5 +115,23 @@ func TestMovableAndTreeCorporaAgainstLoro(t *testing.T) {
 		if len(seeds) > 0 {
 			t.Errorf("%s: %d of %d histories diverge from loro-crdt", name, len(seeds), len(corpus))
 		}
+	}
+}
+
+// TestRichTextCorpusAgainstLoro replays 300 random rich-text histories by one
+// to three peers: marks of keys with each of loro's four expand rules, valued
+// true, a string, an object or an array, unmarks, inserts at the edges of
+// styled runs, and deletes of the whole text. The text must come out as
+// loro-crdt has it; TestTextDeltaCorporaAgainstLoro holds the styles to it.
+func TestRichTextCorpusAgainstLoro(t *testing.T) {
+	corpus := loadCorpus(t, "rich_corpus.json")
+	seeds, got, want := divergences(t, corpus)
+	for i := range seeds {
+		if i < 3 {
+			t.Errorf("seed %d diverged:\n got  %s\n want %s", seeds[i], got[i], want[i])
+		}
+	}
+	if len(seeds) > 0 {
+		t.Errorf("%d of %d rich-text histories diverge from loro-crdt", len(seeds), len(corpus))
 	}
 }

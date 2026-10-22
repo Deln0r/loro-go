@@ -291,6 +291,163 @@ emit("nested_values", (doc) => {
   ml.set(1, { id: 2, tags: ["t"] });
 });
 
+// Rich-text cases the corpora do not reach: marks of one key with different
+// values, an unmark, and marks of one key made concurrently by two peers, where
+// the mark with the later (lamport, peer) wins. Peer 1 marks first in
+// rt_conc_color_lamport, so its red mark has the higher lamport and wins over
+// peer 2's blue. The answer is a replay's, as for the corpora.
+function emitDeltaPeers(name, peers, build) {
+  const docs = [];
+  for (let p = 1; p <= peers; p++) {
+    const d = new LoroDoc();
+    d.setPeerId(BigInt(p));
+    d.configTextStyle({
+      bold: { expand: "after" },
+      italic: { expand: "after" },
+      color: { expand: "none" },
+      x: { expand: "none" },
+      y: { expand: "none" },
+    });
+    docs.push(d);
+  }
+  build(docs);
+  const all = new LoroDoc();
+  for (const d of docs) {
+    d.commit();
+    all.import(d.export({ mode: "update" }));
+  }
+  const update = all.export({ mode: "update" });
+  const replay = new LoroDoc();
+  replay.import(update);
+  const delta = replay.getText("rt").toDelta();
+  writeFileSync(join(outDir, `${name}.update.bin`), Buffer.from(update));
+  writeFileSync(join(outDir, `${name}.json`), JSON.stringify(replay.toJSON(), null, 2) + "\n");
+  writeFileSync(join(outDir, `${name}.delta.json`), JSON.stringify(delta, null, 2) + "\n");
+  console.log(`${name}: update=${update.length}B delta=${JSON.stringify(delta)}`);
+}
+// share copies peer 0's text to every other peer, so their marks are concurrent.
+const share = (docs) => {
+  docs[0].commit();
+  for (const d of docs.slice(1)) d.import(docs[0].export({ mode: "update" }));
+};
+emitDeltaPeers("rt_same_key", 1, ([a]) => {
+  const t = a.getText("rt");
+  t.insert(0, "abcdef");
+  t.mark({ start: 0, end: 4 }, "color", "red");
+  t.mark({ start: 2, end: 6 }, "color", "blue");
+});
+emitDeltaPeers("rt_unmark", 1, ([a]) => {
+  const t = a.getText("rt");
+  t.insert(0, "abcdef");
+  t.mark({ start: 0, end: 6 }, "bold", true);
+  t.unmark({ start: 1, end: 3 }, "bold");
+});
+emitDeltaPeers("rt_conc_color", 2, (docs) => {
+  docs[0].getText("rt").insert(0, "abcdef");
+  share(docs);
+  docs[0].getText("rt").mark({ start: 0, end: 4 }, "color", "red");
+  docs[1].getText("rt").mark({ start: 2, end: 6 }, "color", "blue");
+});
+emitDeltaPeers("rt_conc_color_lamport", 2, (docs) => {
+  docs[0].getText("rt").insert(0, "abcdef");
+  share(docs);
+  docs[0].getText("rt").mark({ start: 5, end: 6 }, "italic", true);
+  docs[0].commit();
+  docs[0].getText("rt").mark({ start: 0, end: 4 }, "color", "red");
+  docs[1].getText("rt").mark({ start: 2, end: 6 }, "color", "blue");
+});
+// Style values that are objects and arrays: loro compares them by content, so
+// "cd", marked in two pieces with equal arrays, is one run.
+emitDeltaPeers("rt_struct", 1, ([a]) => {
+  const t = a.getText("rt");
+  t.insert(0, "abcd");
+  t.mark({ start: 0, end: 2 }, "x", { k: 1 });
+  t.mark({ start: 2, end: 3 }, "y", [1, 2]);
+  t.mark({ start: 3, end: 4 }, "y", [1, 2]);
+});
+
+// A mark whose two anchors arrive in different exports. The first export stops
+// between them, and a mark without its end styles nothing; merged with the
+// full export, in either order, the mark is whole again.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  const t = doc.getText("rt");
+  t.insert(0, "abc");
+  t.mark({ start: 0, end: 1 }, "bold", true);
+  doc.commit();
+  const part = doc.export({ mode: "updates-in-range", spans: [{ id: { peer: "1", counter: 0 }, len: 4 }] });
+  const full = doc.export({ mode: "update" });
+  const partDoc = new LoroDoc();
+  partDoc.import(part);
+  const fullDoc = new LoroDoc();
+  fullDoc.import(full);
+  writeFileSync(join(outDir, "rt_split_mark.part.bin"), Buffer.from(part));
+  writeFileSync(join(outDir, "rt_split_mark.part.delta.json"), JSON.stringify(partDoc.getText("rt").toDelta(), null, 2) + "\n");
+  writeFileSync(join(outDir, "rt_split_mark.update.bin"), Buffer.from(full));
+  writeFileSync(join(outDir, "rt_split_mark.json"), JSON.stringify(fullDoc.toJSON(), null, 2) + "\n");
+  writeFileSync(join(outDir, "rt_split_mark.delta.json"), JSON.stringify(fullDoc.getText("rt").toDelta(), null, 2) + "\n");
+  console.log(`rt_split_mark: part=${JSON.stringify(partDoc.getText("rt").toDelta())} full=${JSON.stringify(fullDoc.getText("rt").toDelta())}`);
+}
+
+// A delete of a mark's end anchor. loro's own text.delete() never removes an
+// anchor, so this history is written as JSON updates: "abc", bold over "ab"
+// (anchors at counters 3 and 4), then a delete at entity position 3, the end
+// anchor. loro then styles nothing.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  const t = doc.getText("rt");
+  t.insert(0, "abc");
+  t.mark({ start: 0, end: 2 }, "bold", true);
+  doc.commit();
+  const json = doc.exportJsonUpdates();
+  json.changes.push({
+    id: "5@0",
+    timestamp: 0,
+    deps: ["4@0"],
+    lamport: 5,
+    msg: null,
+    ops: [{ container: "cid:root-rt:Text", content: { type: "delete", pos: 3, len: 1, start_id: "4@0" }, counter: 5 }],
+  });
+  const crafted = new LoroDoc();
+  crafted.importJsonUpdates(json);
+  const update = crafted.export({ mode: "update" });
+  const replay = new LoroDoc();
+  replay.import(update);
+  writeFileSync(join(outDir, "rt_end_deleted.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "rt_end_deleted.json"), JSON.stringify(replay.toJSON(), null, 2) + "\n");
+  writeFileSync(join(outDir, "rt_end_deleted.delta.json"), JSON.stringify(replay.getText("rt").toDelta(), null, 2) + "\n");
+  console.log(`rt_end_deleted: delta=${JSON.stringify(replay.getText("rt").toDelta())}`);
+}
+
+// An unmark over bold text leaves it unstyled, yet loro keeps it a run of its
+// own, apart from the text beside it that was never bold.
+emitDeltaPeers("rt_unmark_alone", 1, ([a]) => {
+  const t = a.getText("rt");
+  t.insert(0, "abcd");
+  t.mark({ start: 1, end: 3 }, "bold", true);
+  t.unmark({ start: 1, end: 3 }, "bold");
+});
+
+// A Text and a List with the same root name are two containers. No .json:
+// loro's toJSON shows only one of them under the name.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  const t = doc.getText("rt");
+  t.insert(0, "hi");
+  doc.getList("rt").insert(0, 1);
+  t.insert(2, "!");
+  doc.commit();
+  const update = doc.export({ mode: "update" });
+  const replay = new LoroDoc();
+  replay.import(update);
+  writeFileSync(join(outDir, "rt_same_name.update.bin"), Buffer.from(update));
+  writeFileSync(join(outDir, "rt_same_name.delta.json"), JSON.stringify(replay.getText("rt").toDelta(), null, 2) + "\n");
+  console.log(`rt_same_name: delta=${JSON.stringify(replay.getText("rt").toDelta())} json=${JSON.stringify(replay.toJSON())}`);
+}
+
 emitMerged(
   "conc_list2",
   (d) => {
@@ -878,11 +1035,15 @@ function emitDoc(name, doc) {
   // The answer is what a replay of the exported bytes shows, which is what a
   // reader of those bytes sees. The writing replica can differ: it lists a
   // root container it merely opened, as "l": [], where a replay has nothing.
+  // delta is the replay's toDelta() for the text, styles included, which
+  // toJSON leaves out.
   const record = (seed, doc) => {
     const update = doc.export({ mode: "update" });
     const replay = new LoroDoc();
     replay.import(update);
-    return { seed, update: Buffer.from(update).toString("base64"), expected: replay.toJSON() };
+    const expected = replay.toJSON();
+    const delta = "t" in expected ? replay.getText("t").toDelta() : undefined;
+    return { seed, update: Buffer.from(update).toString("base64"), expected, delta };
   };
 
   const single = [];
@@ -925,6 +1086,83 @@ function emitDoc(name, doc) {
   }
   writeFileSync(join(outDir, "seq_concurrent_corpus.json"), JSON.stringify(concurrent, null, 1) + "\n");
   console.log(`seq_concurrent_corpus: ${concurrent.length} histories`);
+}
+
+// Rich-text corpus. Marks of keys with each of loro's four expand rules (bold
+// "after", link "none", cmt "before", hl "both"), valued true, a string, an
+// object or an array, and unmarks; inserts that land on a run's edge half the
+// time, where the expand rule decides which side of the anchor they go;
+// deletes up to the whole text, then typing into what is left. One to three
+// peers, syncing now and then. The answer is a replay's toJSON and toDelta.
+{
+  const rng = (seed) => { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; };
+  const points = (s) => Array.from(s);
+  const u16 = (s, k) => points(s).slice(0, k).join("").length;
+  const styles = { bold: { expand: "after" }, link: { expand: "none" }, cmt: { expand: "before" }, hl: { expand: "both" } };
+  const keys = Object.keys(styles);
+  const values = [true, "red", "blue", { k: 1 }, [1, 2]];
+  const alphabet = ["a", "b", "c", "d", "😀", "中"];
+  const edges = (t) => {
+    const out = [0];
+    for (const run of t.toDelta()) out.push(out[out.length - 1] + points(run.insert).length);
+    return out;
+  };
+  const edit = (doc, r) => {
+    const t = doc.getText("t");
+    const s = t.toString();
+    const n = points(s).length;
+    const pick = r();
+    if (pick < 0.4 || n === 0) {
+      const e = edges(t);
+      const k = r() < 0.5 ? e[Math.floor(r() * e.length)] : Math.floor(r() * (n + 1));
+      let ins = "";
+      for (let j = 1 + Math.floor(r() * 3); j > 0; j--) ins += alphabet[Math.floor(r() * alphabet.length)];
+      t.insert(u16(s, k), ins);
+    } else if (pick < 0.55) {
+      const k = Math.floor(r() * n);
+      const m = 1 + Math.floor(r() * Math.min(3, n - k));
+      t.delete(u16(s, k), u16(s, k + m) - u16(s, k));
+    } else if (pick < 0.6) {
+      t.delete(0, s.length);
+    } else {
+      const a = Math.floor(r() * n);
+      const b = a + 1 + Math.floor(r() * (n - a));
+      const key = keys[Math.floor(r() * keys.length)];
+      if (pick < 0.88) t.mark({ start: u16(s, a), end: u16(s, b) }, key, values[Math.floor(r() * values.length)]);
+      else t.unmark({ start: u16(s, a), end: u16(s, b) }, key);
+    }
+  };
+  const rich = [];
+  for (let seed = 1; seed <= 300; seed++) {
+    const r = rng(seed * 15485867);
+    const peers = [];
+    for (let p = 0; p < 1 + (seed % 3); p++) {
+      const doc = new LoroDoc();
+      doc.setPeerId(BigInt(p + 1));
+      doc.configTextStyle(styles);
+      peers.push(doc);
+    }
+    for (let i = 4 + Math.floor(r() * 24); i > 0; i--) {
+      const doc = peers[Math.floor(r() * peers.length)];
+      if (peers.length > 1 && r() < 0.25) {
+        const other = peers[Math.floor(r() * peers.length)];
+        if (other !== doc) doc.import(other.export({ mode: "update" }));
+        continue;
+      }
+      edit(doc, r);
+      doc.commit();
+    }
+    const all = new LoroDoc();
+    for (const doc of peers) all.import(doc.export({ mode: "update" }));
+    const update = all.export({ mode: "update" });
+    const replay = new LoroDoc();
+    replay.import(update);
+    const expected = replay.toJSON();
+    const delta = "t" in expected ? replay.getText("t").toDelta() : undefined;
+    rich.push({ seed, update: Buffer.from(update).toString("base64"), expected, delta });
+  }
+  writeFileSync(join(outDir, "rich_corpus.json"), JSON.stringify(rich, null, 1) + "\n");
+  console.log(`rich_corpus: ${rich.length} histories, ${rich.filter((c) => c.delta?.some((d) => d.attributes)).length} styled`);
 }
 
 // A backwards delete another peer saw only in part. Peer 1 backspaces over "c"

@@ -2,6 +2,7 @@ package change
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Deln0r/loro-go/encoding/postcard"
@@ -17,7 +18,7 @@ func nestedHeaders(k loroValueKind, depth, pad int) []byte {
 		b = append(b, byte(k))
 		b = postcard.AppendUvarint(b, uint64(pad))
 		if k == lvMap {
-			b = append(b, 0) // an empty key: one length byte of zero
+			b = append(b, 0) // key index 0
 		}
 	}
 	for i := 0; i < pad; i++ {
@@ -53,7 +54,7 @@ func TestLoroValueAllocationIsLinear(t *testing.T) {
 			runtime.GC()
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)
-			_, err := NewValueReader(in).LoroValue()
+			_, err := NewValueReader(in, []string{"k"}).LoroValue()
 			runtime.ReadMemStats(&after)
 
 			if err == nil {
@@ -68,5 +69,28 @@ func TestLoroValueAllocationIsLinear(t *testing.T) {
 					len(in), allocated, limit)
 			}
 		})
+	}
+}
+
+// TestKeyReferencesAreBudgeted: a map nested in a value names its keys by a
+// one-byte index into the block's key arena, so a long arena key referenced
+// over and over costs a byte of input per reference and a hash of the whole
+// key per map insert. 2 MB of references to a 1 MiB key would hash a
+// terabyte; the decoder stops at its key budget instead.
+func TestKeyReferencesAreBudgeted(t *testing.T) {
+	key := strings.Repeat("k", 1<<20)
+	const n = 1 << 20
+	in := []byte{byte(lvMap)}
+	in = postcard.AppendUvarint(in, n)
+	for i := 0; i < n; i++ {
+		in = append(in, 0, byte(lvNull))
+	}
+	if _, err := NewValueReader(in, []string{key}).LoroValue(); err == nil {
+		t.Fatal("a million references to a 1 MiB key decoded without error")
+	}
+
+	// A short key referenced as often stays far inside the budget.
+	if _, err := NewValueReader(in, []string{"k"}).LoroValue(); err != nil {
+		t.Fatalf("a million references to a one-byte key: %v", err)
 	}
 }

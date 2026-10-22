@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/Deln0r/loro-go/encoding/postcard"
@@ -38,14 +39,16 @@ func TestOpContentRoundTrip(t *testing.T) {
 		{"lorovalue nil", VKLoroValue, nil},
 		{"lorovalue float", VKLoroValue, -0.125},
 		{"lorovalue binary", VKLoroValue, []byte{1, 2, 3}},
+		{"lorovalue map", VKLoroValue, map[string]any{"b": int64(1), "a": "x"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			var w ValueWriter
+			var a testArena
+			w := ValueWriter{Key: a.key}
 			if err := w.OpContent(c.vk, c.val); err != nil {
 				t.Fatalf("write: %v", err)
 			}
-			got, err := NewValueReader(w.Bytes()).OpContent(c.vk)
+			got, err := NewValueReader(w.Bytes(), a.keys).OpContent(c.vk)
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
@@ -70,7 +73,7 @@ func TestF64WireIsBigEndian(t *testing.T) {
 	var w2 ValueWriter
 	negZero := math.Copysign(0, -1)
 	w2.F64(negZero)
-	got, err := NewValueReader(w2.Bytes()).F64()
+	got, err := NewValueReader(w2.Bytes(), nil).F64()
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -89,14 +92,17 @@ func TestLoroValueNestedRoundTrip(t *testing.T) {
 		{"nested list", []any{[]any{int64(1)}, []any{[]any{"deep"}}}},
 		{"single-key map", map[string]any{"k": int64(7)}},
 		{"map with list", map[string]any{"xs": []any{int64(1), int64(2)}}},
+		{"map of several keys", map[string]any{"z": int64(1), "a": "two", "m": nil}},
+		{"maps inside maps and lists", map[string]any{"k": []any{map[string]any{"q": "s", "k": int64(2)}}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			var w ValueWriter
+			var a testArena
+			w := ValueWriter{Key: a.key}
 			if err := w.LoroValue(c.val); err != nil {
 				t.Fatalf("write: %v", err)
 			}
-			got, err := NewValueReader(w.Bytes()).LoroValue()
+			got, err := NewValueReader(w.Bytes(), a.keys).LoroValue()
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
@@ -117,7 +123,7 @@ func TestReadMark(t *testing.T) {
 	buf = postcard.AppendUvarint(buf, 2)
 	buf = append(buf, inner.Bytes()...)
 
-	got, err := NewValueReader(buf).ReadMark()
+	got, err := NewValueReader(buf, nil).ReadMark()
 	if err != nil {
 		t.Fatalf("ReadMark: %v", err)
 	}
@@ -132,7 +138,7 @@ func TestReadListMove(t *testing.T) {
 	buf = postcard.AppendUvarint(buf, 9)
 	buf = postcard.AppendUvarint(buf, 41)
 
-	got, err := NewValueReader(buf).ReadListMove()
+	got, err := NewValueReader(buf, nil).ReadListMove()
 	if err != nil {
 		t.Fatalf("ReadListMove: %v", err)
 	}
@@ -155,7 +161,7 @@ func TestReadRawTreeMove(t *testing.T) {
 	}
 
 	t.Run("root node", func(t *testing.T) {
-		got, err := NewValueReader(build(true)).ReadRawTreeMove()
+		got, err := NewValueReader(build(true), nil).ReadRawTreeMove()
 		if err != nil {
 			t.Fatalf("ReadRawTreeMove: %v", err)
 		}
@@ -166,7 +172,7 @@ func TestReadRawTreeMove(t *testing.T) {
 	})
 
 	t.Run("child node", func(t *testing.T) {
-		got, err := NewValueReader(build(false)).ReadRawTreeMove()
+		got, err := NewValueReader(build(false), nil).ReadRawTreeMove()
 		if err != nil {
 			t.Fatalf("ReadRawTreeMove: %v", err)
 		}
@@ -179,22 +185,22 @@ func TestReadRawTreeMove(t *testing.T) {
 
 func TestValueReaderRejects(t *testing.T) {
 	t.Run("unknown loro value kind", func(t *testing.T) {
-		if _, err := NewValueReader([]byte{0x7E}).LoroValue(); err == nil {
+		if _, err := NewValueReader([]byte{0x7E}, nil).LoroValue(); err == nil {
 			t.Error("want error for unknown kind, got nil")
 		}
 	})
 	t.Run("unhandled op kind", func(t *testing.T) {
-		if _, err := NewValueReader(nil).OpContent(ValueKind(0x7F)); err == nil {
+		if _, err := NewValueReader(nil, nil).OpContent(ValueKind(0x7F)); err == nil {
 			t.Error("want error for unhandled op kind, got nil")
 		}
 	})
 	t.Run("truncated f64", func(t *testing.T) {
-		if _, err := NewValueReader([]byte{0x3F, 0xF0}).F64(); err == nil {
+		if _, err := NewValueReader([]byte{0x3F, 0xF0}, nil).F64(); err == nil {
 			t.Error("want error for truncated f64, got nil")
 		}
 	})
 	t.Run("truncated mark", func(t *testing.T) {
-		if _, err := NewValueReader([]byte{0x08}).ReadMark(); err == nil {
+		if _, err := NewValueReader([]byte{0x08}, nil).ReadMark(); err == nil {
 			t.Error("want error for truncated mark, got nil")
 		}
 	})
@@ -216,5 +222,46 @@ func TestContainerTypeString(t *testing.T) {
 		if got := ct.String(); got != want {
 			t.Errorf("ContainerType(%d).String() = %q, want %q", ct, got, want)
 		}
+	}
+}
+
+// testArena is a block's key arena: key registers a key and returns its index.
+type testArena struct{ keys []string }
+
+func (a *testArena) key(s string) uint64 {
+	if i := slices.Index(a.keys, s); i >= 0 {
+		return uint64(i)
+	}
+	a.keys = append(a.keys, s)
+	return uint64(len(a.keys) - 1)
+}
+
+// TestNestedMapKeysAreArenaIndexes pins the wire form loro writes for a map
+// nested in a value: each key is its index in the block's key arena, not the
+// key's text. {"k": 1} with "k" at index 1 is map, one entry, key 1, i64 1.
+// Reading the key as a string turned it into "\x03" and the value into true,
+// so every object stored in a list or a map came back as garbage.
+func TestNestedMapKeysAreArenaIndexes(t *testing.T) {
+	wire := []byte{byte(lvMap), 0x01, 0x01, byte(lvI64), 0x01}
+	got, err := NewValueReader(wire, []string{"x", "k"}).LoroValue()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"k": int64(1)}; !reflect.DeepEqual(got, want) {
+		t.Errorf("read %#v, want %#v", got, want)
+	}
+	a := testArena{keys: []string{"x", "k"}}
+	w := ValueWriter{Key: a.key}
+	if err := w.LoroValue(map[string]any{"k": int64(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(w.Bytes(), wire) {
+		t.Errorf("wrote % x, want % x", w.Bytes(), wire)
+	}
+	if _, err := NewValueReader(wire, []string{"x"}).LoroValue(); err == nil {
+		t.Error("a key index past the arena decoded without error")
+	}
+	if err := new(ValueWriter).LoroValue(map[string]any{"k": int64(1)}); err == nil {
+		t.Error("a map written without a key arena did not fail")
 	}
 }

@@ -23,7 +23,11 @@ if (blob.length === 0) {
 }
 
 // Mirrors what TestEmitForJSImport builds on the Go side.
-const expected = { title: "from-go", meta: { n: 7, ok: true }, xs: ["a", 2] };
+const expected = {
+  title: "from-go",
+  meta: { n: 7, ok: true, who: { name: "go", tags: ["x", { k: 1 }] } },
+  xs: ["a", 2, { b: 1, a: "z" }],
+};
 
 const doc = new LoroDoc();
 doc.import(new Uint8Array(blob));

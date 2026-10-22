@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/Deln0r/loro-go/encoding/fast"
@@ -101,8 +102,8 @@ func roundTripBlock(t *testing.T, name string, raw []byte) []byte {
 			t.Errorf("%s change_meta: % x != % x", name, reCM, blk.ChangeMeta)
 		}
 
-		vr := NewValueReader(blk.Values)
-		var vw ValueWriter
+		vr := NewValueReader(blk.Values, keys)
+		vw := ValueWriter{Key: keyIn(keys)}
 		for i := 0; i < ops.N(); i++ {
 			val, err := vr.OpContent(ops.ValueKind[i])
 			if err != nil {
@@ -167,8 +168,12 @@ func TestValuesRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		vr := NewValueReader(blk.Values)
-		var vw ValueWriter
+		keys, err := DecodeKeys(blk.Keys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		vr := NewValueReader(blk.Values, keys)
+		vw := ValueWriter{Key: keyIn(keys)}
 		for i := 0; i < ops.N(); i++ {
 			val, err := vr.OpContent(ops.ValueKind[i])
 			if err != nil {
@@ -224,6 +229,73 @@ func TestCorpusRoundTrip(t *testing.T) {
 			}
 			if file := fast.Encode(fast.ModeFastUpdates, EncodeFastUpdates(reBlocks)); !bytes.Equal(file, orig) {
 				t.Errorf("%s: file round-trip mismatch", label)
+			}
+		}
+	}
+}
+
+// keyIn is the key register of a re-encoder of a decoded block: every key a
+// value names is already in the block's arena, at its first index.
+func keyIn(keys []string) func(string) uint64 {
+	idx := make(map[string]uint64, len(keys))
+	for i := len(keys) - 1; i >= 0; i-- {
+		idx[keys[i]] = uint64(i)
+	}
+	return func(s string) uint64 { return idx[s] }
+}
+
+// TestNestedMapsRoundTripByValue re-encodes the values of a block holding maps
+// nested in values, one of them with three keys. loro writes a map's keys in
+// the order of its hash map and ValueWriter in sorted order, so the bytes of a
+// map of two or more keys can differ; what must hold is that every value reads
+// back the same, keys resolved through the block's own arena.
+func TestNestedMapsRoundTripByValue(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", "nested_values.update.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := fast.ParseHeader(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := SplitBlocks(h.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blocks {
+		blk, err := ParseBlock(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ops, err := DecodeOps(blk.Ops)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys, err := DecodeKeys(blk.Keys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var vals []any
+		vr := NewValueReader(blk.Values, keys)
+		vw := ValueWriter{Key: keyIn(keys)}
+		for i := 0; i < ops.N(); i++ {
+			v, err := vr.OpContent(ops.ValueKind[i])
+			if err != nil {
+				t.Fatal(err)
+			}
+			vals = append(vals, v)
+			if err := vw.OpContent(ops.ValueKind[i], v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		back := NewValueReader(vw.Bytes(), keys)
+		for i := 0; i < ops.N(); i++ {
+			v, err := back.OpContent(ops.ValueKind[i])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(v, vals[i]) {
+				t.Errorf("op %d: re-encoded value reads %#v, want %#v", i, v, vals[i])
 			}
 		}
 	}

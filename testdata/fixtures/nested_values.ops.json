@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              {
+                "k": 1,
+                "z": [
+                  1,
+                  {
+                    "q": "s"
+                  }
+                ]
+              }
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "v",
+            "value": {
+              "k": 2,
+              "b": "x",
+              "n": null
+            }
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "w",
+            "value": [
+              {
+                "a": []
+              },
+              {}
+            ]
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              {
+                "id": 1
+              },
+              "plain"
+            ]
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "set",
+            "elem_id": "L4@0",
+            "value": {
+              "id": 2,
+              "tags": [
+                "t"
+              ]
+            }
+          },
+          "counter": 5
+        }
+      ]
+    }
+  ]
+}

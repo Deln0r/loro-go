@@ -36,8 +36,9 @@ func FuzzDecodeHeader(f *testing.F) {
 // cap and length-prefixed list/map/binary/string bounds).
 func FuzzLoroValue(f *testing.F) {
 	f.Add([]byte{})
+	f.Add([]byte{0x08, 0x02, 0x00, 0x03, 0x01, 0x01, 0x07, 0x01, 0x05, 0x01, 'x'})
 	f.Fuzz(func(t *testing.T, b []byte) {
-		vr := NewValueReader(b)
+		vr := NewValueReader(b, []string{"a", "b"})
 		_, _ = vr.LoroValue()
 	})
 }

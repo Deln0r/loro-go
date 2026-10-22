@@ -42,6 +42,7 @@ func DecodeSnapshot(blob []byte) (*Updates, error) {
 		return nil, err
 	}
 	u := &Updates{}
+	budget := &nameBudget{left: nameBudgetBase}
 	for _, e := range entries {
 		if len(e.Key) != 12 { // reserved keys (vv/fr/sv/sf) are 2 bytes
 			continue
@@ -50,7 +51,7 @@ func DecodeSnapshot(blob []byte) (*Updates, error) {
 		if err != nil {
 			return nil, err
 		}
-		chs, err := decodeBlock(blk)
+		chs, err := decodeBlock(blk, budget)
 		if err != nil {
 			return nil, err
 		}

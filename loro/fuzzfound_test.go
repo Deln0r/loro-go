@@ -242,3 +242,28 @@ func TestRepeatedMovesToTheFrontAreCounted(t *testing.T) {
 		t.Fatalf("ml = %v", got)
 	}
 }
+
+// TestLongNamesAreBudgeted: an op names its container by an index into the
+// block's key arena, so a 1 MiB container name costs a byte per op that uses
+// it, and the merge hashes the whole name for every op. 200 000 map ops under
+// a 1 MiB name would hash hundreds of gigabytes; decoding refuses the blob
+// instead. The same ops under a short name decode.
+func TestLongNamesAreBudgeted(t *testing.T) {
+	build := func(name string) []byte {
+		d := NewDoc(1)
+		for i := 0; i < 200_000; i++ {
+			d.MapSet(name, "k", nil)
+		}
+		return d.ExportUpdates()
+	}
+	if _, err := DecodeUpdates(build(strings.Repeat("n", 1<<20))); err == nil {
+		t.Fatal("200 000 ops under a 1 MiB container name decoded without error")
+	}
+	u, err := DecodeUpdates(build("n"))
+	if err != nil {
+		t.Fatalf("200 000 ops under a one-byte name: %v", err)
+	}
+	if _, err := MergeState(u); err != nil {
+		t.Fatal(err)
+	}
+}

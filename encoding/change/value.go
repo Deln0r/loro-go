@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 
 	"github.com/Deln0r/loro-go/encoding/postcard"
 )
@@ -54,11 +56,28 @@ const (
 // length-prefixed. Note: this is NOT postcard (postcard uses zigzag for signed
 // and little-endian for f64); the value stream is hand-rolled in loro.
 type ValueReader struct {
-	r *postcard.Reader
+	r         *postcard.Reader
+	keys      []string
+	keyBudget int // key bytes nested maps may still reference
 }
 
-// NewValueReader returns a ValueReader over the raw values blob.
-func NewValueReader(b []byte) *ValueReader { return &ValueReader{r: postcard.NewReader(b)} }
+// NewValueReader returns a ValueReader over the raw values blob of a block
+// whose key arena is keys. A map nested in a value names each of its keys by
+// its index in that arena, as loro writes it.
+//
+// A reference is one byte and the key it names can be long, and storing it in
+// a map hashes all of it: a 1 MiB key referenced a million times from 3 MB of
+// values would hash a terabyte. So the key bytes the nested maps of one blob
+// may reference are capped at keyBudgetBase plus keyBudgetPerByte for every
+// byte of the blob, far above what a real document needs.
+func NewValueReader(b []byte, keys []string) *ValueReader {
+	return &ValueReader{r: postcard.NewReader(b), keys: keys, keyBudget: keyBudgetBase + keyBudgetPerByte*len(b)}
+}
+
+const (
+	keyBudgetBase    = 64 << 20
+	keyBudgetPerByte = 256
+)
 
 // Empty reports whether the whole values blob has been consumed.
 func (v *ValueReader) Empty() bool { return v.r.Empty() }
@@ -181,14 +200,21 @@ func (v *ValueReader) loroValue(depth int) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if n > uint64(v.r.Remaining()) { // each entry costs at least a key-len + kind byte
+		if n > uint64(v.r.Remaining()) { // each entry costs at least a key index + kind byte
 			return nil, fmt.Errorf("loro/change: map length %d exceeds remaining %d", n, v.r.Remaining())
 		}
 		out := make(map[string]any, min(n, maxLoroValuePrealloc))
 		for i := uint64(0); i < n; i++ {
-			k, err := v.Str()
+			ki, err := v.U64()
 			if err != nil {
 				return nil, err
+			}
+			if ki >= uint64(len(v.keys)) {
+				return nil, fmt.Errorf("loro/change: map key index %d out of range (%d keys)", ki, len(v.keys))
+			}
+			k := v.keys[ki]
+			if v.keyBudget -= len(k); v.keyBudget < 0 {
+				return nil, errors.New("loro/change: nested map keys reference more key bytes than the values blob allows")
 			}
 			val, err := v.loroValue(depth + 1)
 			if err != nil {
@@ -224,6 +250,11 @@ func appendLEBSigned(out []byte, v int64) []byte {
 // ValueWriter is the byte-identical inverse of ValueReader for the VALUES stream.
 type ValueWriter struct {
 	buf []byte
+
+	// Key registers a key in the block's key arena and returns its index. A
+	// map nested in a value names its keys by index; with Key nil, writing
+	// one is an error.
+	Key func(string) uint64
 }
 
 // Bytes returns the accumulated value stream.
@@ -249,8 +280,9 @@ func (w *ValueWriter) Binary(b []byte) {
 }
 
 // LoroValue writes one self-describing nested value (kind byte + content).
-// Note: a map[string]any cannot round-trip byte-identically because Go map
-// iteration order is unspecified; loro's fixtures use no nested LoroValue map.
+// A map's keys are registered and written in sorted order. loro writes them in
+// the order of its hash map, so a map of two or more keys nested in a value
+// can come out in different bytes from loro's, which decode to the same value.
 func (w *ValueWriter) LoroValue(v any) error {
 	switch x := v.(type) {
 	case nil:
@@ -282,11 +314,14 @@ func (w *ValueWriter) LoroValue(v any) error {
 			}
 		}
 	case map[string]any:
+		if w.Key == nil {
+			return fmt.Errorf("loro/change: a map value needs a key arena")
+		}
 		w.buf = append(w.buf, byte(lvMap))
 		w.U64(uint64(len(x)))
-		for k, val := range x {
-			w.Str(k)
-			if err := w.LoroValue(val); err != nil {
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			w.U64(w.Key(k))
+			if err := w.LoroValue(x[k]); err != nil {
 				return err
 			}
 		}

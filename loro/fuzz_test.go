@@ -90,7 +90,7 @@ func FuzzDecodeBlock(f *testing.F) {
 		if err != nil {
 			return
 		}
-		chs, err := decodeBlock(blk)
+		chs, err := decodeBlock(blk, &nameBudget{left: nameBudgetBase})
 		if err != nil {
 			return
 		}

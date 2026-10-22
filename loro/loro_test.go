@@ -98,7 +98,7 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		"conc_text", "conc_map", "conc_list", "conc_text2", "conc_list2", "richtext", "mlist", "tree_simple", "tree_meta", "tree_wide", "text_del", "list_del", "map_del", "two_changes", "cross_del", "rt_one", "rt_two", "rt_overlap", "counter", "unicode_text", "map_mixed", "text_cjk_del",
 		"tree_move_once", "tree_move_twice", "tree_delete_subtree", "tree_crossing_moves",
 		"tree_rejected_stays", "tree_sibling_tie", "tree_delete_vs_move", "tree_one_change",
-		"delete_backwards",
+		"delete_backwards", "nested_values",
 		// Inserts made after a sync, after a delete, and after a mark: each
 		// position counts what its author had seen and nothing else.
 		"post_merge_edits", "insert_after_delete", "insert_after_foreign_delete",
@@ -149,5 +149,35 @@ func TestDecodeUpdatesMetadata(t *testing.T) {
 	}
 	if len(c.Ops) != 1 || c.Ops[0].Container != "t" || c.Ops[0].Value != "hi" {
 		t.Errorf("op = %+v, want container t value hi", c.Ops)
+	}
+}
+
+// TestNestedValuesFromSnapshot reads objects nested in values from a snapshot,
+// whose oplog blocks name a nested map's keys by index in the key arena as
+// update blocks do. BuildState has no MovableList, so MergeState reads it.
+func TestNestedValuesFromSnapshot(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "fixtures")
+	blob, err := os.ReadFile(filepath.Join(dir, "nested_values.snapshot.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := DecodeSnapshot(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := MergeState(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "nested_values.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want any
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if got := normalize(state); !reflect.DeepEqual(got, want) {
+		t.Errorf("snapshot state:\n got  %#v\n want %#v", got, want)
 	}
 }

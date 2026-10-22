@@ -10,8 +10,12 @@ import (
 // for a fresh local edit batch); concurrent/multi-change export is future work.
 //
 // Key-pool ordering matches loro: op keys (map keys, mark keys) are registered as
-// ops are applied, and root-container names are registered at Export time, after
-// the op keys. This is what makes the output byte-identical to loro's own export.
+// ops are applied, each followed by the keys of any map nested in its value, and
+// root-container names are registered at Export time, after the op keys. This is
+// what makes the output byte-identical to loro's own export. The one exception
+// is a map of two or more keys nested in a value: loro lists its keys in the
+// order of its hash map and this builder in sorted order, so the bytes can
+// differ while loro-crdt imports the same document.
 type Doc struct {
 	peer    uint64
 	keys    []string
@@ -34,7 +38,9 @@ type contDef struct {
 
 // NewDoc returns a builder for the given peer id.
 func NewDoc(peer uint64) *Doc {
-	return &Doc{peer: peer, keyIdx: map[string]int{}, contIdx: map[string]int{}}
+	d := &Doc{peer: peer, keyIdx: map[string]int{}, contIdx: map[string]int{}}
+	d.vw.Key = func(s string) uint64 { return uint64(d.opKey(s)) }
+	return d
 }
 
 func (d *Doc) opKey(s string) int {

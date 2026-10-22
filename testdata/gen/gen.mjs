@@ -279,6 +279,18 @@ emitDelta("rt_overlap", (t) => {
   t.mark({ start: 2, end: 5 }, "italic", true);
 });
 
+// Objects inside values. A map nested in a list item, a map value or a
+// MovableList item names each of its keys by its index in the block's key arena.
+emit("nested_values", (doc) => {
+  doc.getList("l").insert(0, { k: 1, z: [1, { q: "s" }] });
+  doc.getMap("m").set("v", { k: 2, b: "x", n: null });
+  doc.getMap("m").set("w", [{ a: [] }, {}]);
+  const ml = doc.getMovableList("ml");
+  ml.insert(0, { id: 1 });
+  ml.insert(1, "plain");
+  ml.set(1, { id: 2, tags: ["t"] });
+});
+
 emitMerged(
   "conc_list2",
   (d) => {

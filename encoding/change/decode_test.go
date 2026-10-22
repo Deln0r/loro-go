@@ -53,7 +53,7 @@ func decodeFixture(t *testing.T, name string) []decoded {
 	if err != nil {
 		t.Fatal(err)
 	}
-	vr := NewValueReader(blk.Values)
+	vr := NewValueReader(blk.Values, keys)
 
 	var out []decoded
 	for i := 0; i < ops.N(); i++ {

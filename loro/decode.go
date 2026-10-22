@@ -166,12 +166,13 @@ func DecodeUpdates(blob []byte) (*Updates, error) {
 		return nil, err
 	}
 	u := &Updates{}
+	budget := &nameBudget{left: nameBudgetBase}
 	for _, raw := range blocks {
 		blk, err := change.ParseBlock(raw)
 		if err != nil {
 			return nil, err
 		}
-		chs, err := decodeBlock(blk)
+		chs, err := decodeBlock(blk, budget)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +181,22 @@ func DecodeUpdates(blob []byte) (*Updates, error) {
 	return u, nil
 }
 
-func decodeBlock(blk *change.Block) ([]Change, error) {
+// nameBudget caps the container-name and key bytes that decoded ops reference.
+// An op names its container, and a map op or a mark its key, by an index into
+// the block's key arena, so a long arena string costs a byte or two per
+// reference and is hashed in full each time the merge files an op under it: a
+// 64 KiB container name on 100 000 map ops made MergeState take 282 ms where a
+// one-byte name took 34 ms, and a block may hold a million ops. The cap is
+// nameBudgetBase plus nameBudgetPerByte for every byte of block decoded, far
+// above what a real document references.
+type nameBudget struct{ left int }
+
+const (
+	nameBudgetBase    = 64 << 20
+	nameBudgetPerByte = 256
+)
+
+func decodeBlock(blk *change.Block, budget *nameBudget) ([]Change, error) {
 	// Every change but the last contributes at least one byte to the header
 	// columns, so NChanges cannot exceed the block's total payload. Bounding it on
 	// the raw uint64 (before the int conversion) stops a huge count from driving
@@ -190,6 +206,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 	if blk.NChanges < 1 || blk.NChanges > uint64(avail)+1 {
 		return nil, fmt.Errorf("loro: implausible change count %d", blk.NChanges)
 	}
+	budget.left += nameBudgetPerByte * avail
 	n := int(blk.NChanges)
 	hdr, err := change.DecodeHeader(blk.Header, n)
 	if err != nil {
@@ -281,7 +298,7 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 		return nil, err
 	}
 
-	vr := change.NewValueReader(blk.Values)
+	vr := change.NewValueReader(blk.Values, keys)
 	cum := int64(0)  // counter offset within the block
 	chIdx := 0       // which change the current op belongs to
 	delConsumed := 0 // index into deleteIDs, consumed in op order
@@ -365,6 +382,13 @@ func decodeBlock(blk *change.Block) ([]Change, error) {
 			op.Value = ListSetValue{Elem: ListElem{Peer: hdr.Peers[tv.PeerIdx], Lamport: tv.Lamport}, Value: tv.Value}
 		case change.Mark:
 			op.Value = MarkInfo{Start: op.Pos, Len: tv.Len, Info: tv.Info, Key: markKey(keys, tv.KeyIdx), Value: tv.Value}
+		}
+		named := len(op.Container) + len(op.MapKey)
+		if mi, ok := op.Value.(MarkInfo); ok {
+			named += len(mi.Key)
+		}
+		if budget.left -= named; budget.left < 0 {
+			return nil, fmt.Errorf("loro: ops reference more container-name and key bytes than the blob allows")
 		}
 		cum += ops.Len[i]
 		changes[chIdx].Ops = append(changes[chIdx].Ops, op)

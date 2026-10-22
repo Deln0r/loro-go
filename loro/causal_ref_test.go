@@ -13,10 +13,13 @@ type refVV map[uint64]int64
 
 func (v refVV) has(peer uint64, counter int64) bool { return counter < v[peer] }
 
+// changeAtoms is how many ids a change's ops take: an insert of several
+// elements one per element, any other op one. Counted here rather than with
+// the merge's helper, so the reference shares no code with the merge.
 func changeAtoms(c Change) int64 {
 	var n int64
 	for _, op := range c.Ops {
-		n += atomCount(op)
+		n += max(op.Len, 1)
 	}
 	return n
 }

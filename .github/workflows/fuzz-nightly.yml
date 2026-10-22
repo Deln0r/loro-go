@@ -1,7 +1,7 @@
 name: Fuzz nightly
 
-# The per-push job in ci.yml is a smoke test: ten targets, fifteen seconds
-# each, starting from an empty corpus every time. It catches a decoder that
+# The per-push job in ci.yml is a smoke test: ten targets, fifteen to thirty
+# seconds each, starting from an empty corpus every time. It catches a decoder that
 # breaks outright and nothing subtler.
 #
 # This job is the one that actually fuzzes. Each target gets four minutes, the

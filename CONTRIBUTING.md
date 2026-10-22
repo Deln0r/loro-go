@@ -88,7 +88,7 @@ A transport must be proven against a real server, not only against a double, and
 Two invariants hold for `loro.MergeState` and any code feeding it:
 
 - **Order independence.** Merging the same set of changes in any order gives the same state.
-- **Idempotence.** Applying the same op twice is the same as applying it once; ops are identified by the peer and counter they were issued with. A transport may deliver a duplicate for ordinary reasons (a retry, an overlapping pagination window), so this is a property of the merge, not a duty on the caller.
+- **Idempotence.** Applying the same op twice is the same as applying it once, and an op that overlaps one already applied adds only its new part; an op is identified by the whole id range it occupies, its peer and the counters of all its atoms, not by its first id. A transport may deliver a duplicate for ordinary reasons (a retry, an overlapping pagination window), so this is a property of the merge, not a duty on the caller.
 
 Both are pinned in `loro/idempotence_test.go`. If you change the merge path, keep them.
 

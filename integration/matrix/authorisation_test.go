@@ -27,12 +27,12 @@ func fixture(t *testing.T, name string) []byte {
 // a malformed or hostile blob errors out instead of taking the reader down. It
 // buys nothing at all about whether its author was entitled to send it.
 //
-// Deletes in this CRDT are id-addressed and carry no authorisation: any peer
-// holding the ids may tombstone them. So in a Matrix room the right to write is
-// the right to delete everyone else's content, and this test is the proof: a
-// peer that authored nothing wipes the document, and every check here passes on
-// the blob that does it. Anyone deploying this needs to read room membership as
-// full authority over the document, not as a reader role.
+// A delete in this CRDT names what it removes and carries no authorisation:
+// any peer may delete any other peer's content. So in a Matrix room the right
+// to write is the right to delete everyone else's content, and this test is
+// the proof: a peer that authored nothing wipes the document, and every check
+// here passes on the blob that does it. Anyone deploying this needs to read
+// room membership as full authority over the document, not as a reader role.
 func TestValidationIsNotAuthorisation(t *testing.T) {
 	authored := fixture(t, "foreign_delete.authored.bin")
 	wipe := fixture(t, "foreign_delete.wipe.bin")

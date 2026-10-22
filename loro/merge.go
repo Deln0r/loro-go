@@ -68,8 +68,9 @@ func numFromF64(f float64) any {
 // testdata/fixtures: Text and List by one author inserting anywhere, by one
 // author with deletes, backspace runs and marks, and by two or three peers
 // editing concurrently and syncing; MovableList by one author and by several;
-// Tree by one to three peers. All 1 800 match. Under the earlier rule, which put the newer of two
-// concurrent inserts first, 185 of the 300 concurrent histories did.
+// Tree by one to three peers. All 1 800 match. Under the earlier rule, which
+// put the newer of two concurrent inserts first, 185 of the 300 concurrent
+// histories did.
 //
 // MergeState assumes the changes it is given are causally closed: every dep
 // is either among them or absent from all of them. A missing change is not an

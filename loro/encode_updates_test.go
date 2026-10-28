@@ -603,6 +603,11 @@ func textIns(pos int64, s string) Op {
 
 func updatesOf(chs ...Change) *Updates { return &Updates{Changes: chs} }
 
+func withDeps(ch Change, deps ...ID) Change {
+	ch.Deps = deps
+	return ch
+}
+
 // encodeCase is a set of changes, named for the test log.
 type encodeCase struct {
 	name string
@@ -625,6 +630,14 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a change at lamport 2^32", updatesOf(at(solo(textIns(0, "a")), 0, 1<<32))},
 		{"a change ending past lamport 2^32-1", updatesOf(at(solo(textIns(0, "ab")), 0, math.MaxUint32-1))},
 		{"an op of length 2^63-1", updatesOf(func() Change { c := solo(textIns(0, "a")); c.Ops[0].Len = math.MaxInt64; return c }())},
+
+		// A dependency at counter -1 on the author's own peer, on a change at
+		// counter 0, passed as the op just before it and became the self
+		// flag. loro-go then refused its own blob, and loro-crdt panicked on
+		// import ("Id:-1@1 is not in change store").
+		{"a dependency on counter -1 of the own peer", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 1, Counter: -1}))},
+		{"a dependency on counter -1 of another peer", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 2, Counter: -1}))},
+		{"a dependency on counter 2^31", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 2, Counter: math.MaxInt32 + 1}))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {
@@ -637,6 +650,8 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 	accepted := []encodeCase{
 		{"a change ending at counter 2^31-1", updatesOf(at(solo(textIns(0, "a")), math.MaxInt32-1, 0))},
 		{"a change ending at lamport 2^32-1", updatesOf(at(solo(textIns(0, "a")), 0, math.MaxUint32-1))},
+		{"a dependency on the own previous op", updatesOf(solo(textIns(0, "a")), withDeps(at(solo(textIns(0, "b")), 1, 1), ID{Peer: 1, Counter: 0}))},
+		{"a dependency on counter 2^31-1", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 2, Counter: math.MaxInt32}))},
 	}
 	for _, c := range accepted {
 		if _, err := EncodeUpdates(c.u); err != nil {

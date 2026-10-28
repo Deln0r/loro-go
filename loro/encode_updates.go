@@ -305,16 +305,9 @@ func encodeBlock(chs []Change, keyOrder func(map[string]any) []string) ([]byte, 
 		self := false
 		var others uint64
 		for _, d := range ch.Deps {
-			if d.Peer == peer {
-				if self || d.Counter != ch.ID.Counter-1 {
-					return nil, fmt.Errorf("loro: change %d@%d depends on %d@%d; a change can depend on its own peer only through the op just before it",
-						ch.ID.Counter, ch.ID.Peer, d.Counter, d.Peer)
-				}
+			if d.Peer == peer { // checkChange made it the op just before ch
 				self = true
 				continue
-			}
-			if d.Counter < 0 || d.Counter > math.MaxInt32 {
-				return nil, fmt.Errorf("loro: change %d@%d depends on counter %d, outside loro's range", ch.ID.Counter, ch.ID.Peer, d.Counter)
 			}
 			hdr.DepPeerIdxs = append(hdr.DepPeerIdxs, uint64(e.peer(d.Peer)))
 			hdr.DepCounters = append(hdr.DepCounters, d.Counter)
@@ -381,8 +374,9 @@ func isTreeDelete(n TreeNode) bool { return n.HasParent && n.Parent == deletedTr
 
 // checkChange checks one change before it is placed in a block: it has ops,
 // they follow one another from the change's id with its peer and lamports,
-// and its counters and lamports fit loro's fields, Counter an i32 and Lamport
-// a u32. The bounds are compared before anything is added to them, so a
+// its dependencies are in range and depend on its own peer only through the
+// op just before it, and its counters and lamports fit loro's fields, Counter
+// an i32 and Lamport a u32. The bounds are compared before anything is added to them, so a
 // counter near the top of int64 cannot wrap into range.
 func checkChange(ch Change) error {
 	if len(ch.Ops) == 0 {
@@ -390,6 +384,23 @@ func checkChange(ch Change) error {
 	}
 	if ch.ID.Counter < 0 || ch.ID.Counter > math.MaxInt32 || ch.Lamport < 0 || ch.Lamport > math.MaxUint32 {
 		return fmt.Errorf("loro: change %d@%d at lamport %d is outside loro's counter or lamport range", ch.ID.Counter, ch.ID.Peer, ch.Lamport)
+	}
+	// A dependency's counter is an i32 in loro, so it is checked before the
+	// rule for the own peer: a dependency at -1 on a change at counter 0
+	// would otherwise pass as the op just before it.
+	self := false
+	for _, d := range ch.Deps {
+		if d.Counter < 0 || d.Counter > math.MaxInt32 {
+			return fmt.Errorf("loro: change %d@%d depends on counter %d, outside loro's range", ch.ID.Counter, ch.ID.Peer, d.Counter)
+		}
+		if d.Peer != ch.ID.Peer {
+			continue
+		}
+		if self || d.Counter != ch.ID.Counter-1 {
+			return fmt.Errorf("loro: change %d@%d depends on %d@%d; a change can depend on its own peer only through the op just before it",
+				ch.ID.Counter, ch.ID.Peer, d.Counter, d.Peer)
+		}
+		self = true
 	}
 	ctr := ch.ID.Counter
 	for _, op := range ch.Ops {

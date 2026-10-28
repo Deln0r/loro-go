@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -192,9 +193,12 @@ func TestNestedCycleIsAnError(t *testing.T) {
 }
 
 // TestNestedDeepChain nests 200 000 maps, each the only value of the one
-// before. The walk keeps its path on the heap, so the depth costs no
-// goroutine stack.
+// before, under a 16 MiB stack limit. The walk keeps its path on the heap, so
+// the depth costs no goroutine stack; a walk that recursed once per level
+// would need well over the limit, and overflowing it is a fatal error, not a
+// panic a caller could recover from.
 func TestNestedDeepChain(t *testing.T) {
+	defer debug.SetMaxStack(debug.SetMaxStack(16 << 20))
 	const depth = 200_000
 	ops := []Op{nestedMapOp("m", true, "c", 0, change.CMap)}
 	for i := int64(1); i < depth; i++ {

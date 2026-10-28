@@ -8,6 +8,89 @@ import (
 	"testing"
 )
 
+// TestScriptStructCorpus runs the 300 scripts of script_struct_corpus.json:
+// MovableList and Tree edits, containers stored in containers at any depth,
+// mergeable children and edits through deleted handles, by one to three
+// peers with partial and out-of-order syncs, and holds every Document to
+// loro-crdt at every checkpoint.
+func TestScriptStructCorpus(t *testing.T) {
+	scripts := loadScripts(t, "script_struct_corpus.json")
+	r := runScripts(t, scripts, 0)
+	reportScripts(t, "script_struct_corpus.json", len(scripts), r)
+}
+
+// TestScriptStructCrowdCorpus is TestScriptStructCorpus for the 60 scripts
+// of script_struct_crowd_corpus.json, by 4 to 12 peers.
+func TestScriptStructCrowdCorpus(t *testing.T) {
+	scripts := loadScripts(t, "script_struct_crowd_corpus.json")
+	r := runScripts(t, scripts, 0)
+	reportScripts(t, "script_struct_crowd_corpus.json", len(scripts), r)
+}
+
+// TestStructNamedScripts runs the scripts of script_struct_named.json, one
+// or more per structure rule, and requires each to match loro-crdt at every
+// check, bytes included.
+func TestStructNamedScripts(t *testing.T) {
+	for _, s := range loadScripts(t, "script_struct_named.json") {
+		t.Run(s.Name, func(t *testing.T) {
+			r := &checkResult{}
+			runScript(&s, 0, r)
+			for _, f := range r.failures {
+				t.Error(f)
+			}
+			if r.checks == 0 || r.json != r.checks || r.atoms != r.checks || r.shape != r.checks || r.bytes != r.checks {
+				t.Errorf("%d checks: JSON %d, atoms %d, shape %d, bytes %d", r.checks, r.json, r.atoms, r.shape, r.bytes)
+			}
+		})
+	}
+}
+
+// TestStructNamedScriptsNeedTheirRule is the positive control of
+// TestStructNamedScripts: with one structure rule switched off, the script
+// written for it no longer matches loro-crdt.
+func TestStructNamedScriptsNeedTheirRule(t *testing.T) {
+	scripts := map[string]*script{}
+	all := loadScripts(t, "script_struct_named.json")
+	for i := range all {
+		scripts[all[i].Name] = &all[i]
+	}
+	for _, c := range []struct {
+		rule   rule
+		script string
+	}{
+		{ruleMovableOpIndex, "movable_op_index_after_moves"},
+		{ruleMovableOpIndex, "movable_concurrent_move_set_delete"},
+		{ruleMovableSetSkipEqual, "movable_set_equal_value"},
+		{ruleMovableMoveInPlace, "movable_move_in_place"},
+		{ruleTreeRearrange, "tree_rearrange_equal_indexes"},
+		{ruleTreeMoveInPlace, "tree_move_in_place"},
+		{ruleTreeCycle, "tree_cycle_refused"},
+		{ruleDeletedRefused, "deleted_container_handles"},
+		{ruleDeletedRefused, "deleted_container_no_op_edits"},
+		{ruleDeletedRefused, "mergeable_reactivation"},
+		{ruleMergeableID, "mergeable_reactivation"},
+		{ruleMergeableID, "mergeable_nested_paths"},
+		{ruleCounterAttach, "nested_children"},
+	} {
+		s := scripts[c.script]
+		if s == nil {
+			t.Fatalf("no script %s", c.script)
+		}
+		r := &checkResult{}
+		runScript(s, 1<<c.rule, r)
+		if len(r.failures) == 0 && r.checks > 0 && r.json == r.checks && r.atoms == r.checks && r.shape == r.checks && r.bytes == r.checks {
+			t.Errorf("rule %d off: %s still matches loro-crdt", c.rule, c.script)
+			continue
+		}
+		first := ""
+		if len(r.failures) > 0 {
+			first, _, _ = strings.Cut(r.failures[0], "\n")
+		}
+		t.Logf("rule %d off: %s: %d checks, JSON %d, atoms %d, bytes %d; %s",
+			c.rule, c.script, r.checks, r.json, r.atoms, r.bytes, first)
+	}
+}
+
 // TestFractionalIndex checks the fractional index port against loro: the
 // crate's own case (crates/fractional_index/src/lib.rs:216) and the
 // indexes loro-crdt 1.17.1 gave tree nodes, measured: a first child 80,

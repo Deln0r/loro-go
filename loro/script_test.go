@@ -45,7 +45,7 @@ type scriptAction struct {
 	S    string          `json:"s"`
 	K    string          `json:"k"`
 	V    json.RawMessage `json:"v"`
-	Kind string          `json:"kind"`
+	Kind string          `json:"kind"` // acquire: "text"...; x: "Text"...
 	Msg  *string         `json:"msg"`
 	TS   *int64          `json:"ts"`
 	Blob int             `json:"blob"`
@@ -56,6 +56,16 @@ type scriptAction struct {
 	Start  int               `json:"start"`
 	End    int               `json:"end"`
 	Styles map[string]string `json:"styles"`
+	// An "x" action: an op on container Cid. Out is what it returned.
+	Cid    string          `json:"cid"`
+	Op     string          `json:"op"`
+	From   int             `json:"from"`
+	To     int             `json:"to"`
+	Index  *int            `json:"index"`
+	Node   string          `json:"node"`
+	Parent *string         `json:"parent"`
+	How    string          `json:"how"`
+	Out    json.RawMessage `json:"out"`
 	Peers  []struct {
 		JSON   json.RawMessage `json:"json"`
 		Export int             `json:"export"`
@@ -389,6 +399,8 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 				}
 				err = h.counter(a.P, a.C).Increment(f)
 			}
+		case "x":
+			err = refusedAsLoro(runX(d(), &a), a.Refused)
 		case "acquire":
 			switch a.Kind {
 			case "text":
@@ -703,4 +715,144 @@ func TestNamedScriptsNeedTheirRule(t *testing.T) {
 		t.Logf("rule %d off: %s: %d checks, JSON %d, atoms %d, shape %d, bytes %d; %s",
 			c.rule, c.script, r.checks, r.json, r.atoms, r.shape, r.bytes, first)
 	}
+}
+
+// runX runs an "x" action, an op on a container named by its id, and holds
+// what it returned to what loro-crdt's returned.
+func runX(d *Document, a *scriptAction) error {
+	c, err := d.GetContainer(a.Cid)
+	if err != nil {
+		return err
+	}
+	out, err := runXOp(c, a)
+	if err != nil || a.Refused != "" || a.Out == nil {
+		return err
+	}
+	var want any
+	if err := json.Unmarshal(a.Out, &want); err != nil {
+		return err
+	}
+	g, _ := json.Marshal(out)
+	w, _ := json.Marshal(want)
+	if string(g) != string(w) {
+		return fmt.Errorf("%s returned %s, loro-crdt %s", a.Op, g, w)
+	}
+	return nil
+}
+
+// runXOp makes op a.Op through handle c and returns what loro-crdt's call
+// returns: a new node's id, a new container's id, a container's toJSON.
+func runXOp(c Container, a *scriptAction) (any, error) {
+	if a.Op == "read" {
+		v, err := c.JSON()
+		return tagged(v), err
+	}
+	tid := func(s string) TreeID {
+		if id, ok := treeIDOf(s); ok {
+			return id
+		}
+		return TreeID{Peer: 1<<64 - 1, Counter: 1<<31 - 1}
+	}
+	parent := TreeRoot
+	if a.Parent != nil {
+		parent = tid(*a.Parent)
+	}
+	kind, _ := kindByName(a.Kind)
+	id := func(ch Container, err error) (any, error) {
+		if err != nil {
+			return nil, err
+		}
+		return ch.ID(), nil
+	}
+	items := func(insert func(...any) error) error {
+		v, err := scriptValue(a.V)
+		if err != nil {
+			return err
+		}
+		return insert(v.([]any)...)
+	}
+	value := func(set func(any) error) error {
+		v, err := scriptValue(a.V)
+		if err != nil {
+			return err
+		}
+		return set(v)
+	}
+	switch h := c.(type) {
+	case *Text:
+		switch a.Op {
+		case "text_ins":
+			return nil, h.Insert(a.Pos, a.S)
+		case "text_del":
+			return nil, h.Delete(a.Pos, a.N)
+		}
+	case *Map:
+		switch {
+		case a.Op == "map_set":
+			return nil, value(func(v any) error { return h.Set(a.K, v) })
+		case a.Op == "map_del":
+			return nil, h.Delete(a.K)
+		case a.Op == "child" && a.How == "map":
+			return id(h.SetContainer(a.K, kind))
+		case a.Op == "child" && a.How == "mergeable":
+			return id(h.EnsureMergeable(a.K, kind))
+		}
+	case *List:
+		switch {
+		case a.Op == "list_ins":
+			return nil, items(func(v ...any) error { return h.Insert(a.Pos, v...) })
+		case a.Op == "list_del":
+			return nil, h.Delete(a.Pos, a.N)
+		case a.Op == "child" && a.How == "list":
+			return id(h.InsertContainer(a.Pos, kind))
+		}
+	case *MovableList:
+		switch {
+		case a.Op == "ml_ins":
+			return nil, items(func(v ...any) error { return h.Insert(a.Pos, v...) })
+		case a.Op == "ml_del":
+			return nil, h.Delete(a.Pos, a.N)
+		case a.Op == "ml_move":
+			return nil, h.Move(a.From, a.To)
+		case a.Op == "ml_set":
+			return nil, value(func(v any) error { return h.Set(a.Pos, v) })
+		case a.Op == "child" && a.How == "ml_ins":
+			return id(h.InsertContainer(a.Pos, kind))
+		case a.Op == "child" && a.How == "ml_set":
+			return id(h.SetContainer(a.Pos, kind))
+		}
+	case *Tree:
+		switch a.Op {
+		case "tree_create":
+			var n TreeID
+			var err error
+			if a.Index != nil {
+				n, err = h.CreateAt(parent, *a.Index)
+			} else {
+				n, err = h.Create(parent)
+			}
+			return n.String(), err
+		case "tree_move":
+			if a.Index == nil {
+				return nil, fmt.Errorf("tree_move without an index")
+			}
+			return nil, h.Move(tid(a.Node), parent, *a.Index)
+		case "tree_delete":
+			return nil, h.Delete(tid(a.Node))
+		case "meta":
+			m, err := h.Meta(tid(a.Node))
+			return id(m, err)
+		}
+	case *Counter:
+		if a.Op == "inc" {
+			return nil, value(func(v any) error {
+				n, ok := v.(int64)
+				if !ok {
+					return fmt.Errorf("increment %v is not an integer", v)
+				}
+				return h.Increment(float64(n))
+			})
+		}
+	}
+	return nil, fmt.Errorf("unknown op %s/%s on %s", a.Op, a.How, c.ID())
 }

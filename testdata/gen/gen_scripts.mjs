@@ -37,7 +37,7 @@
 //
 // Everything is seeded and peer ids are fixed, so a rerun writes the same
 // bytes.
-import { LoroDoc } from "loro-crdt/nodejs";
+import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter, LoroTree } from "loro-crdt/nodejs";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -206,6 +206,35 @@ class Script {
       a.refused = String(e).slice(0, 120);
     }
     this.actions.push(a);
+  }
+  // container is peer p's handle on container cid, or undefined when the
+  // peer does not know it. A root is taken as getText and its siblings take
+  // it, which makes it part of the document.
+  container(p, cid) {
+    const d = this.docs[p];
+    const m = /^cid:root-(.*):(\w+)$/.exec(cid);
+    if (m && !m[1].startsWith("🤝:")) {
+      return { Text: () => d.getText(m[1]), Map: () => d.getMap(m[1]), List: () => d.getList(m[1]),
+        MovableList: () => d.getMovableList(m[1]), Tree: () => d.getTree(m[1]), Counter: () => d.getCounter(m[1]) }[m[2]]();
+    }
+    return d.getContainerById(cid);
+  }
+  // x runs op on peer p's container cid and records it with args, and with
+  // what it returned (out) or loro's error (refused). It records nothing
+  // and returns undefined when the peer does not know the container.
+  x(p, cid, op, args, fn) {
+    const c = this.container(p, cid);
+    if (c === undefined) return undefined;
+    const a = { a: "x", p, cid, op, ...args };
+    let out;
+    try {
+      out = fn(c);
+    } catch (e) {
+      a.refused = String(e).slice(0, 120);
+    }
+    if (out !== undefined && a.refused === undefined) a.out = out;
+    this.actions.push(a);
+    return a;
   }
   check() {
     const peers = this.docs.map((d) => {
@@ -1042,3 +1071,586 @@ addRich("mark_null_is_unmark", [1], (s) => {
 
 writeFileSync(join(outDir, "script_rich_named.json"), JSON.stringify(richNamed) + "\n");
 console.log(`script_rich_named.json: ${richNamed.length} scripts: ${richNamed.map((n) => n.name).join(", ")}`);
+
+// ---------------------------------------------------------------------------
+// Structures: MovableList and Tree, containers stored in containers (map
+// values, list and MovableList items, MovableList sets, tree node meta
+// maps) at any depth, mergeable children, and edits through handles whose
+// container was deleted. Actions name their container by id (action "x").
+//
+//   ../fixtures/script_struct_corpus.json        300 random scripts, 1 to 3 peers
+//   ../fixtures/script_struct_crowd_corpus.json  60 random scripts, 4 to 12 peers
+//   ../fixtures/script_struct_named.json         one or more small scripts per rule
+//   x {cid, op, ...args, out?, refused?}: op is text_ins {pos, pos16, s},
+//     text_del {pos, n, pos16, n16}, map_set {k, v}, map_del {k},
+//     list_ins {pos, v}, list_del {pos, n}, ml_ins {pos, v}, ml_del {pos, n},
+//     ml_move {from, to}, ml_set {pos, v}, inc {v}, tree_create {parent,
+//     index?} out the node, tree_move {node, parent, index}, tree_delete
+//     {node}, meta {node} out its map, child {how: map|list|ml_ins|ml_set|
+//     mergeable, k or pos, kind} out the child, read {} out its toJSON.
+//     A parent of null is the top level.
+
+const structKinds = ["Text", "Map", "List", "MovableList", "Tree", "Counter"];
+const ML = "cid:root-ml:MovableList", TR = "cid:root-tr:Tree", MP = "cid:root-m:Map", LS = "cid:root-l:List";
+const newContainer = (k) =>
+  ({ Text: () => new LoroText(), Map: () => new LoroMap(), List: () => new LoroList(),
+    MovableList: () => new LoroMovableList(), Tree: () => new LoroTree(), Counter: () => new LoroCounter() })[k]();
+const kindOfCid = (cid) => /:(\w+)$/.exec(cid)[1];
+const treeNodes = (t) => {
+  const out = [];
+  const walk = (ns) => ns.forEach((n) => { out.push(n.id); walk(n.children); });
+  walk(t.toJSON());
+  return out;
+};
+
+// structEdit makes one random edit to a container peer p knows: pool holds
+// every container id the script has seen, nodes every tree node created.
+function structEdit(s, p, r, pool, nodes) {
+  const cid = pickOf(r, pool);
+  const c = s.container(p, cid);
+  if (c === undefined) return;
+  const kind = kindOfCid(cid);
+  const add = (a) => { if (a && a.out !== undefined && /^cid:/.test(a.out)) pool.push(a.out); };
+  const child = (how, args, fn) => {
+    const k = pickOf(r, structKinds);
+    add(s.x(p, cid, "child", { how, ...args, kind: k }, (h) => fn(h, k).id));
+  };
+  const q = r();
+  switch (kind) {
+    case "Text": {
+      const n = points(c.toString()).length;
+      if (q < 0.6 || n === 0) {
+        const pos = Math.floor(r() * (n + 1));
+        const str = word(r);
+        s.x(p, cid, "text_ins", { pos, pos16: u16(c.toString(), pos), s: str }, (h) => { h.insert(u16(h.toString(), pos), str); });
+      } else {
+        const pos = Math.floor(r() * n);
+        const k = 1 + Math.floor(r() * Math.min(3, n - pos));
+        const cur = c.toString();
+        s.x(p, cid, "text_del", { pos, n: k, pos16: u16(cur, pos), n16: u16(cur, pos + k) - u16(cur, pos) },
+          (h) => { h.delete(u16(cur, pos), u16(cur, pos + k) - u16(cur, pos)); });
+      }
+      break;
+    }
+    case "Map": {
+      const k = pickOf(r, ["a", "b", "c"]);
+      if (q < 0.35) {
+        const v = scalar(r);
+        s.x(p, cid, "map_set", { k, v: tag(v) }, (h) => { h.set(k, v); });
+      } else if (q < 0.45) s.x(p, cid, "map_del", { k }, (h) => { h.delete(k); });
+      else if (q < 0.75) child("map", { k }, (h, kind) => h.setContainer(k, newContainer(kind)));
+      else child("mergeable", { k }, (h, kind) => h["ensureMergeable" + kind](k));
+      break;
+    }
+    case "List": {
+      const n = c.length;
+      if (q < 0.45 || n === 0) {
+        const pos = Math.floor(r() * (n + 1));
+        const v = [Math.floor(r() * 50)];
+        s.x(p, cid, "list_ins", { pos, v }, (h) => { h.insert(pos, v[0]); });
+      } else if (q < 0.65) {
+        const pos = Math.floor(r() * n);
+        const k = 1 + Math.floor(r() * Math.min(2, n - pos));
+        s.x(p, cid, "list_del", { pos, n: k }, (h) => { h.delete(pos, k); });
+      } else {
+        const pos = Math.floor(r() * (n + 1));
+        child("list", { pos }, (h, kind) => h.insertContainer(pos, newContainer(kind)));
+      }
+      break;
+    }
+    case "MovableList": {
+      const n = c.length;
+      if (q < 0.3 || n === 0) {
+        const pos = Math.floor(r() * (n + 1));
+        const v = [Math.floor(r() * 50)];
+        if (r() < 0.3) v.push(word(r));
+        s.x(p, cid, "ml_ins", { pos, v: tag(v) }, (h) => { v.forEach((x, j) => h.insert(pos + j, x)); });
+      } else if (q < 0.45) {
+        const pos = Math.floor(r() * n);
+        const k = 1 + Math.floor(r() * Math.min(2, n - pos));
+        s.x(p, cid, "ml_del", { pos, n: k }, (h) => { h.delete(pos, k); });
+      } else if (q < 0.65) {
+        const from = Math.floor(r() * n);
+        const to = r() < 0.1 ? from : Math.floor(r() * n);
+        s.x(p, cid, "ml_move", { from, to }, (h) => { h.move(from, to); });
+      } else if (q < 0.8) {
+        const pos = Math.floor(r() * n);
+        const v = r() < 0.2 ? h0(c, pos) : scalar(r);
+        s.x(p, cid, "ml_set", { pos, v: tag(v) }, (h) => { h.set(pos, v); });
+      } else if (q < 0.9) {
+        const pos = Math.floor(r() * (n + 1));
+        child("ml_ins", { pos }, (h, kind) => h.insertContainer(pos, newContainer(kind)));
+      } else {
+        const pos = Math.floor(r() * n);
+        child("ml_set", { pos }, (h, kind) => h.setContainer(pos, newContainer(kind)));
+      }
+      break;
+    }
+    case "Tree": {
+      const alive = treeNodes(c);
+      const known = nodes.get(cid) ?? [];
+      const anyNode = () => (known.length > 0 && r() < 0.15 ? pickOf(r, known) : alive.length > 0 ? pickOf(r, alive) : null);
+      const kidsOf = (parent) => (parent === null ? c.roots() : c.getNodeByID(parent)?.children() ?? []);
+      if (q < 0.4 || alive.length === 0) {
+        const parent = r() < 0.4 ? null : anyNode();
+        const withIndex = r() < 0.6;
+        const kids = (kidsOf(parent) ?? []).length;
+        const index = Math.floor(r() * (kids + 1));
+        const a = s.x(p, cid, "tree_create", withIndex ? { parent, index } : { parent },
+          (h) => (withIndex ? h.createNode(parent ?? undefined, index) : h.createNode(parent ?? undefined)).id);
+        if (a && a.out) nodes.set(cid, [...known, a.out]);
+      } else if (q < 0.7) {
+        const node = anyNode();
+        const parent = r() < 0.3 ? null : anyNode();
+        const kids = (kidsOf(parent) ?? []).length;
+        const index = Math.floor(r() * (kids + 1));
+        s.x(p, cid, "tree_move", { node, parent, index }, (h) => { h.move(node, parent ?? undefined, index); });
+      } else if (q < 0.8) {
+        const node = anyNode();
+        s.x(p, cid, "tree_delete", { node }, (h) => { h.delete(node); });
+      } else {
+        const node = anyNode();
+        add(s.x(p, cid, "meta", { node }, (h) => h.getNodeByID(node).data.id));
+      }
+      break;
+    }
+    case "Counter": {
+      const v = Math.floor(r() * 21) - 10;
+      s.x(p, cid, "inc", { v }, (h) => { h.increment(v); });
+      break;
+    }
+  }
+  if (r() < 0.05) {
+    const cid2 = pickOf(r, pool);
+    if (s.container(p, cid2) !== undefined) s.x(p, cid2, "read", {}, (h) => tag(h.toJSON()));
+  }
+}
+// structRace has every peer, before any of them syncs, move the same item
+// of the root MovableList and add a node at one place of the root tree:
+// concurrent moves of one item leave positions nobody points at, so user
+// and op indexes part, and concurrent nodes at one place share an index,
+// which a later node between them spreads out.
+function structRace(s, r, nodes) {
+  const from = Math.floor(r() * 4);
+  const at = Math.floor(r() * 3);
+  s.docs.forEach((d, p) => {
+    // toJSON, not getMovableList: taking a root makes it part of the
+    // document, and the peer takes nothing it does not edit.
+    const json = d.toJSON();
+    const n = (json.ml ?? []).length;
+    if (from < n) {
+      const to = Math.floor(r() * n);
+      s.x(p, ML, "ml_move", { from, to }, (h) => { h.move(from, to); });
+    }
+    const kids = (json.tr ?? []).length;
+    const index = Math.min(at, kids);
+    const a = s.x(p, TR, "tree_create", { parent: null, index }, (h) => h.createNode(undefined, index).id);
+    if (a && a.out) nodes.set(TR, [...(nodes.get(TR) ?? []), a.out]);
+  });
+}
+
+function h0(c, pos) {
+  const v = c.get(pos);
+  return v !== null && typeof v === "object" && !(v instanceof Uint8Array) && !Array.isArray(v) ? 1 : v;
+}
+
+function structScript(seed, crowd) {
+  const r = rng(seed * (crowd ? 2971215073 : 1836311903));
+  const n = crowd ? 4 + (seed % 9) : 1 + (seed % 3);
+  const peers = crowd
+    ? (() => {
+        const ids = [...new Set(Array.from({ length: n }, () => 1 + Math.floor(r() * 2 ** 40)))];
+        while (ids.length < n) ids.push(1000 + ids.length);
+        return ids;
+      })()
+    : peerSets[Math.floor(seed / 3) % peerSets.length].slice(0, n);
+  const s = new Script({ seed }, peers);
+  const pool = [ML, TR, MP, LS];
+  const nodes = new Map();
+  const held = [];
+  for (let step = 30 + Math.floor(r() * 30); step > 0; step--) {
+    const p = Math.floor(r() * n);
+    const pick = r();
+    if (pick < 0.68 || (n === 1 && pick < 0.72)) structEdit(s, p, r, pool, nodes);
+    else if (pick < 0.72) structRace(s, r, nodes);
+    else if (pick < 0.8) s.commit(p);
+    else {
+      const q = r();
+      if (crowd && q < 0.4) {
+        for (let k = 1 + Math.floor(r() * Math.max(1, n / 2)); k > 0; k--) {
+          const src = (p + 1 + Math.floor(r() * (n - 1))) % n;
+          s.import(p, s.export(src, { mode: "update", from: s.docs[p].version() }));
+        }
+      } else {
+        const src = p;
+        const dst = n === 1 ? p : (p + 1 + Math.floor(r() * (n - 1))) % n;
+        if (q < 0.6) s.import(dst, s.export(src));
+        else if (q < 0.8) held.push([dst, s.export(src, { mode: "update", from: s.docs[dst].version() })]);
+        else if (held.length > 0) {
+          const [to, blob] = held.splice(Math.floor(r() * held.length), 1)[0];
+          s.import(to, blob);
+        }
+      }
+      if (r() < (crowd ? 0.25 : 0.5)) s.check();
+    }
+  }
+  for (const [to, blob] of held) s.import(to, blob);
+  s.check();
+  return s.out();
+}
+
+for (const [file, count, crowd] of [["script_struct_corpus.json", 300, false], ["script_struct_crowd_corpus.json", 60, true]]) {
+  const corpus = [];
+  for (let seed = 1; seed <= count; seed++) corpus.push(structScript(seed, crowd));
+  writeFileSync(join(outDir, file), JSON.stringify(corpus) + "\n");
+  let actions = 0, checks = 0, peers = 0, xs = 0, refused = 0;
+  const ops = {};
+  for (const c of corpus) {
+    actions += c.actions.length;
+    peers += c.peers.length;
+    for (const a of c.actions) {
+      if (a.a === "check") checks++;
+      if (a.a === "x") {
+        xs++;
+        ops[a.op + (a.how ? "/" + a.how : "")] = (ops[a.op + (a.how ? "/" + a.how : "")] ?? 0) + 1;
+        if (a.refused) refused++;
+      }
+    }
+  }
+  console.log(`${file}: ${corpus.length} scripts, ${peers} peers, ${actions} actions, ${xs} container edits, ${refused} refused, ${checks} checkpoints`);
+  console.log(`  ${Object.entries(ops).map(([k, v]) => k + " " + v).join(", ")}`);
+}
+
+// Named structure scripts, one or more per rule; [n] is the review item.
+
+const structNamed = [];
+const addStruct = (name, peers, build) => {
+  const s = new Script({ name }, peers);
+  build(s);
+  s.check();
+  structNamed.push(s.out());
+};
+const X = {
+  mlIns: (s, p, cid, pos, v) => s.x(p, cid, "ml_ins", { pos, v: tag(v) }, (h) => { v.forEach((x, j) => h.insert(pos + j, x)); }),
+  mlDel: (s, p, cid, pos, n) => s.x(p, cid, "ml_del", { pos, n }, (h) => { h.delete(pos, n); }),
+  mlMove: (s, p, cid, from, to) => s.x(p, cid, "ml_move", { from, to }, (h) => { h.move(from, to); }),
+  mlSet: (s, p, cid, pos, v) => s.x(p, cid, "ml_set", { pos, v: tag(v) }, (h) => { h.set(pos, v); }),
+  create: (s, p, cid, parent, index) =>
+    s.x(p, cid, "tree_create", index === undefined ? { parent } : { parent, index },
+      (h) => (index === undefined ? h.createNode(parent ?? undefined) : h.createNode(parent ?? undefined, index)).id).out,
+  move: (s, p, cid, node, parent, index) => s.x(p, cid, "tree_move", { node, parent, index }, (h) => { h.move(node, parent ?? undefined, index); }),
+  del: (s, p, cid, node) => s.x(p, cid, "tree_delete", { node }, (h) => { h.delete(node); }),
+  meta: (s, p, cid, node) => s.x(p, cid, "meta", { node }, (h) => h.getNodeByID(node).data.id).out,
+  child: (s, p, cid, how, at, kind) =>
+    s.x(p, cid, "child", { how, ...(how === "map" || how === "mergeable" ? { k: at } : { pos: at }), kind }, (h) =>
+      ({ map: () => h.setContainer(at, newContainer(kind)), mergeable: () => h["ensureMergeable" + kind](at),
+        list: () => h.insertContainer(at, newContainer(kind)), ml_ins: () => h.insertContainer(at, newContainer(kind)),
+        ml_set: () => h.setContainer(at, newContainer(kind)) })[how]().id).out,
+  text: (s, p, cid, pos, str) => s.x(p, cid, "text_ins", { pos, pos16: pos, s: str }, (h) => { h.insert(pos, str); }),
+  set: (s, p, cid, k, v) => s.x(p, cid, "map_set", { k, v: tag(v) }, (h) => { h.set(k, v); }),
+  unset: (s, p, cid, k) => s.x(p, cid, "map_del", { k }, (h) => { h.delete(k); }),
+  lins: (s, p, cid, pos, v) => s.x(p, cid, "list_ins", { pos, v: tag([v]) }, (h) => { h.insert(pos, v); }),
+  ldel: (s, p, cid, pos, n) => s.x(p, cid, "list_del", { pos, n }, (h) => { h.delete(pos, n); }),
+  inc: (s, p, cid, v) => s.x(p, cid, "inc", { v }, (h) => { h.increment(v); }),
+  read: (s, p, cid) => s.x(p, cid, "read", {}, (h) => tag(h.toJSON())),
+};
+const sync = (s, a, b) => {
+  s.import(b, s.export(a));
+  s.import(a, s.export(b));
+};
+
+// [9] After concurrent moves an element has dead positions, so a user index
+// and the op index of the same place differ: inserts, deletes, moves and
+// sets made then carry op indexes and name elements by their creation.
+addStruct("movable_op_index_after_moves", [1, 2], (s) => {
+  X.mlIns(s, 0, ML, 0, ["a", "b", "c", "d"]);
+  sync(s, 0, 1);
+  X.mlMove(s, 0, ML, 0, 2);
+  X.mlMove(s, 1, ML, 0, 3);
+  X.mlMove(s, 1, ML, 1, 0);
+  sync(s, 0, 1);
+  s.check();
+  X.mlIns(s, 0, ML, 2, ["x", "y"]);
+  X.mlDel(s, 0, ML, 1, 3);
+  X.mlMove(s, 0, ML, 2, 0);
+  X.mlSet(s, 0, ML, 1, "z");
+  X.mlIns(s, 1, ML, 4, ["w"]);
+  X.mlDel(s, 1, ML, 0, 2);
+  s.check();
+  sync(s, 0, 1);
+  X.mlIns(s, 1, ML, 1, ["v"]);
+  X.mlMove(s, 1, ML, 0, 2);
+});
+
+// [9] Concurrent moves and sets of one element, and a delete racing a move:
+// the move with the greater (lamport, peer) places it, the set with the
+// greater one gives its value, and a delete of any of its positions
+// removes it.
+addStruct("movable_concurrent_move_set_delete", [1, 2, 3], (s) => {
+  X.mlIns(s, 0, ML, 0, [1, 2, 3, 4, 5]);
+  sync(s, 0, 1);
+  sync(s, 0, 2);
+  X.mlMove(s, 0, ML, 4, 0);
+  X.mlSet(s, 0, ML, 4, "p0");
+  X.mlMove(s, 1, ML, 4, 2);
+  X.mlSet(s, 1, ML, 4, "p1");
+  X.mlDel(s, 2, ML, 4, 1);
+  X.mlMove(s, 2, ML, 0, 3);
+  sync(s, 0, 1);
+  s.check();
+  sync(s, 1, 2);
+  sync(s, 0, 1);
+  X.mlIns(s, 0, ML, 3, ["n"]);
+  X.mlMove(s, 2, ML, 3, 0);
+});
+
+// [11] Setting an item to the value it has is still an op.
+addStruct("movable_set_equal_value", [1, 2], (s) => {
+  X.mlIns(s, 0, ML, 0, [7, "s", true]);
+  X.mlSet(s, 0, ML, 0, 7);
+  X.mlSet(s, 0, ML, 1, "s");
+  s.commit(0);
+  X.mlSet(s, 0, ML, 2, true);
+  X.mlSet(s, 0, ML, 2, false);
+  sync(s, 0, 1);
+  X.mlSet(s, 1, ML, 2, false);
+});
+
+// [11] Moving an item to where it is makes no op, and is no error even
+// past the end; a move elsewhere is one op.
+addStruct("movable_move_in_place", [1, 2], (s) => {
+  X.mlIns(s, 0, ML, 0, ["a", "b", "c"]);
+  X.mlMove(s, 0, ML, 1, 1);
+  X.mlMove(s, 0, ML, 0, 0);
+  X.mlMove(s, 0, ML, 9, 9);
+  X.mlMove(s, 0, ML, 9, 8);
+  s.commit(0);
+  X.mlMove(s, 0, ML, 2, 2);
+  X.mlMove(s, 0, ML, 2, 0);
+  sync(s, 0, 1);
+  X.mlMove(s, 1, ML, 0, 0);
+});
+
+// [10] Concurrent first children all get index 80. A node placed between
+// two equal indexes is spread out with the siblings that share them: the
+// new node and each of those siblings get fresh indexes, the siblings by a
+// move op each, which takes a counter.
+addStruct("tree_rearrange_equal_indexes", [1, 2, 3], (s) => {
+  const a = X.create(s, 0, TR, null);
+  const b = X.create(s, 1, TR, null);
+  const c = X.create(s, 2, TR, null, 0);
+  sync(s, 0, 1);
+  sync(s, 0, 2);
+  sync(s, 1, 2);
+  s.check();
+  X.create(s, 0, TR, null);
+  const n = X.create(s, 0, TR, null, 1);
+  X.create(s, 0, TR, null, 2);
+  s.check();
+  sync(s, 0, 1);
+  sync(s, 0, 2);
+  X.create(s, 1, TR, n, 0);
+  X.create(s, 1, TR, n, 0);
+  X.create(s, 2, TR, n, 0);
+  sync(s, 1, 2);
+  X.create(s, 1, TR, n, 1);
+  X.move(s, 2, TR, a, null, 1);
+  X.move(s, 2, TR, b, a, 0);
+  X.move(s, 2, TR, c, null, 0);
+  sync(s, 0, 2);
+});
+
+// [11] A tree move to where the node is makes no op, under a parent or at
+// the top; a move to another index of the same parent is an op.
+addStruct("tree_move_in_place", [1, 2], (s) => {
+  const a = X.create(s, 0, TR, null);
+  const b = X.create(s, 0, TR, null);
+  const c = X.create(s, 0, TR, a);
+  X.move(s, 0, TR, a, null, 0);
+  X.move(s, 0, TR, b, null, 1);
+  X.move(s, 0, TR, c, a, 0);
+  s.commit(0);
+  X.move(s, 0, TR, b, null, 0);
+  X.move(s, 0, TR, b, null, 0);
+  sync(s, 0, 1);
+  X.move(s, 1, TR, c, a, 0);
+  X.move(s, 1, TR, c, b, 0);
+});
+
+// [11] Moving a node under itself or a descendant is refused and records
+// nothing: the next op takes the counter it would have. Moving under a
+// deleted node is no cycle and is made.
+addStruct("tree_cycle_refused", [1, 2], (s) => {
+  const a = X.create(s, 0, TR, null);
+  const b = X.create(s, 0, TR, a);
+  const c = X.create(s, 0, TR, b);
+  X.move(s, 0, TR, a, c, 0);
+  X.move(s, 0, TR, a, a, 0);
+  X.move(s, 0, TR, b, c, 0);
+  X.create(s, 0, TR, null);
+  const d = X.create(s, 0, TR, null);
+  X.del(s, 0, TR, d);
+  X.move(s, 0, TR, c, d, 0);
+  X.move(s, 0, TR, d, null, 0);
+  X.create(s, 0, TR, d);
+  sync(s, 0, 1);
+  X.move(s, 1, TR, b, b, 0);
+  X.move(s, 1, TR, a, b, 0);
+  X.move(s, 1, TR, b, null, 0);
+});
+
+// [16] A container stored in another is deleted with the value holding it:
+// an overwritten map key, a deleted list item, a MovableList item set to
+// something else, a deleted tree node's meta map, and every container
+// inside those. Its contents stay readable, edits through it are refused,
+// and an edit that would make no op is no error.
+addStruct("deleted_container_handles", [1, 2], (s) => {
+  const t = X.child(s, 0, MP, "map", "a", "Text");
+  X.text(s, 0, t, 0, "hi");
+  const inner = X.child(s, 0, MP, "map", "b", "Map");
+  const deep = X.child(s, 0, inner, "map", "k", "List");
+  X.lins(s, 0, deep, 0, 5);
+  X.set(s, 0, inner, "v", 1);
+  const lm = X.child(s, 0, LS, "list", 0, "Map");
+  X.set(s, 0, lm, "q", "r");
+  const mc = X.child(s, 0, ML, "ml_ins", 0, "Counter");
+  X.inc(s, 0, mc, 3);
+  const node = X.create(s, 0, TR, null);
+  const m = X.meta(s, 0, TR, node);
+  X.set(s, 0, m, "name", "n");
+  const kid = X.create(s, 0, TR, node);
+  const km = X.meta(s, 0, TR, kid);
+  X.set(s, 0, km, "x", 1);
+  sync(s, 0, 1);
+  X.set(s, 0, MP, "a", 1);
+  X.unset(s, 0, MP, "b");
+  X.ldel(s, 0, LS, 0, 1);
+  X.mlSet(s, 0, ML, 0, "gone");
+  X.del(s, 0, TR, node);
+  s.check();
+  X.text(s, 0, t, 0, "x");
+  X.read(s, 0, t);
+  X.set(s, 0, inner, "v", 2);
+  X.set(s, 0, inner, "v", 1);
+  X.unset(s, 0, inner, "zz");
+  X.lins(s, 0, deep, 0, 6);
+  X.read(s, 0, inner);
+  X.set(s, 0, lm, "q", "s");
+  X.inc(s, 0, mc, 1);
+  X.read(s, 0, mc);
+  X.set(s, 0, m, "name", "o");
+  X.set(s, 0, km, "x", 2);
+  X.read(s, 0, km);
+  X.text(s, 1, t, 2, "!");
+  X.lins(s, 1, deep, 1, 7);
+  X.set(s, 1, km, "y", 2);
+  sync(s, 0, 1);
+  X.text(s, 1, t, 0, "?");
+  X.read(s, 1, t);
+  X.read(s, 1, deep);
+});
+
+// [16] Edits through a deleted container that make no op succeed: a tree
+// move to where the node is, a MovableList move to the same index, a map
+// write of the value there; the ones that make an op are refused.
+addStruct("deleted_container_no_op_edits", [1], (s) => {
+  const tr = X.child(s, 0, MP, "map", "t", "Tree");
+  const n = X.create(s, 0, tr, null);
+  const ml = X.child(s, 0, MP, "map", "l", "MovableList");
+  X.mlIns(s, 0, ml, 0, [1, 2]);
+  const mm = X.child(s, 0, MP, "map", "m", "Map");
+  X.set(s, 0, mm, "k", 1);
+  X.set(s, 0, MP, "t", null);
+  X.set(s, 0, MP, "l", null);
+  X.set(s, 0, MP, "m", null);
+  X.move(s, 0, tr, n, null, 0);
+  X.move(s, 0, tr, n, null, 1);
+  X.create(s, 0, tr, null);
+  X.mlMove(s, 0, ml, 1, 1);
+  X.mlMove(s, 0, ml, 0, 1);
+  X.mlSet(s, 0, ml, 0, 1);
+  X.set(s, 0, mm, "k", 1);
+  X.set(s, 0, mm, "k", 2);
+  X.unset(s, 0, mm, "none");
+});
+
+// [16] A mergeable child is named by its parent and key, so concurrent
+// ensures meet in one container. Deleting the key deletes it; ensuring it
+// again brings back the same container with its contents. Another kind at
+// the key is another container; a key with a value that is no marker
+// refuses one.
+addStruct("mergeable_reactivation", [1, 2], (s) => {
+  const t = X.child(s, 0, MP, "mergeable", "a", "Text");
+  X.text(s, 0, t, 0, "hi");
+  const t1 = X.child(s, 1, MP, "mergeable", "a", "Text");
+  X.text(s, 1, t1, 0, "yo");
+  sync(s, 0, 1);
+  s.check();
+  X.child(s, 0, MP, "mergeable", "a", "Text");
+  X.unset(s, 0, MP, "a");
+  X.text(s, 0, t, 0, "x");
+  X.read(s, 0, t);
+  X.child(s, 0, MP, "mergeable", "a", "Text");
+  X.text(s, 0, t, 0, "!");
+  const l = X.child(s, 0, MP, "mergeable", "a", "List");
+  X.lins(s, 0, l, 0, 1);
+  X.text(s, 0, t, 0, "x");
+  X.child(s, 0, MP, "mergeable", "a", "Text");
+  X.set(s, 0, MP, "b", "plain");
+  X.child(s, 0, MP, "mergeable", "b", "Map");
+  X.set(s, 0, MP, "c", new Uint8Array([0, 76, 77, 1, 0, 0, 0, 0]));
+  X.child(s, 0, MP, "mergeable", "c", "Map");
+  sync(s, 0, 1);
+  X.set(s, 1, MP, "a", 5);
+  X.child(s, 1, MP, "mergeable", "a", "Text");
+  X.read(s, 1, t);
+});
+
+// [16] Mergeable children of mergeable and stored maps, at keys that need
+// escaping, and every kind of them.
+addStruct("mergeable_nested_paths", [1, 2], (s) => {
+  const mm = X.child(s, 0, MP, "mergeable", "a>b/c\\d", "Map");
+  const mmm = X.child(s, 0, mm, "mergeable", "k", "Map");
+  const tx = X.child(s, 0, mmm, "mergeable", "", "Text");
+  X.text(s, 0, tx, 0, "deep");
+  const stored = X.child(s, 0, MP, "map", "s", "Map");
+  for (const kind of structKinds) X.child(s, 0, stored, "mergeable", kind, kind);
+  const c = X.child(s, 1, MP, "mergeable", "a>b/c\\d", "Map");
+  const c2 = X.child(s, 1, c, "mergeable", "k", "Map");
+  const t2 = X.child(s, 1, c2, "mergeable", "", "Text");
+  X.text(s, 1, t2, 0, "er");
+  sync(s, 0, 1);
+  X.unset(s, 1, mm, "k");
+  X.text(s, 1, t2, 0, "no");
+  X.child(s, 1, mm, "mergeable", "k", "Map");
+  X.text(s, 1, t2, 0, "yes");
+});
+
+// [16] Containers stored in containers at depth, of every kind, made and
+// edited through their handles by two peers; a new Counter child takes an
+// op of its own, the increment by its detached value.
+addStruct("nested_children", [1, 2], (s) => {
+  const m = X.child(s, 0, MP, "map", "m", "Map");
+  const l = X.child(s, 0, m, "map", "l", "List");
+  const ml = X.child(s, 0, l, "list", 0, "MovableList");
+  const tr = X.child(s, 0, ml, "ml_ins", 0, "Tree");
+  const n = X.create(s, 0, tr, null);
+  const nm = X.meta(s, 0, tr, n);
+  const c = X.child(s, 0, nm, "map", "c", "Counter");
+  X.inc(s, 0, c, 2);
+  X.child(s, 0, ml, "ml_ins", 1, "Map");
+  const t = X.child(s, 0, ml, "ml_set", 1, "Text");
+  X.text(s, 0, t, 0, "set");
+  for (const kind of structKinds) X.child(s, 0, l, "list", 1, kind);
+  for (const kind of structKinds) X.child(s, 0, ml, "ml_ins", 1, kind);
+  sync(s, 0, 1);
+  X.text(s, 1, t, 3, "!");
+  X.inc(s, 1, c, -1);
+  X.mlMove(s, 1, ml, 0, 3);
+  X.child(s, 0, m, "map", "l", "Counter");
+  sync(s, 0, 1);
+  X.read(s, 1, l);
+});
+
+writeFileSync(join(outDir, "script_struct_named.json"), JSON.stringify(structNamed) + "\n");
+console.log(`script_struct_named.json: ${structNamed.length} scripts: ${structNamed.map((n) => n.name).join(", ")}`);

@@ -506,17 +506,66 @@ func checkOp(op Op) error {
 	// removes. Every other op is one atom (content_len in op/content.rs and
 	// list_op.rs): a longer one would claim counters loro's import does not
 	// give it, so the receiver's version would stop short of the blob's.
+	var err error
 	switch {
 	case op.VKind == change.VKDeleteSeq:
 		d, ok := op.Value.(DeleteSpan)
 		if !ok {
-			return fmt.Errorf("loro: delete %d@%d carries %T", op.Counter, op.Peer, op.Value)
+			return bad()
 		}
-		return checkDeleteSpan(op, d)
+		err = checkDeleteSpan(op, d)
 	case op.VKind == change.VKStr, op.VKind == change.VKLoroValue && op.Kind != change.CMap:
-		return checkInsertAtoms(op)
+		err = checkInsertAtoms(op)
 	case op.Len != 1:
-		return fmt.Errorf("loro: op %d@%d has length %d; a %v op of value kind %d is one atom", op.Counter, op.Peer, op.Len, op.Kind, op.VKind)
+		err = fmt.Errorf("loro: op %d@%d has length %d; a %v op of value kind %d is one atom", op.Counter, op.Peer, op.Len, op.Kind, op.VKind)
+	}
+	if err != nil {
+		return err
+	}
+	return checkPositions(op)
+}
+
+// maxSeqPos is the largest position loro's decoder takes in a sequence op:
+// UNKNOWN_SPAN_LEN - 1, with UNKNOWN_SPAN_LEN = u32::MAX / 4 (tracker.rs).
+// InnerListOp::check_positions (list_op.rs) refuses anything past it, or
+// below 0, as the blob is decoded; a position is a u32 there, so -1 arrives
+// as 4294967295. Measured on loro-crdt 1.17.1: a list insert at 1073741823
+// is refused at decode, one at 1073741822 is not.
+const maxSeqPos = math.MaxUint32/4 - 1
+
+// checkPositions holds the positions of a Text, List or MovableList op to
+// what check_positions accepts: an insert's position, both ends of a delete
+// (a backwards one ends at its position and starts before it), both indexes
+// of a move, both ends of a mark. A set and a mark's end carry no position,
+// and neither does an op in a Map, a Tree or a Counter: loro writes 0 there
+// (get_op_prop), so 0 is the only position they take.
+func checkPositions(op Op) error {
+	in := func(p int64) bool { return p >= 0 && p <= maxSeqPos }
+	var ok bool
+	switch {
+	case op.Kind == change.CMap || op.Kind == change.CTree || op.Kind == change.CCounter ||
+		op.VKind == change.VKListSet || op.VKind == change.VKNull:
+		ok = op.Pos == 0
+	case op.VKind == change.VKDeleteSeq:
+		// checkDeleteSpan bounded the length to the i32 range, so neither
+		// sum can overflow. A backwards delete is recorded at its last
+		// position (DeleteSpan::start and last in list_op.rs).
+		n := op.Value.(DeleteSpan).Len
+		start, last := op.Pos, op.Pos+n-1
+		if n < 0 {
+			start, last = op.Pos+1+n, op.Pos
+		}
+		ok = in(start) && in(last)
+	case op.VKind == change.VKListMove:
+		ok = in(op.Pos) && in(op.MoveFrom)
+	case op.VKind == change.VKMarkStart:
+		n := op.Value.(MarkInfo).Len
+		ok = in(op.Pos) && n >= 0 && n <= maxSeqPos-op.Pos
+	default: // an insert
+		ok = in(op.Pos)
+	}
+	if !ok {
+		return fmt.Errorf("loro: op %d@%d of value kind %d in a %v is at position %d, outside what loro reads", op.Counter, op.Peer, op.VKind, op.Kind, op.Pos)
 	}
 	return nil
 }

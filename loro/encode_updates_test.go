@@ -679,6 +679,18 @@ func textDel(pos, ctr, n int64) Op {
 	return o
 }
 
+// listIns inserts the number 1 at pos in root List "l".
+func listIns(pos int64) Op {
+	o := rootOp(change.CList, "l", change.VKLoroValue, []any{int64(1)})
+	o.Pos = pos
+	return o
+}
+
+func withPos(o Op, p int64) Op {
+	o.Pos = p
+	return o
+}
+
 func withLen(o Op, n int64) Op {
 	o.Len = n
 	return o
@@ -765,6 +777,23 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		// counter range by checkDeleteSpan.
 		{"a delete from counter 2^31", updatesOf(solo(textDel(0, 1<<31, 1)))},
 		{"a delete past counter 2^31-1", updatesOf(solo(textDel(0, math.MaxInt32, 2)))},
+
+		// A position loro's decoder refuses (check_positions, list_op.rs):
+		// -1 arrived as 4294967295 and was refused, and so was 1073741823.
+		{"a text insert at -1", updatesOf(solo(textIns(-1, "a")))},
+		{"a list insert at 1073741823", updatesOf(solo(listIns(1073741823)))},
+		{"a delete ending at 1073741823", updatesOf(solo(textDel(1073741822, 0, 2)))},
+		{"a backwards delete starting at -1", updatesOf(solo(textDel(0, 0, -2)))},
+		{"a delete at -1", updatesOf(solo(textDel(-1, 0, 1)))},
+		{"a move to 1073741823", updatesOf(solo(moveOp(0, 1073741823, 0)))},
+		{"a move from -1", updatesOf(solo(moveOp(-1, 0, 0)))},
+		{"a mark ending at 1073741823", updatesOf(solo(markOp(1073741822, 1, "b", true)))},
+		{"a mark of length -1", updatesOf(solo(markOp(5, -1, "b", true)))},
+		{"a set with a position", updatesOf(solo(withPos(setOp(0, "x"), 5)))},
+		{"a mark's end with a position", updatesOf(solo(withPos(rootOp(change.CText, "t", change.VKNull, nil), 2)))},
+		{"a tree op with a position", updatesOf(solo(withPos(treeOp("0@1", ""), 3)))},
+		{"a counter step with a position", updatesOf(solo(withPos(rootOp(change.CCounter, "c", change.VKI64, int64(1)), 1)))},
+		{"a map write with a position", updatesOf(solo(withPos(mapWrite("k", int64(1)), 1)))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {
@@ -787,6 +816,10 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a tree delete", updatesOf(solo(treeOp("0@1", deletedTreeRoot)))},
 		{"a child container at counter 2^31-1", updatesOf(solo(nestedOp("2147483647@1")))},
 		{"a delete of counter 2^31-1", updatesOf(solo(textDel(0, math.MaxInt32, 1)))},
+		{"a list insert at 1073741822", updatesOf(solo(listIns(1073741822)))},
+		{"a backwards delete ending at 0", updatesOf(solo(textDel(1, 0, -2)))},
+		{"a mark ending at 1073741822", updatesOf(solo(markOp(1073741821, 1, "b", true)))},
+		{"a move between the last positions", updatesOf(solo(moveOp(1073741822, 1073741821, 0)))},
 	}
 	for _, c := range accepted {
 		if _, err := EncodeUpdates(c.u); err != nil {

@@ -5,6 +5,7 @@
 //
 //   ../fixtures/script_corpus.json   300 random scripts
 //   ../fixtures/script_named.json    one small script per rule of loro's
+//   ../fixtures/shallow_snapshot.bin a shallow snapshot, which loro-go refuses
 //
 // A script names its peers by peer id and lists actions; "p" is the index of
 // the peer acting. Text positions are Unicode code points ("pos", "n"), the
@@ -566,3 +567,16 @@ add("handle_survives_import", [1, 2], (s) => {
 
 writeFileSync(join(outDir, "script_named.json"), JSON.stringify(named) + "\n");
 console.log(`script_named.json: ${named.length} scripts: ${named.map((n) => n.name).join(", ")}`);
+
+// A shallow snapshot, which loro-go refuses: its history starts past the
+// beginning.
+{
+  const d = new LoroDoc();
+  d.setPeerId(1n);
+  d.getText("t").insert(0, "hello");
+  d.commit();
+  const f = d.frontiers();
+  d.getText("t").insert(5, " world");
+  d.commit();
+  writeFileSync(join(outDir, "shallow_snapshot.bin"), d.export({ mode: "shallow-snapshot", frontiers: f }));
+}

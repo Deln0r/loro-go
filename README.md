@@ -98,6 +98,7 @@ homeserver on every push. It is a separate Go module, so this library's own
 
 - Fast merging of long concurrent branches. An edit made with everything already merged in view (typing, or editing after a sync) resolves at once; one made concurrently with edits already merged is resolved by scanning the merged sequence. Two peers that each made thousands of changes offline therefore cost time proportional to the product of the two, and past 2^28 steps `MergeState` returns an error rather than run on.
 - Writing nested containers: `Doc` builds root Text, Map and List containers only, and `Document` edits root Text, Map, List and Counter containers only; marks, MovableList, Tree and child containers come next
+- Shallow snapshots (`export({mode: "shallow-snapshot"})`): their history starts past the beginning, and `Document.Import` refuses them with an error
 - Two root containers of different kinds under one name, such as a Text and a List both called `t`. `TextDelta` keeps them apart, but `MergeState` returns one value per name and can show the other one than loro's `toJSON` does: in the one case checked, loro shows the List and `MergeState` the Text. `Document.JSON` shows the one loro shows: of the roots of that name in the order loro registered them, the last that is not empty
 
 ## Cross-language fixtures

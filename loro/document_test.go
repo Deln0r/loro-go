@@ -387,6 +387,33 @@ func TestDeleteRangeDoesNotOverflow(t *testing.T) {
 	}
 }
 
+// TestImportRefusesShallowSnapshot imports a shallow snapshot made by
+// loro-crdt (export mode "shallow-snapshot"): its history starts past the
+// beginning, which a Document does not support. It is refused and changes
+// nothing; a full snapshot of the same document still imports.
+func TestImportRefusesShallowSnapshot(t *testing.T) {
+	blob := readFixture(t, "shallow_snapshot.bin")
+	for _, d := range []*Document{NewDocument(5), func() *Document {
+		d := NewDocument(6)
+		_ = d.Text("t").Insert(0, "mine")
+		return d
+	}()} {
+		before, _ := d.JSON()
+		err := d.Import(blob)
+		if err == nil || !strings.Contains(err.Error(), "shallow") {
+			t.Fatalf("shallow snapshot: %v", err)
+		}
+		after, _ := d.JSON()
+		if fmt.Sprint(before) != fmt.Sprint(after) {
+			t.Errorf("a refused snapshot changed the state: %v", after)
+		}
+	}
+	d := NewDocument(5)
+	if err := d.Import(readFixture(t, "text_hi.snapshot.bin")); err != nil {
+		t.Fatalf("full snapshot: %v", err)
+	}
+}
+
 // TestReadsDoNotSpendTheEditBudget reads a text many times through Delta,
 // each read walking all of it, and then edits it. Each operation has the
 // whole step budget: reads do not use up what the edit needs, as nothing

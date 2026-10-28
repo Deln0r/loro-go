@@ -109,7 +109,7 @@ func isListInsert(op Op) bool {
 
 // snapshotSections splits a FastSnapshot body (encoding/fast_snapshot.rs:1):
 // the oplog's change blocks, and the state section, nil when the snapshot
-// marks it empty or the state holds nothing.
+// marks it empty or the state holds nothing. A shallow snapshot is refused.
 func snapshotSections(body []byte) ([][]byte, []byte, error) {
 	section := func(b []byte) ([]byte, []byte, error) {
 		if len(b) < 4 {
@@ -125,9 +125,16 @@ func snapshotSections(body []byte) ([][]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	state, _, err := section(rest)
+	state, rest, err := section(rest)
 	if err != nil {
 		return nil, nil, err
+	}
+	shallow, rest, err := section(rest)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(rest) != 0 {
+		return nil, nil, fmt.Errorf("loro: %d bytes after the snapshot's sections", len(rest))
 	}
 	if len(state) == 0 || string(state) == "E" {
 		state = nil
@@ -136,10 +143,22 @@ func snapshotSections(body []byte) ([][]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// A shallow snapshot (export mode "shallow-snapshot") starts its history
+	// at a version past the beginning: loro reads it by its third section,
+	// the state at that version, and by the shallow version the oplog keeps
+	// under "sv" and "sf" (fast_snapshot.rs:87, :218). Its first changes
+	// depend on ops it does not hold, which a Document cannot merge.
+	shallowErr := fmt.Errorf("loro: shallow snapshots are not supported; export a full snapshot or updates")
+	if len(shallow) != 0 {
+		return nil, nil, shallowErr
+	}
 	var raws [][]byte
 	for _, e := range entries {
-		if len(e.Key) == 12 { // a change block; vv, fr, sv and sf are 2 bytes
+		switch {
+		case len(e.Key) == 12: // a change block; vv, fr, sv and sf are 2 bytes
 			raws = append(raws, e.Value)
+		case string(e.Key) == "sv" || string(e.Key) == "sf":
+			return nil, nil, shallowErr
 		}
 	}
 	return raws, state, nil

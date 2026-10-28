@@ -16,15 +16,16 @@ import (
 )
 
 // refState renders every root Text and List container of u with the brute-force
-// reference, keyed by container name. A List that holds containers shows their
-// contents where the reference has the bare values, so it is left out: the
-// reference orders sequences, it does not place children.
+// reference, keyed by container name. A mergeable child is a root by name only
+// and toJSON shows it under its parent, and a List that holds containers shows
+// their contents where the reference has the bare values, so both are left
+// out: the reference orders sequences, it does not place children.
 func refState(u *Updates) map[string]any {
 	kinds := map[string]change.ContainerType{}
 	holds := map[string]bool{}
 	for _, ch := range u.Changes {
 		for _, op := range ch.Ops {
-			if op.IsRoot && (op.Kind == change.CText || op.Kind == change.CList) {
+			if op.IsRoot && (op.Kind == change.CText || op.Kind == change.CList) && !isMergeableName(op.Container) {
 				kinds[op.Container] = op.Kind
 				if items, ok := op.Value.([]any); ok && slices.ContainsFunc(items, holdsContainer) {
 					holds[op.Container] = true

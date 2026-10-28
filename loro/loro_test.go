@@ -110,6 +110,11 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		// are overwritten, deleted or lose a concurrent write do not show.
 		"nested_note", "nested_in_list", "nested_in_movable", "nested_tree_meta",
 		"nested_deep", "nested_empty_children", "nested_overwritten", "nested_concurrent_set",
+		// Mergeable children: shown under the parent's key and not at the top,
+		// one container for two peers' ensures, paths through mergeable,
+		// nested and tree-node maps with escaped keys, empty ones, and the
+		// marker deciding which kind shows and whether any does.
+		"mergeable_text", "mergeable_concurrent", "mergeable_nested", "mergeable_empty", "mergeable_marker",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

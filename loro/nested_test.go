@@ -18,6 +18,7 @@ import (
 var nestedFixtures = []string{
 	"nested_note", "nested_in_list", "nested_in_movable", "nested_tree_meta",
 	"nested_deep", "nested_empty_children", "nested_overwritten", "nested_concurrent_set",
+	"mergeable_text", "mergeable_concurrent", "mergeable_nested", "mergeable_empty", "mergeable_marker",
 }
 
 // TestNestedFromSnapshot reads the same histories from loro's FastSnapshot
@@ -47,6 +48,66 @@ func TestNestedFromSnapshot(t *testing.T) {
 		}
 		if got := normalize(state); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s snapshot state:\n got  %#v\n want %#v", name, got, want)
+		}
+	}
+}
+
+// TestMergeableMarker pins the marker against the bytes loro-crdt 1.17.1
+// wrote: for key "body" of root map "m" (fixture mergeable_text), and for key
+// "mt" of the meta map of tree node 7@1 (fixture mergeable_nested). The same
+// marker under another key, of another map, or with another kind byte is an
+// ordinary binary value, as loro reads it.
+func TestMergeableMarker(t *testing.T) {
+	root := newMergeableParent(contKey{root: true, name: "m", kind: change.CMap})
+	body := []byte{0, 76, 77, 1, 2, 10, 86, 65}
+	if k, ok := root.child("body", body); !ok || k != (contKey{root: true, name: "🤝:$m>body", kind: change.CText}) {
+		t.Errorf("root map marker resolves to %v, %v", k, ok)
+	}
+	meta := newMergeableParent(contKey{name: "7@1", kind: change.CMap})
+	if k, ok := meta.child("mt", []byte{0, 76, 77, 1, 2, 180, 126, 86}); !ok || k != (contKey{root: true, name: "🤝:@1:7>mt", kind: change.CText}) {
+		t.Errorf("tree-node meta marker resolves to %v, %v", k, ok)
+	}
+	for _, c := range []struct {
+		p   *mergeableParent
+		key string
+		v   []byte
+	}{
+		{root, "other", body},
+		{newMergeableParent(contKey{root: true, name: "n", kind: change.CMap}), "body", body},
+		{root, "body", []byte{0, 76, 77, 1, 1, 10, 86, 65}},
+		{root, "body", []byte{0, 76, 77, 1, 9, 10, 86, 65}},
+		{root, "body", body[:7]},
+	} {
+		if k, ok := c.p.child(c.key, c.v); ok {
+			t.Errorf("marker % x under %q resolves to %v; want a plain value", c.v, c.key, k)
+		}
+	}
+}
+
+// TestMergeableNames holds the top-level filter to loro's parse of a
+// mergeable name: a name that merely starts with the prefix is an ordinary
+// root and shows at the top level.
+func TestMergeableNames(t *testing.T) {
+	for name, want := range map[string]bool{
+		"🤝:$m>body":               true,
+		"🤝:$m>sub>deep\\>\\s\\\\": true,
+		"🤝:@1:7>li":               true,
+		"🤝:@1:-7>li":              true,
+		"🤝:$we\\>i\\\\rd>k\\0":    true,
+		"🤝:$m":                    false, // no key
+		"🤝:m>body":                false, // no base parent marker
+		"🤝:$>body":                false, // empty root name
+		"🤝:$a\\sb>k":              false, // a root name cannot hold '/'
+		"🤝:$m>a/b":                false, // raw '/'
+		"🤝:$m>a\\x":               false, // unknown escape
+		"🤝:@01:7>k":               false, // leading zero
+		"🤝:@1:-0>k":               false, // negative zero
+		"🤝:@1:zzzzzz>k":           false, // counter past i32
+		"🤝:@1:7":                  false,
+		"m":                       false,
+	} {
+		if got := isMergeableName(name); got != want {
+			t.Errorf("isMergeableName(%q) = %v, want %v", name, got, want)
 		}
 	}
 }
@@ -191,11 +252,13 @@ func TestContainerInsidePlainValue(t *testing.T) {
 }
 
 // TestUnreachableNestedNotShown: a nested container whose ops arrived but
-// which no root reaches shows nowhere.
+// which no root reaches shows nowhere, and a mergeable container whose parent
+// never wrote its marker is not shown at the top level.
 func TestUnreachableNestedNotShown(t *testing.T) {
 	u := oneOpChanges([]Op{
 		nestedMapOp("m", true, "k", 0, int64(1)),
 		nestedMapOp("0@1", false, "orphan", 1, int64(2)),
+		nestedMapOp("🤝:$m>sub", true, "x", 2, int64(3)),
 	})
 	state, err := MergeState(u)
 	if err != nil {

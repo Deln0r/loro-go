@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "x",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              40,
+              207,
+              19
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-🤝:$m>x:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "text"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "x",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              1,
+              33,
+              158,
+              169
+            ]
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:root-🤝:$m>x:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              1
+            ]
+          },
+          "counter": 6
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "y",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              51,
+              254,
+              82
+            ]
+          },
+          "counter": 7
+        },
+        {
+          "container": "cid:root-🤝:$m>y:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "gone"
+          },
+          "counter": 8
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "delete",
+            "key": "y"
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "z",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              30,
+              173,
+              145
+            ]
+          },
+          "counter": 13
+        },
+        {
+          "container": "cid:root-🤝:$m>z:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "back"
+          },
+          "counter": 14
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "delete",
+            "key": "z"
+          },
+          "counter": 18
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "z",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              30,
+              173,
+              145
+            ]
+          },
+          "counter": 19
+        }
+      ]
+    }
+  ]
+}

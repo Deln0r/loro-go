@@ -171,12 +171,22 @@ func (r *resolver) shape(k contKey) (any, []childSlot, error) {
 			win[op.MapKey] = i
 		}
 		m := make(map[string]any, len(win))
+		var parent *mergeableParent
 		for key, i := range win {
 			op := &sorted[i]
 			id := ID{Peer: op.Peer, Counter: op.Counter}
-			if v, ok := op.Value.(change.ContainerType); ok {
+			switch v := op.Value.(type) {
+			case change.ContainerType:
 				kids = append(kids, childSlot{m: m, key: key, child: childKey(id, v)})
 				continue
+			case []byte:
+				if parent == nil {
+					parent = newMergeableParent(k)
+				}
+				if child, ok := parent.child(key, v); ok {
+					kids = append(kids, childSlot{m: m, key: key, child: child})
+					continue
+				}
 			}
 			m[key] = plainValue(op.Value, id, true)
 		}

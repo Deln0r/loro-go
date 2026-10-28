@@ -1406,3 +1406,74 @@ emit("nested_tree_meta", (doc) => {
   n.data.setContainer("c", new LoroCounter()).increment(4);
   inner.createNode(n.id);
 });
+
+// Mergeable children (loro 1.13 and later). The child is a root container
+// named after its path, "🤝:$m>body" here, and the parent map holds a binary
+// marker at the key. toJSON shows the child under the key and not at the top.
+emit("mergeable_text", (doc) => {
+  doc.getMap("m").set("title", "t");
+  doc.getMap("m").ensureMergeableText("body").insert(0, "hi");
+});
+
+// Two peers that each ensure a mergeable child under one key, without seeing
+// each other, write into the same container, where a setContainer would have
+// given each its own and kept one.
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  a.getMap("m").ensureMergeableText("body").insert(0, "hi ");
+  a.getMap("m").ensureMergeableList("items").insert(0, "a");
+  a.commit();
+  b.getMap("m").ensureMergeableText("body").insert(0, "yo ");
+  b.getMap("m").ensureMergeableList("items").insert(0, "b");
+  b.getMap("m").ensureMergeableCounter("n").increment(1);
+  b.commit();
+  a.getMap("m").ensureMergeableCounter("n").increment(2);
+  a.commit();
+  a.import(b.export({ mode: "update" }));
+  b.import(a.export({ mode: "update" }));
+  emitDoc("mergeable_concurrent", a);
+}
+
+// Mergeable paths: a mergeable map's own mergeable child extends its path, a
+// nested map's starts from its id in base 36 ("@peer:counter"), a tree node's
+// meta map is such a nested map, and keys and root names escape '>', '/', '\'
+// and NUL.
+emit("mergeable_nested", (doc) => {
+  const sub = doc.getMap("m").ensureMergeableMap("sub");
+  sub.set("x", 1);
+  sub.ensureMergeableText("deep>/\\").insert(0, "z");
+  doc.getMap("m").setContainer("inner", new LoroMap()).ensureMergeableList("li").insert(0, 5);
+  const node = doc.getTree("tr").createNode();
+  node.data.ensureMergeableText("mt").insert(0, "y");
+  doc.getMap("we>i\\rd").ensureMergeableCounter("k\0").increment(2);
+  doc.getMap("we>i\\rd").ensureMergeableMovableList("ml").insert(0, "m");
+});
+
+// Mergeable children ensured and never written to show their kind's empty value.
+emit("mergeable_empty", (doc) => {
+  const m = doc.getMap("m");
+  m.ensureMergeableMap("map");
+  m.ensureMergeableList("list");
+  m.ensureMergeableText("text");
+  m.ensureMergeableTree("tree");
+  m.ensureMergeableMovableList("ml");
+  m.ensureMergeableCounter("counter");
+});
+
+// The marker decides what shows. Ensuring another kind under a key replaces
+// the marker, and the first child is hidden with its state kept; deleting the
+// key hides the child; ensuring it again shows the child as it was.
+emit("mergeable_marker", (doc) => {
+  const m = doc.getMap("m");
+  m.ensureMergeableText("x").insert(0, "text");
+  m.ensureMergeableList("x").insert(0, 1);
+  m.ensureMergeableText("y").insert(0, "gone");
+  m.delete("y");
+  m.ensureMergeableText("z").insert(0, "back");
+  m.delete("z");
+  doc.commit();
+  m.ensureMergeableText("z");
+});

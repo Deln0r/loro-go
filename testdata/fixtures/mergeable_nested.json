@@ -1,0 +1,31 @@
+{
+  "tr": [
+    {
+      "parent": null,
+      "index": 0,
+      "meta": {
+        "mt": "y"
+      },
+      "id": "7@1",
+      "fractional_index": "80",
+      "children": []
+    }
+  ],
+  "m": {
+    "sub": {
+      "deep>/\\": "z",
+      "x": 1
+    },
+    "inner": {
+      "li": [
+        5
+      ]
+    }
+  },
+  "we>i\\rd": {
+    "ml": [
+      "m"
+    ],
+    "k\u0000": 2
+  }
+}

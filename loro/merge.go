@@ -74,6 +74,12 @@ func numFromF64(f float64) any {
 // key keeps its ops and shows nowhere, and no nested container shows at the
 // top level. A child with no ops shows its kind's empty value, as in loro.
 //
+// A mergeable child (map.ensureMergeableText(key) and its siblings, loro 1.13
+// and later) is a root container named after its path, such as "🤝:$m>body",
+// so two peers that each ensure one under the same key write into one
+// container. The parent map holds a binary marker at the key; the child shows
+// there while the marker is the key's value, and never at the top level.
+//
 // A crafted container that is its own ancestor is an error: loro-crdt refuses
 // to import such a document at all.
 //
@@ -209,11 +215,14 @@ func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 	}
 
 	// The top level shows root containers, one per name: the kind whose ops
-	// arrived first. A container nested in another one is not a root at all.
+	// arrived first. A mergeable child is a root container in name only and
+	// shows under its parent's key, so it is left out here, as loro's
+	// top-level enumeration leaves it out. A container nested in another one
+	// is not a root at all.
 	var roots []contKey
 	named := map[string]bool{}
 	for _, k := range c.order {
-		if !k.root || named[k.name] {
+		if !k.root || named[k.name] || isMergeableName(k.name) {
 			continue
 		}
 		named[k.name] = true

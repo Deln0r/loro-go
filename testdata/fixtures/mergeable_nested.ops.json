@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "sub",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              0,
+              89,
+              15,
+              245
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-🤝:$m>sub:Map",
+          "content": {
+            "type": "insert",
+            "key": "x",
+            "value": 1
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-🤝:$m>sub:Map",
+          "content": {
+            "type": "insert",
+            "key": "deep>/\\",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              84,
+              183,
+              5
+            ]
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-🤝:$m>sub>deep\\>\\s\\\\:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "z"
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "inner",
+            "value": "🦜:cid:4@0:Map"
+          },
+          "counter": 4
+        },
+        {
+          "container": "cid:4@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "li",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              1,
+              156,
+              46,
+              36
+            ]
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:root-🤝:@1:4>li:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              5
+            ]
+          },
+          "counter": 6
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "7@0",
+            "parent": null,
+            "fractional_index": "80"
+          },
+          "counter": 7
+        },
+        {
+          "container": "cid:7@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "mt",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              180,
+              126,
+              86
+            ]
+          },
+          "counter": 8
+        },
+        {
+          "container": "cid:root-🤝:@1:7>mt:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "y"
+          },
+          "counter": 9
+        },
+        {
+          "container": "cid:root-we>i\\rd:Map",
+          "content": {
+            "type": "insert",
+            "key": "k\u0000",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              5,
+              253,
+              89,
+              168
+            ]
+          },
+          "counter": 10
+        },
+        {
+          "container": "cid:root-🤝:$we\\>i\\\\rd>k\\0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 2,
+            "prop": 0
+          },
+          "counter": 11
+        },
+        {
+          "container": "cid:root-we>i\\rd:Map",
+          "content": {
+            "type": "insert",
+            "key": "ml",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              4,
+              63,
+              49,
+              39
+            ]
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:root-🤝:$we\\>i\\\\rd>ml:MovableList",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "m"
+            ]
+          },
+          "counter": 13
+        }
+      ]
+    }
+  ]
+}

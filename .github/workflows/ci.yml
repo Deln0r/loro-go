@@ -48,6 +48,8 @@ jobs:
       # loro's for loro-crdt to import both and compare.
       - name: re-encode the loro-crdt exports loro-go does not give back byte for byte
         run: go test ./loro/ -run TestEmitEncodedForJS -v
+      - name: export every Document of the edit scripts
+        run: go test ./loro/ -run TestEmitDocumentExportsForJS -v
       - name: install loro-crdt
         run: npm ci
         working-directory: testdata/gen
@@ -55,6 +57,8 @@ jobs:
         run: node testdata/gen/validate_go.mjs
       - name: import the re-encoded blobs into loro-crdt
         run: node testdata/gen/validate_encode.mjs
+      - name: import the Documents' exports into loro-crdt
+        run: node testdata/gen/validate_document.mjs
 
   matrix-integration:
     runs-on: ubuntu-latest

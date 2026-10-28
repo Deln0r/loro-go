@@ -96,12 +96,14 @@ func (d DeleteSpan) atomFor(c int64) (int64, bool) {
 	return c - start, true
 }
 
-// TreeNode is a decoded Tree create/move op target.
+// TreeNode is a decoded Tree create/move op target. A delete is a move under
+// loro's deleted root (Parent "2147483647@18446744073709551615") and has no
+// fractional index.
 type TreeNode struct {
 	ID        string // "counter@peer"
 	HasParent bool
 	Parent    string // "counter@peer" when HasParent
-	FI        string // fractional index, hex
+	FI        string // fractional index, hex; empty for a delete
 }
 
 // ListElem names a MovableList element the way loro does: the peer that
@@ -376,10 +378,17 @@ func decodeBlock(blk *change.Block, budget *nameBudget) ([]Change, error) {
 		}
 		switch tv := val.(type) {
 		case change.RawTreeMove:
-			node := TreeNode{ID: fmtID(hdr.Peers, tv.SubjectPeerIdx, tv.SubjectCounter), FI: fiHex(positions, tv.PositionIdx)}
+			node := TreeNode{ID: fmtID(hdr.Peers, tv.SubjectPeerIdx, tv.SubjectCounter)}
 			if !tv.ParentNull {
 				node.HasParent = true
 				node.Parent = fmtID(hdr.Peers, tv.ParentPeerIdx, tv.ParentCounter)
+			}
+			// A delete has no position. loro writes index 0 for it
+			// (encode_tree_op in block_encode.rs) and its decoder returns the
+			// delete before it looks the index up (decode_op), so the position
+			// at that index belongs to some other op of the block.
+			if !isTreeDelete(node) {
+				node.FI = fiHex(positions, tv.PositionIdx)
 			}
 			op.Value = node
 		case change.ListMove:

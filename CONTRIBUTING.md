@@ -1,6 +1,6 @@
 # Contributing to loro-go
 
-Thanks for considering a contribution. loro-go is an independent pure-Go reading of the [Loro](https://github.com/loro-dev/loro) CRDT wire format. It is early-stage and the maintainer is open to issues and pull requests, but capacity is limited. Reading this whole document before opening anything saves everyone time.
+Thanks for considering a contribution. loro-go is an independent pure-Go implementation of the [Loro](https://github.com/loro-dev/loro) CRDT. Since v1.0 it is in maintenance: bug fixes, security fixes and new `loro-crdt` releases are welcome, new features mostly are not. Capacity is limited, so reading this whole document before opening anything saves everyone time.
 
 ## Scope
 
@@ -8,7 +8,7 @@ loro-go implements the Loro **Fast** wire format (`FastUpdates` and `FastSnapsho
 
 - **In scope:** byte-compatible decode and encode of the Fast format, the `serde_columnar` strategies, change-block parsing, CRDT state reconstruction for Map / List / Text / MovableList / Tree / Counter, rich-text `toDelta`, the live `Document`, its version vector and frontiers with their encodings, exports from a version and of id ranges, the KV/SSTable reader, LZ4 block decompression, the cross-language fixture suite, and robustness hardening of the decoders against malformed input.
 - **In scope, but only in `integration/`:** thin transports that carry already-exported update blobs over an existing network protocol, each as its own Go module. `integration/matrix` is the worked example. A transport may not add a wire format, negotiate sessions, or diff versions; if it needs any of those, it is the sync protocol below and out of scope for now.
-- **Out of scope until a future dedicated phase (planned work):** a real-time sync server, the sync protocol itself (sessions, the messages peers exchange, awareness; the versions and exports it is built from are in scope above), native persistence (sqlite or otherwise), mobile bindings (gomobile), the full concurrent Peritext expand-rule semantics, and a time-travel / checkout API. PRs that try to start any of these will be politely closed. They are reserved for a future development phase, and partial implementations would create maintenance debt.
+- **Out of scope:** a real-time sync server, the sync protocol itself (sessions, the messages peers exchange, awareness; the versions and exports it is built from are in scope above), native persistence (sqlite or otherwise), mobile bindings (gomobile), a time-travel / checkout API, and shallow snapshots. PRs that start any of these will be politely closed: a partial implementation is maintenance debt for a project in maintenance.
 - **Out of scope permanently:** anything outside the Loro wire format and its CRDT semantics.
 
 If you are unsure whether something is in scope, open an issue first.
@@ -44,7 +44,7 @@ Commit message format: one short subject line under 70 characters, then a blank 
 counter container: reconstruct state as summed increments
 
 Loro encodes counter increments in the VALUES stream as I64 (or F64 for
-fractional ones) with no dedicated container in BuildState/MergeState.
+fractional ones) with no dedicated container in MergeState.
 The state is the order-independent sum of all increments (fixture
 counter: 5 + 3 - 2 = 6 reproduces).
 ```
@@ -119,7 +119,7 @@ A new decoder path should never panic, allocate without bound, or hang on hostil
 - Idiomatic Go. Generics only where the standard library already uses them.
 - No cgo, anywhere, including integrations.
 - **The library's `go.mod` has an empty `require` block and stays that way.** Anything that needs a dependency goes in its own module under `integration/`, so consumers of the library never inherit it. A PR that adds a `require` to the root module will be asked to move.
-- Public API stability is not yet a priority; breaking changes are accepted until v1.0.
+- The API follows semantic versioning: nothing exported changes incompatibly within v1. A fix that needs a breaking change waits for a v2, which is not planned.
 - Comments: a `doc.go`-style package comment and godoc on exported symbols. Short, not essays.
 
 ## Security disclosure

@@ -339,23 +339,22 @@ func (d *Document) noteLocalOps() {
 
 // takeSnapshotVersion is what loro does with the version vector and the
 // frontiers stored in a snapshot that replaces an empty document's state:
-// it takes them as they are decoded (loro_dag.rs:637
+// it installs them as they are decoded (loro_dag.rs:637
 // set_version_by_fast_snapshot_import) instead of building them change by
 // change, so their hash maps hold the peers in the order decoding put them
 // in: the frontiers' ids inserted in the order they are written. fr is that
-// list. Where they do not name what the snapshot's changes made, which only
-// a crafted snapshot does, the ones the changes made stay.
+// list. loro takes them even where they do not name what the snapshot's
+// changes make, an entry of counter 0 or a frontier that is not a change's
+// last op, as long as each frontier lies in some change (change_store.rs:1244,
+// checked by decodeBlob); so do Version and Frontiers, and the deps of the
+// next local change. What the document holds, and so what it exports and the
+// ids it gives its own ops, stays what the changes hold.
 func (d *Document) takeSnapshotVersion(vv VersionVector, fr []ID) {
 	if d.knocked(ruleSnapshotVersion) {
 		return
 	}
-	l := d.log
-	if maps.Equal(vv.Map(), l.vv) {
-		l.vvTab = vv.t
-	}
-	if f := frontiersOf(fr); f.len() == l.fr.len() && l.fr.equal(f.ids()) {
-		l.fr = f
-	}
+	d.log.vvTab = vv.t
+	d.log.fr = frontiersOf(fr)
 }
 
 // The rules of versions and exports from a version that a test can switch

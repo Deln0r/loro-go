@@ -1,8 +1,10 @@
 package loro
 
 import (
+	"cmp"
 	"encoding/binary"
 	"fmt"
+	"slices"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 	"github.com/Deln0r/loro-go/encoding/fast"
@@ -89,7 +91,40 @@ func decodeBlob(blob []byte, d *Document) (*decodedBlob, error) {
 		}
 		out.blocks = append(out.blocks, block)
 	}
+	if out.snapshot {
+		if err := snapshotFrontiersHeld(out); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
+}
+
+// snapshotFrontiersHeld is loro's check of a snapshot's stored frontiers
+// (change_store.rs:1244): each must lie in one of the snapshot's changes,
+// or the snapshot is refused. Nothing more is asked of them.
+func snapshotFrontiersHeld(b *decodedBlob) error {
+	spans := map[uint64][]idRange{}
+	for _, block := range b.blocks {
+		for _, c := range block {
+			spans[c.ch.ID.Peer] = append(spans[c.ch.ID.Peer], idRange{start: c.start(), end: c.end()})
+		}
+	}
+	for _, rs := range spans {
+		slices.SortFunc(rs, func(a, b idRange) int { return cmp.Compare(a.start, b.start) })
+	}
+	for _, id := range b.fr {
+		rs := spans[id.Peer]
+		i, _ := slices.BinarySearchFunc(rs, id.Counter, func(r idRange, c int64) int {
+			if r.end <= c {
+				return -1
+			}
+			return 1
+		})
+		if i == len(rs) || rs[i].start > id.Counter {
+			return fmt.Errorf("loro: the snapshot's frontier %d@%d lies in none of its changes", id.Counter, id.Peer)
+		}
+	}
+	return nil
 }
 
 // decodedProvenance pairs a decoded block's changes with where loro keeps

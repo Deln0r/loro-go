@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Deln0r/loro-go/encoding/change"
@@ -82,6 +83,7 @@ func TestStructNamedScriptsNeedTheirRule(t *testing.T) {
 		{ruleMergeableID, "mergeable_reactivation"},
 		{ruleMergeableID, "mergeable_nested_paths"},
 		{ruleCounterAttach, "nested_children"},
+		{ruleKnownContainers, "get_container_by_id"},
 	} {
 		s := scripts[c.script]
 		if s == nil {
@@ -287,11 +289,25 @@ func TestDeletedContainer(t *testing.T) {
 	if err := im.Set("k", 2); err == nil {
 		t.Error("writing a new value into a deleted map: no error")
 	}
-	if c, err := m.EnsureMergeable("t2", KindText); err != nil || c.IsDeleted() {
+	c2, err := m.EnsureMergeable("t2", KindText)
+	if err != nil || c2.IsDeleted() {
 		t.Fatalf("ensure mergeable: %v", err)
 	}
-	if err := m.Delete("t2"); err != nil {
+	if err := c2.(*Text).Insert(0, "x"); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := m.EnsureMergeable("e", KindMap); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"t2", "e"} {
+		if err := m.Delete(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A mergeable child with no state of its own is gone with its marker,
+	// as loro-crdt's getContainerById shows (measured).
+	if _, err := d.GetContainer(`cid:root-🤝:$m>e:Map`); err == nil {
+		t.Error("an empty mergeable child whose key is deleted is still known")
 	}
 	g, err := d.GetContainer(`cid:root-🤝:$m>t2:Text`)
 	if err != nil || !g.IsDeleted() {
@@ -363,5 +379,52 @@ func TestAtomsCompareWholeMapValues(t *testing.T) {
 		if reflect.DeepEqual(atomOf(pair[0]), atomOf(pair[1])) {
 			t.Errorf("map values %v and %v give the same atom", pair[0], pair[1])
 		}
+	}
+}
+
+// TestGetContainerConcurrentImport: GetContainer reads the document's
+// state only under its mutex, while an import replaces that state. Run
+// with -race.
+func TestGetContainerConcurrentImport(t *testing.T) {
+	src := NewDocument(1)
+	d := NewDocument(2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	errs := make(chan error, 2)
+	go func() {
+		defer wg.Done()
+		for i := range 200 {
+			if err := src.Map("m").Set("a", int64(i)); err != nil {
+				errs <- err
+				return
+			}
+			blob, err := src.ExportUpdates()
+			if err == nil {
+				err = d.Import(blob)
+			}
+			if err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			c, err := d.GetContainer("cid:root-m:Map")
+			if err != nil {
+				errs <- err
+				return
+			}
+			if _, err := c.JSON(); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

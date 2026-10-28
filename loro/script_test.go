@@ -415,6 +415,12 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 			}
 		case "x":
 			err = refusedAsLoro(runX(d(), &a), a.Refused)
+		case "exists":
+			// getContainerById gave a container or undefined.
+			_, gerr := d().GetContainer(a.Cid)
+			if known := string(a.Out) == "true"; known != (gerr == nil) {
+				err = fmt.Errorf("GetContainer(%s): %v, loro-crdt knows it: %v", a.Cid, gerr, known)
+			}
 		case "acquire":
 			switch a.Kind {
 			case "text":

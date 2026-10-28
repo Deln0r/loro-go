@@ -42,10 +42,14 @@ type Container interface {
 	JSON() (any, error)
 }
 
-// handleOf returns the handle for container k.
+// handleOf returns the handle for container k. The caller holds the lock.
 func (d *Document) handleOf(k contKey) Container {
-	h := handle{d: d, k: k, st: d.st}
-	switch k.kind {
+	return wrapHandle(handle{d: d, k: k, st: d.st})
+}
+
+// wrapHandle gives h the type of its container's kind.
+func wrapHandle(h handle) Container {
+	switch h.k.kind {
 	case KindText:
 		return &Text{h}
 	case KindMap:
@@ -132,7 +136,14 @@ func (c *Counter) JSON() (any, error) { return c.h.json() }
 // GetContainer returns a handle on the container with the given id, as ID
 // gives it: "cid:root-name:Kind" or "cid:counter@peer:Kind". Taking a root
 // container's handle makes it part of the document, as the root getters
-// do; a container stored in another must be one the document knows.
+// do. Any other id must name a container the document knows, as
+// loro-crdt's getContainerById requires (LoroDoc::has_container): one an op
+// of the document placed with that kind (a map write, a list or
+// MovableList item, a MovableList set), a tree node's meta map, or a
+// mergeable child that holds state or is reachable now; the container may
+// since have been deleted. For any other id, such as one whose op is a
+// text insert or placed a container of another kind, or a mergeable child
+// never ensured, it is an error.
 func (d *Document) GetContainer(cid string) (Container, error) {
 	rest, ok := strings.CutPrefix(cid, "cid:")
 	if !ok {
@@ -147,21 +158,83 @@ func (d *Document) GetContainer(cid string) (Container, error) {
 		return nil, fmt.Errorf("loro: %q names no container kind loro writes", cid)
 	}
 	name := rest[:i]
-	if root, ok := strings.CutPrefix(name, "root-"); ok {
-		h := d.handle(root, kind)
-		return d.handleOf(h.k), nil
+	root, isRoot := strings.CutPrefix(name, "root-")
+	if isRoot && !isMergeableName(root) {
+		return wrapHandle(d.handle(root, kind)), nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if isRoot {
+		// A mergeable child: it exists while it holds state, or while its
+		// map holds its marker (does_container_exist, state.rs:1163).
+		k := contKey{root: true, name: root, kind: kind}
+		if !d.st.has(k) && d.deleted(k) && !d.knocked(ruleKnownContainers) {
+			return nil, fmt.Errorf("loro: the document has no container %s", cid)
+		}
+		d.register(k)
+		return d.handleOf(k), nil
 	}
 	id, err := parseStoredID(name)
 	if err != nil {
 		return nil, fmt.Errorf("loro: %q: %w", cid, err)
 	}
-	k := childKey(id, kind)
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if _, ok := d.opAt(id); !ok {
+	if d.knocked(ruleKnownContainers) {
+		if _, ok := d.opAt(id); ok {
+			return d.handleOf(childKey(id, kind)), nil
+		}
+	}
+	if !d.creates(id, kind) {
 		return nil, fmt.Errorf("loro: the document has no container %s", cid)
 	}
-	return d.handleOf(k), nil
+	return d.handleOf(childKey(id, kind)), nil
+}
+
+// creates reports whether the op holding id, applied, open or waiting for
+// its dependencies, placed a container of kind there: loro registers a
+// container an op creates as it reads the op, the waiting ones included
+// (find_created_container).
+func (d *Document) creates(id ID, kind ContainerKind) bool {
+	op, ok := d.opAt(id)
+	if !ok {
+		op, ok = d.pendingOpAt(id)
+	}
+	if !ok {
+		return false
+	}
+	switch v := op.Value.(type) {
+	case change.ContainerType:
+		return op.VKind == change.VKLoroValue && v == kind
+	case []any:
+		ct, isCont := v[id.Counter-op.Counter].(change.ContainerType)
+		return isListInsert(op) && isCont && ct == kind
+	case ListSetValue:
+		ct, isCont := v.Value.(change.ContainerType)
+		return isCont && ct == kind
+	case TreeNode:
+		// The op that creates a node names the node's meta map.
+		return kind == KindMap && v.ID == TreeID(id).String()
+	}
+	return false
+}
+
+// pendingOpAt finds the op holding id among the changes waiting for their
+// dependencies.
+func (d *Document) pendingOpAt(id ID) (Op, bool) {
+	for _, byCounter := range d.log.pending {
+		for _, cs := range byCounter {
+			for _, c := range cs {
+				if c.ch.ID.Peer != id.Peer {
+					continue
+				}
+				for _, op := range c.ch.Ops {
+					if op.Counter <= id.Counter && id.Counter < op.Counter+op.Len {
+						return op, true
+					}
+				}
+			}
+		}
+	}
+	return Op{}, false
 }
 
 // editableKind reports whether kind is one of the six: an imported change

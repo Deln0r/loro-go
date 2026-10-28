@@ -209,6 +209,10 @@ class Script {
     }
     this.actions.push(a);
   }
+  // exists records whether peer p's getContainerById knows cid.
+  exists(p, cid) {
+    this.actions.push({ a: "exists", p, cid, out: this.docs[p].getContainerById(cid) !== undefined });
+  }
   // container is peer p's handle on container cid, or undefined when the
   // peer does not know it. A root is taken as getText and its siblings take
   // it, which makes it part of the document.
@@ -1663,6 +1667,66 @@ addStruct("nested_children", [1, 2], (s) => {
   X.child(s, 0, m, "map", "l", "Counter");
   sync(s, 0, 1);
   X.read(s, 1, l);
+});
+
+// [16] getContainerById knows a container an op placed with that kind, a
+// tree node's meta map, and a mergeable child that holds state or whose
+// marker its map holds, deleted or not; it knows no id whose op placed no
+// container, or one of another kind, or a mergeable child never written
+// whose marker is gone. A child placed by a change still waiting for its
+// dependencies is known.
+addStruct("get_container_by_id", [1, 2, 3], (s) => {
+  const ctr = (p) => {
+    s.commit(p);
+    return Number(s.docs[p].oplogVersion().toJSON().get(String(s.peers[p])) ?? 0);
+  };
+  const tx = ctr(0);
+  X.text(s, 0, "cid:root-tx:Text", 0, "hi");
+  const scalarAt = ctr(0);
+  X.lins(s, 0, LS, 0, 5);
+  const t = X.child(s, 0, MP, "map", "a", "Text");
+  const n = X.create(s, 0, TR, null);
+  const gone = X.create(s, 0, TR, null);
+  X.del(s, 0, TR, gone);
+  X.child(s, 0, MP, "mergeable", "e", "Map");
+  const sub = X.child(s, 0, LS, "list", 1, "Map");
+  X.ldel(s, 0, LS, 1, 1);
+  X.mlIns(s, 0, ML, 0, [1]);
+  const set = X.child(s, 0, ML, "ml_set", 0, "Text");
+  const xm = X.child(s, 0, MP, "mergeable", "x", "Map");
+  X.set(s, 0, xm, "k", 1);
+  X.unset(s, 0, MP, "x");
+  X.child(s, 0, MP, "mergeable", "y", "Map");
+  X.unset(s, 0, MP, "y");
+  const zt = X.child(s, 0, MP, "mergeable", "z", "Text");
+  X.text(s, 0, zt, 0, "a");
+  X.child(s, 0, MP, "mergeable", "z", "List");
+  X.child(s, 0, MP, "mergeable", "w", "Map");
+  X.child(s, 0, MP, "mergeable", "w", "List");
+  const ids = [
+    t, t.replace(":Text", ":Map"), `cid:${tx}@1:Text`, `cid:${scalarAt}@1:Map`, `cid:${n}:Map`, `cid:${n}:Text`,
+    `cid:${gone}:Map`, sub, sub.replace(":Map", ":List"), set, `cid:${tx + 999}@1:Map`, "cid:0@7:Map",
+    "cid:root-🤝:$m>e:Map", "cid:root-🤝:$m>e:Text", "cid:root-🤝:$m>never:Map", "cid:root-🤝:$m>x:Map",
+    "cid:root-🤝:$m>y:Map", "cid:root-🤝:$m>z:Text", "cid:root-🤝:$m>z:List", "cid:root-🤝:$m>w:Map",
+    "cid:root-🤝:$m>w:List", "cid:root-plain:Map",
+  ];
+  for (const id of ids) s.exists(0, id);
+  s.import(1, s.export(0));
+  for (const id of ids) s.exists(1, id);
+  s.import(2, s.snapshot(0));
+  for (const id of ids) s.exists(2, id);
+  // Peer 1's child placed in a change whose dependency peer 2 lacks.
+  const v1 = s.docs[1].oplogVersion();
+  X.text(s, 1, "cid:root-tx:Text", 0, "q");
+  s.commit(1);
+  const v2 = s.docs[1].oplogVersion();
+  const waiting = X.child(s, 1, MP, "map", "c", "Text");
+  s.commit(1);
+  s.export(1);
+  s.import(2, s.blob(s.docs[1].export({ mode: "update", from: v2 })));
+  s.exists(2, waiting);
+  s.import(2, s.blob(s.docs[1].export({ mode: "update", from: v1 })));
+  s.exists(2, waiting);
 });
 
 writeFileSync(join(outDir, "script_struct_named.json"), JSON.stringify(structNamed) + "\n");

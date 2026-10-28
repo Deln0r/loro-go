@@ -414,6 +414,7 @@ const (
 	ruleDeletedRefused                  // item 16: edits through a deleted container are refused
 	ruleMergeableID                     // item 16: a mergeable child is named after its map, key and kind
 	ruleCounterAttach                   // item 16: a new Counter child is incremented by zero, an op
+	ruleKnownContainers                 // GetContainer knows only the containers getContainerById knows
 )
 
 type ruleSet uint64

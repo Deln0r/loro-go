@@ -25,6 +25,8 @@ type script struct {
 	Peers   []uint64          `json:"peers"`
 	Actions []json.RawMessage `json:"actions"`
 	Blobs   []string          `json:"blobs"`
+	// file is the fixture the script came from.
+	file string
 }
 
 func (s *script) label() string {
@@ -47,11 +49,19 @@ type scriptAction struct {
 	Msg  *string         `json:"msg"`
 	TS   *int64          `json:"ts"`
 	Blob int             `json:"blob"`
-	// Refused is loro-crdt's error when it refused the import.
+	// Refused is loro-crdt's error when it refused the import, mark or
+	// unmark.
 	Refused string `json:"refused"`
-	Peers   []struct {
+	// Start and End are a mark's code points, Styles a style configuration.
+	Start  int               `json:"start"`
+	End    int               `json:"end"`
+	Styles map[string]string `json:"styles"`
+	Peers  []struct {
 		JSON   json.RawMessage `json:"json"`
 		Export int             `json:"export"`
+		// Delta is toDelta of each text the peer shows, by name, when the
+		// script records them.
+		Delta map[string]json.RawMessage `json:"delta"`
 	} `json:"peers"`
 }
 
@@ -67,6 +77,9 @@ func loadScripts(t testing.TB, name string) []script {
 	}
 	if len(out) == 0 {
 		t.Fatal("no scripts")
+	}
+	for i := range out {
+		out[i].file = name
 	}
 	return out
 }
@@ -299,7 +312,10 @@ func shapeOf(u *Updates) string {
 // checkpoint.
 type checkResult struct {
 	checks, json, atoms, shape, bytes int
-	failures                          []string
+	// deltaChecks counts the checks that recorded deltas, deltas those
+	// where every delta matched.
+	deltaChecks, deltas int
+	failures            []string
 	// pairs are the Go exports that differ from loro's in bytes, with
 	// loro's, for loro-crdt to import side by side.
 	pairs [][3]string
@@ -405,21 +421,27 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 		case "export":
 			_, err = d().ExportUpdates()
 		case "import":
-			err = d().Import(blobs[a.Blob])
-			if a.Refused != "" {
-				if err == nil {
-					err = fmt.Errorf("imported what loro-crdt refused (%s)", a.Refused)
-				} else {
-					err = nil
-				}
+			err = refusedAsLoro(d().Import(blobs[a.Blob]), a.Refused)
+		case "config_style":
+			styles := map[string]ExpandType{}
+			for k, e := range a.Styles {
+				styles[k] = map[string]ExpandType{"before": ExpandBefore, "after": ExpandAfter, "both": ExpandBoth, "none": ExpandNone}[e]
 			}
+			err = d().ConfigTextStyle(styles)
+		case "mark":
+			var v any
+			if v, err = scriptValue(a.V); err == nil {
+				err = refusedAsLoro(h.text(a.P, a.C).Mark(a.Start, a.End, a.K, v), a.Refused)
+			}
+		case "unmark":
+			err = refusedAsLoro(h.text(a.P, a.C).Unmark(a.Start, a.End, a.K), a.Refused)
 		case "check":
 			for i, want := range a.Peers {
 				where := fmt.Sprintf("%s check at action %d peer %d", s.label(), ai, s.Peers[i])
-				e := checkPeer(where, docs[i], want.JSON, blobs[want.Export], r)
+				e := checkPeer(where, docs[i], want.JSON, want.Delta, blobs[want.Export], r)
 				if r.last != nil && e != nil {
-					e.Script, e.Peer = s.label(), s.Peers[i]
-					r.last[fmt.Sprintf("%s/%d", s.label(), s.Peers[i])] = *e
+					e.Script, e.Peer = s.file+" "+s.label(), s.Peers[i]
+					r.last[fmt.Sprintf("%s %s/%d", s.file, s.label(), s.Peers[i])] = *e
 				}
 			}
 		default:
@@ -430,6 +452,18 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 			return
 		}
 	}
+}
+
+// refusedAsLoro holds an import, mark or unmark to what loro-crdt did: when
+// loro refused it with an error, the Document must refuse it too.
+func refusedAsLoro(err error, refused string) error {
+	switch {
+	case refused == "":
+		return err
+	case err == nil:
+		return fmt.Errorf("did what loro-crdt refused (%s)", refused)
+	}
+	return nil
 }
 
 // scriptHandles keeps each handle a script takes, as an application keeps
@@ -469,7 +503,7 @@ func (h *scriptHandles) counter(p int, name string) *Counter {
 // checkPeer holds one Document to loro-crdt's toJSON and export of the same
 // peer: the JSON must be equal and the atoms of the two histories too; the
 // shape and the bytes of the export are counted.
-func checkPeer(where string, d *Document, wantJSON json.RawMessage, wantBlob []byte, r *checkResult) *peerExport {
+func checkPeer(where string, d *Document, wantJSON json.RawMessage, wantDelta map[string]json.RawMessage, wantBlob []byte, r *checkResult) *peerExport {
 	r.checks++
 	gotBlob, err := d.ExportUpdates()
 	if err != nil {
@@ -489,6 +523,37 @@ func checkPeer(where string, d *Document, wantJSON json.RawMessage, wantBlob []b
 		r.json++
 	} else {
 		r.fail("%s: JSON\n got  %s\n want %s", where, g, ws)
+	}
+	if wantDelta != nil {
+		r.deltaChecks++
+		same := true
+		for c, raw := range wantDelta {
+			delta, err := d.Text(c).Delta()
+			if err != nil {
+				r.fail("%s: delta of %s: %v", where, c, err)
+				same = false
+				continue
+			}
+			runs := []any{}
+			for _, op := range delta {
+				run := map[string]any{"insert": op.Insert}
+				if op.Attributes != nil {
+					run["attributes"] = tagged(op.Attributes)
+				}
+				runs = append(runs, run)
+			}
+			gd, _ := json.Marshal(runs)
+			var w any
+			_ = json.Unmarshal(raw, &w)
+			wd, _ := json.Marshal(w)
+			if string(gd) != string(wd) {
+				r.fail("%s: delta of %s\n got  %s\n want %s", where, c, gd, wd)
+				same = false
+			}
+		}
+		if same {
+			r.deltas++
+		}
 	}
 
 	want, err := DecodeUpdates(wantBlob)
@@ -563,10 +628,10 @@ func reportScripts(t *testing.T, name string, n int, r *checkResult) {
 		}
 		t.Error(f)
 	}
-	t.Logf("%s: %d scripts, %d checks: JSON %d/%d, atoms %d/%d, shape %d/%d, bytes %d/%d",
-		name, n, r.checks, r.json, r.checks, r.atoms, r.checks, r.shape, r.checks, r.bytes, r.checks)
-	if r.json != r.checks || r.atoms != r.checks {
-		t.Errorf("%s: JSON %d/%d, atoms %d/%d", name, r.json, r.checks, r.atoms, r.checks)
+	t.Logf("%s: %d scripts, %d checks: JSON %d/%d, delta %d/%d, atoms %d/%d, shape %d/%d, bytes %d/%d",
+		name, n, r.checks, r.json, r.checks, r.deltas, r.deltaChecks, r.atoms, r.checks, r.shape, r.checks, r.bytes, r.checks)
+	if r.json != r.checks || r.atoms != r.checks || r.deltas != r.deltaChecks {
+		t.Errorf("%s: JSON %d/%d, delta %d/%d, atoms %d/%d", name, r.json, r.checks, r.deltas, r.deltaChecks, r.atoms, r.checks)
 	}
 }
 

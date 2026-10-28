@@ -29,10 +29,11 @@ import (
 // makes the container part of the document, so JSON shows it even before
 // anything is written to it.
 //
-// Handles exist for root Text, Map, List and Counter containers. A document
-// holding marks, a MovableList, a Tree or containers stored in other
-// containers imports, shows them in JSON and exports them, but has no
-// handle yet to edit them.
+// Handles exist for root Text, Map, List and Counter containers, and a Text
+// can be styled with Mark and Unmark (see ConfigTextStyle). A document
+// holding a MovableList, a Tree or containers stored in other containers
+// imports, shows them in JSON and exports them, but has no handle yet to
+// edit them.
 //
 // One mutex guards the whole document. Every method of a Document and of its
 // handles takes it, so a Document may be used from several goroutines; their
@@ -48,6 +49,7 @@ type Document struct {
 	recordTimestamp bool
 	mergeInterval   int64
 	now             func() int64
+	textStyles      map[string]ExpandType
 
 	// rootOrder is the order in which root containers became known, as
 	// loro's arena registers them: when a handle is taken, and op by op as
@@ -78,6 +80,7 @@ func NewDocument(peer uint64) *Document {
 		log:           newOpLog(),
 		st:            newDocState(),
 		mergeInterval: defaultMergeInterval,
+		textStyles:    defaultTextStyles(),
 		now:           func() int64 { return time.Now().Unix() },
 		registered:    map[contKey]bool{},
 		acquired:      map[contKey]bool{},
@@ -381,20 +384,27 @@ func (d *Document) editable(k contKey) error {
 type rule uint
 
 const (
-	ruleImportCommits   rule = iota // review item 3: import commits the open transaction
-	rulePendingIsolated             // item 14: pending changes do not raise local lamports
-	rulePendingTrim                 // item 14: a released change loses its known prefix
-	ruleTimestampFloor              // item 5: a change's timestamp is at least its deps'
-	ruleMergeInterval               // item 5: changes merge only within the interval
-	ruleBlockLimit                  // item 4: a full block takes no merged change
-	ruleFoldLocalOnly               // item 2: only adjacent local ops fold
-	ruleDeleteSplit                 // item 7: a text delete splits at anchors and id gaps
-	ruleMapSkipEqual                // item 11: setting a key to its value emits nothing
-	ruleMapDeleteAbsent             // item 11: deleting an absent key still emits
-	ruleCounterInt                  // item 12: small integral increments are I64
-	ruleTypedRoots                  // item 15: of two roots of one name, the last non-empty shows
-	ruleRootsVisible                // item 15: a root shows once a handle is taken
-	ruleHandleLive                  // item 16: a handle resolves its container on every call
+	ruleImportCommits    rule = iota // review item 3: import commits the open transaction
+	rulePendingIsolated              // item 14: pending changes do not raise local lamports
+	rulePendingTrim                  // item 14: a released change loses its known prefix
+	ruleTimestampFloor               // item 5: a change's timestamp is at least its deps'
+	ruleMergeInterval                // item 5: changes merge only within the interval
+	ruleBlockLimit                   // item 4: a full block takes no merged change
+	ruleFoldLocalOnly                // item 2: only adjacent local ops fold
+	ruleDeleteSplit                  // item 7: a text delete splits at anchors and id gaps
+	ruleMapSkipEqual                 // item 11: setting a key to its value emits nothing
+	ruleMapDeleteAbsent              // item 11: deleting an absent key still emits
+	ruleCounterInt                   // item 12: small integral increments are I64
+	ruleTypedRoots                   // item 15: of two roots of one name, the last non-empty shows
+	ruleRootsVisible                 // item 15: a root shows once a handle is taken
+	ruleHandleLive                   // item 16: a handle resolves its container on every call
+	ruleMarkSkipApplied              // item 8: a mark the range already has makes no op
+	ruleUnmarkSkipAbsent             // item 8: unmarking a key the range lacks makes no op
+	ruleMarkConfigured               // item 8: marking an unconfigured key is an error
+	ruleUnmarkReverse                // item 8: an unmark's expand rule is the key's reversed
+	ruleColonPrefix                  // item 8: "k:x" is marked with the configuration of "k"
+	ruleConfigReplaces               // item 8: ConfigTextStyle replaces the configuration
+	ruleMarkRange                    // a mark's ends go where text inserted there would go
 )
 
 type ruleSet uint64

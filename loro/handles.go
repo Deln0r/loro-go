@@ -60,7 +60,8 @@ func inRange(pos, n, length int) bool {
 	return pos >= 0 && n >= 0 && pos <= length && n <= length-pos
 }
 
-// Text is a handle on a Text container. Positions are counted in Unicode
+// Text is a handle on a Text container: rich text, which Mark and Unmark
+// style and Delta reads with its styles. Positions are counted in Unicode
 // code points; loro-crdt's JavaScript API counts UTF-16 units, so a
 // position from JavaScript has to be converted first.
 type Text struct{ h handle }

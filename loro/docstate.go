@@ -88,6 +88,9 @@ func (s *docState) applyLocal(op Op) error {
 			q = newSeqState(s.work)
 			s.seqs[k] = q
 		}
+		if op.VKind == change.VKMarkStart {
+			s.anchored[k] = true
+		}
 		return q.apply(op, true, pastView{}, true)
 	}
 	ci := s.conts[k]

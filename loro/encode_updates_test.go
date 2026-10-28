@@ -20,11 +20,13 @@ import (
 
 // encodeCorpora are the random-history corpora whose exports EncodeUpdates
 // must give back. encode_corpus.json is the one written for it
-// (testdata/gen/gen_encode.mjs); the others were written for the merge.
+// (testdata/gen/gen_encode.mjs); the others were written for the merge,
+// nested_corpus.json with containers stored as values at every depth and
+// mergeable children.
 var encodeCorpora = []string{
 	"seq_single_corpus.json", "seq_concurrent_corpus.json", "ordering_corpus.json",
 	"movable_single_corpus.json", "movable_concurrent_corpus.json", "tree_corpus.json",
-	"rich_corpus.json", "encode_corpus.json",
+	"rich_corpus.json", "nested_corpus.json", "encode_corpus.json",
 }
 
 // exportBlob is one FastUpdates export by loro-crdt.
@@ -239,7 +241,7 @@ func sameDecoded(a, b any) bool {
 }
 
 // TestEncodeUpdatesReproducesLoro decodes every FastUpdates export in the
-// fixtures, every history of the eight corpora and every fixture file, and
+// fixtures, every history of the nine corpora and every fixture file, and
 // encodes it again. The bytes must come back exactly, with one exception
 // allowed: a blob holding a map of two or more keys nested in a value, whose
 // keys loro lists in hash order and EncodeUpdates sorts. Such a blob must

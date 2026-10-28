@@ -412,3 +412,44 @@ func TestReadsDoNotSpendTheEditBudget(t *testing.T) {
 		t.Errorf("length %d", text.Len())
 	}
 }
+
+// TestCounterPastInt64 increments a counter by 2^64: its value is a float,
+// as loro's toJSON gives it, not an int64 that wrapped. A whole value
+// within 2^53 stays an int64.
+func TestCounterPastInt64(t *testing.T) {
+	d := NewDocument(1)
+	big, small := d.Counter("big"), d.Counter("small")
+	if err := big.Increment(1 << 64); err != nil {
+		t.Fatal(err)
+	}
+	if err := small.Increment(1 << 53); err != nil {
+		t.Fatal(err)
+	}
+	if v := big.Value(); v != 1<<64 {
+		t.Errorf("value %v, want 2^64", v)
+	}
+	blob, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := DecodeUpdates(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := MergeState(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := d.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []map[string]any{state, merged} {
+		if v, ok := s["big"].(float64); !ok || v != 1<<64 {
+			t.Errorf("big %#v, want float64 2^64", s["big"])
+		}
+		if v, ok := s["small"].(int64); !ok || v != 1<<53 {
+			t.Errorf("small %#v, want int64 2^53", s["small"])
+		}
+	}
+}

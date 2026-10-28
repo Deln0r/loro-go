@@ -38,10 +38,13 @@ func counterValue(ops []Op) any {
 	return numFromF64(sum)
 }
 
-// numFromF64 narrows an accumulated counter sum back to int64 when it has no
-// fractional part, keeping float64 only for genuinely fractional counters.
+// numFromF64 narrows an accumulated counter sum back to int64 when it is a
+// whole number within ±2^53, where every integer is exact as a float, and
+// keeps float64 otherwise. loro's toJSON gives a counter as a double, so
+// either is the same number; a sum past the int64 range, such as an
+// increment of 2^64, is no int64 at all.
 func numFromF64(f float64) any {
-	if !math.IsInf(f, 0) && !math.IsNaN(f) && f == math.Trunc(f) {
+	if f == math.Trunc(f) && math.Abs(f) <= 1<<53 {
 		return int64(f)
 	}
 	return f

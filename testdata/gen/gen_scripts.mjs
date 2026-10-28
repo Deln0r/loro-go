@@ -514,9 +514,13 @@ add("map_noop_rules", [1, 2], (s) => {
 // magnitude, an F64 otherwise.
 add("counter_encoding", [1, 2], (s) => {
   for (const v of [1, -1, 0, 134217727, -134217727, 134217728, -134217728, 2 ** 40, -(2 ** 52)]) s.inc(0, "n", v);
+  // Past the int64 range: toJSON shows a double. Each partial sum is exact,
+  // so the order loro adds them in does not matter.
+  for (const v of [2 ** 64, -(2 ** 60)]) s.inc(0, "big", v);
   s.commit(0);
   s.import(1, s.export(0));
   s.inc(1, "n", 5);
+  s.inc(1, "big", 2 ** 62);
 });
 
 // [15] Typed roots: a Text and a Map of one name are two containers, and a

@@ -9,8 +9,8 @@ import (
 // a Document: once into an empty one, which takes a snapshot whole, and once
 // after an edit, so that a blob's changes may wait for each other, be
 // trimmed and be merged into the change store. An import either fails or
-// leaves a document that reads, edits and exports without panicking, and
-// whose export another Document imports.
+// leaves a document that reads, edits, marks and exports without panicking,
+// and whose export another Document imports.
 func FuzzDocumentImport(f *testing.F) {
 	seedFuzz(f, ".update.bin")
 	seedFuzz(f, ".snapshot.bin")
@@ -38,8 +38,14 @@ func FuzzDocumentImport(f *testing.F) {
 			}
 			t1 := d.Text("t")
 			_ = t1.Insert(t1.Len(), "y")
-			if t1.Len() > 0 {
+			if n := t1.Len(); n > 1 {
+				_ = t1.Mark(0, n, "bold", true)
+				_ = t1.Unmark(n/2, n, "link")
+				_ = t1.Insert(n/2, "z")
 				_ = t1.Delete(0, 1)
+			}
+			if _, err := t1.Delta(); err != nil {
+				t.Fatalf("delta after a successful import: %v", err)
 			}
 			l := d.List("l")
 			_ = l.Insert(l.Len(), int64(2))

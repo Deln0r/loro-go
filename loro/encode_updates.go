@@ -53,6 +53,11 @@ func encodeUpdates(u *Updates, keyOrder func(map[string]any) []string) ([]byte, 
 	if u == nil {
 		return nil, fmt.Errorf("loro: no updates to encode")
 	}
+	for _, ch := range u.Changes {
+		if err := checkChange(ch); err != nil {
+			return nil, err
+		}
+	}
 	blocks, err := groupBlocks(u)
 	if err != nil {
 		return nil, err
@@ -274,8 +279,10 @@ func encodeBlock(chs []Change, keyOrder func(map[string]any) []string) ([]byte, 
 	hdr := &change.ChangeHeader{}
 	meta := &change.ChangeMeta{}
 	for i, ch := range chs {
-		if err := e.change(ch); err != nil {
-			return nil, err
+		for _, op := range ch.Ops {
+			if err := e.op(op); err != nil {
+				return nil, err
+			}
 		}
 		if i < len(chs)-1 {
 			hdr.AtomLens = append(hdr.AtomLens, uint64(changeEnd(ch)-ch.ID.Counter))
@@ -372,13 +379,17 @@ func (e *blockEncoder) positions(chs []Change) error {
 
 func isTreeDelete(n TreeNode) bool { return n.HasParent && n.Parent == deletedTreeRoot }
 
-// change checks one change and writes its ops.
-func (e *blockEncoder) change(ch Change) error {
+// checkChange checks one change before it is placed in a block: it has ops,
+// they follow one another from the change's id with its peer and lamports,
+// and its counters and lamports fit loro's fields, Counter an i32 and Lamport
+// a u32. The bounds are compared before anything is added to them, so a
+// counter near the top of int64 cannot wrap into range.
+func checkChange(ch Change) error {
 	if len(ch.Ops) == 0 {
 		return fmt.Errorf("loro: change %d@%d has no ops", ch.ID.Counter, ch.ID.Peer)
 	}
-	if ch.ID.Counter < 0 || ch.Lamport < 0 {
-		return fmt.Errorf("loro: change %d@%d at lamport %d has a negative counter or lamport", ch.ID.Counter, ch.ID.Peer, ch.Lamport)
+	if ch.ID.Counter < 0 || ch.ID.Counter > math.MaxInt32 || ch.Lamport < 0 || ch.Lamport > math.MaxUint32 {
+		return fmt.Errorf("loro: change %d@%d at lamport %d is outside loro's counter or lamport range", ch.ID.Counter, ch.ID.Peer, ch.Lamport)
 	}
 	ctr := ch.ID.Counter
 	for _, op := range ch.Ops {
@@ -386,16 +397,12 @@ func (e *blockEncoder) change(ch Change) error {
 			return fmt.Errorf("loro: op %d@%d (lamport %d) is not where change %d@%d (lamport %d) puts its next op, %d@%d (lamport %d)",
 				op.Counter, op.Peer, op.Lamport, ch.ID.Counter, ch.ID.Peer, ch.Lamport, ctr, ch.ID.Peer, ch.Lamport+(ctr-ch.ID.Counter))
 		}
-		if op.Len < 1 || op.Len > math.MaxInt32 {
-			return fmt.Errorf("loro: op %d@%d has length %d", op.Counter, op.Peer, op.Len)
+		// ctr is at most MaxInt32 here, so neither side of either test can
+		// overflow, and the change's end stays within both fields.
+		if op.Len < 1 || op.Len > math.MaxInt32-ctr || op.Len > math.MaxUint32-(ch.Lamport+ctr-ch.ID.Counter) {
+			return fmt.Errorf("loro: op %d@%d of length %d ends past loro's counter or lamport range", op.Counter, op.Peer, op.Len)
 		}
 		ctr += op.Len
-		if ctr > math.MaxInt32 || ch.Lamport+(ctr-ch.ID.Counter) > math.MaxUint32 {
-			return fmt.Errorf("loro: op %d@%d ends past loro's counter or lamport range", op.Counter, op.Peer)
-		}
-		if err := e.op(op); err != nil {
-			return err
-		}
 	}
 	return nil
 }

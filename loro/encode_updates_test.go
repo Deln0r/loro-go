@@ -567,3 +567,80 @@ func TestBlockFillsToExactly4096(t *testing.T) {
 		t.Errorf("grouped by EncodeUpdates: blocks %v, loro wrote [819 1]", back.Blocks)
 	}
 }
+
+// solo is a change by peer 1 at counter 0 holding the one op o.
+func solo(o Op) Change {
+	o.Peer, o.Counter, o.Lamport = 1, 0, 0
+	if o.Len == 0 {
+		o.Len = 1
+	}
+	return Change{ID: ID{Peer: 1}, Ops: []Op{o}}
+}
+
+// at moves a change and its ops to counter ctr and lamport lamport.
+func at(ch Change, ctr, lamport int64) Change {
+	ch.ID.Counter, ch.Lamport = ctr, lamport
+	ch.Ops = slices.Clone(ch.Ops)
+	for i := range ch.Ops {
+		ch.Ops[i].Counter, ch.Ops[i].Lamport = ctr, lamport
+		ctr += ch.Ops[i].Len
+		lamport += ch.Ops[i].Len
+	}
+	return ch
+}
+
+// rootOp is an op in the root container name of kind k.
+func rootOp(k change.ContainerType, name string, vk change.ValueKind, v any) Op {
+	return Op{Container: name, IsRoot: true, Kind: k, VKind: vk, Value: v}
+}
+
+// textIns inserts s at pos in root Text "t".
+func textIns(pos int64, s string) Op {
+	o := rootOp(change.CText, "t", change.VKStr, s)
+	o.Pos, o.Len = pos, int64(len([]rune(s)))
+	return o
+}
+
+func updatesOf(chs ...Change) *Updates { return &Updates{Changes: chs} }
+
+// encodeCase is a set of changes, named for the test log.
+type encodeCase struct {
+	name string
+	u    *Updates
+}
+
+// TestEncodeUpdatesRefusesWhatLoroCannotRead holds EncodeUpdates to the
+// blobs loro-crdt 1.17.1 reads back as written. Each refused case was encoded
+// by EncodeUpdates before it refused it, and imported into loro-crdt; the
+// comment over each group says what loro did with it. The accepted cases sit
+// at the edge of each limit, so the checks refuse no more than loro does.
+func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
+	refused := []encodeCase{
+		// Counters and lamports past loro's fields, an i32 and a u32. A change
+		// at counter 2^63-1 wrapped past the range check and was written;
+		// loro refused it ("a varint that didn't terminate").
+		{"a change at counter 2^63-1", updatesOf(at(solo(textIns(0, "a")), math.MaxInt64, 0))},
+		{"a change at counter 2^31", updatesOf(at(solo(textIns(0, "a")), math.MaxInt32+1, 0))},
+		{"a change ending past counter 2^31-1", updatesOf(at(solo(textIns(0, "ab")), math.MaxInt32-1, 0))},
+		{"a change at lamport 2^32", updatesOf(at(solo(textIns(0, "a")), 0, 1<<32))},
+		{"a change ending past lamport 2^32-1", updatesOf(at(solo(textIns(0, "ab")), 0, math.MaxUint32-1))},
+		{"an op of length 2^63-1", updatesOf(func() Change { c := solo(textIns(0, "a")); c.Ops[0].Len = math.MaxInt64; return c }())},
+	}
+	for _, c := range refused {
+		if _, err := EncodeUpdates(c.u); err == nil {
+			t.Errorf("%s: encoded without error", c.name)
+		} else if !strings.HasPrefix(err.Error(), "loro") {
+			t.Errorf("%s: error %q does not say where it comes from", c.name, err)
+		}
+	}
+
+	accepted := []encodeCase{
+		{"a change ending at counter 2^31-1", updatesOf(at(solo(textIns(0, "a")), math.MaxInt32-1, 0))},
+		{"a change ending at lamport 2^32-1", updatesOf(at(solo(textIns(0, "a")), 0, math.MaxUint32-1))},
+	}
+	for _, c := range accepted {
+		if _, err := EncodeUpdates(c.u); err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}

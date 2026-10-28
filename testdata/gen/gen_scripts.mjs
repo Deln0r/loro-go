@@ -173,11 +173,55 @@ class Script {
     if (err === undefined) throw new Error(`${this.head.name}: loro-crdt imported a blob expected to be refused`);
     this.actions.push({ a: "import", p, blob, refused: err.slice(0, 120) });
   }
+  // configStyle replaces peer p's text style configuration: styles maps a
+  // key to "before", "after", "both" or "none".
+  configStyle(p, styles) {
+    this.docs[p].configTextStyle(Object.fromEntries(Object.entries(styles).map(([k, e]) => [k, { expand: e }])));
+    this.actions.push({ a: "config_style", p, styles });
+  }
+  // mark styles code points [start, end) of text c; a null value unmarks.
+  // When loro-crdt refuses the mark, the action records its error.
+  mark(p, c, start, end, k, v) {
+    const t = this.docs[p].getText(c);
+    const cur = t.toString();
+    const start16 = u16(cur, start);
+    const end16 = u16(cur, end);
+    const a = { a: "mark", p, c, start, end, start16, end16, k, v: tag(v) };
+    try {
+      t.mark({ start: start16, end: end16 }, k, v);
+    } catch (e) {
+      a.refused = String(e).slice(0, 120);
+    }
+    this.actions.push(a);
+  }
+  unmark(p, c, start, end, k) {
+    const t = this.docs[p].getText(c);
+    const cur = t.toString();
+    const start16 = u16(cur, start);
+    const end16 = u16(cur, end);
+    const a = { a: "unmark", p, c, start, end, start16, end16, k };
+    try {
+      t.unmark({ start: start16, end: end16 }, k);
+    } catch (e) {
+      a.refused = String(e).slice(0, 120);
+    }
+    this.actions.push(a);
+  }
   check() {
     const peers = this.docs.map((d) => {
       const json = tag(d.toJSON());
-      const bytes = d.export({ mode: "update" });
-      return { json, export: this.blob(bytes) };
+      const out = { json };
+      // With deltas set, each of those texts the peer shows also gets its
+      // toDelta, which carries the styles toJSON leaves out.
+      if (this.deltas) {
+        const delta = {};
+        for (const c of this.deltas) {
+          if (typeof json[c] === "string") delta[c] = tag(d.getText(c).toDelta());
+        }
+        out.delta = delta;
+      }
+      out.export = this.blob(d.export({ mode: "update" }));
+      return out;
     });
     this.actions.push({ a: "check", peers });
   }
@@ -713,3 +757,288 @@ writeFileSync(join(outDir, "script_crowd_corpus.json"), JSON.stringify(crowd) + 
   d.commit();
   writeFileSync(join(outDir, "shallow_snapshot.bin"), d.export({ mode: "shallow-snapshot", frontiers: f }));
 }
+
+// ---------------------------------------------------------------------------
+// Rich text: marks and unmarks over all four expand rules, keys configured
+// per peer (custom keys, colon keys, keys left out), style values of every
+// shape, concurrent marks, inserts at the edges of styled ranges and deletes
+// across anchors. Checkpoints record each peer's toDelta of "t" (and of "r"
+// in the named scripts) beside toJSON.
+//
+//   ../fixtures/script_rich_corpus.json  300 random scripts, 1 to 3 peers
+//   ../fixtures/script_rich_named.json   one or more small scripts per mark rule
+//   config_style {styles: {key: expand}}   mark {c, start, end, start16, end16, k, v, refused?}
+//   unmark {c, start, end, start16, end16, k, refused?}   check peers also carry {delta: {c: toDelta}}
+
+const expands = ["before", "after", "both", "none"];
+const richKeys = ["bold", "italic", "link", "comment:1", "comment:2", "a", "b", "c", "d", "c:x", "u"];
+const richValue = (r) => {
+  const pick = r();
+  if (pick < 0.25) return true;
+  if (pick < 0.3) return false;
+  if (pick < 0.45) return word(r);
+  if (pick < 0.6) return Math.floor(r() * 100) - 50;
+  if (pick < 0.7) return Math.floor(r() * 1000) / 8 + 0.5;
+  if (pick < 0.85) return { k: Math.floor(r() * 5) };
+  return [Math.floor(r() * 5), word(r)];
+};
+// richConfig is a peer's style configuration: the defaults it keeps, and
+// custom keys with an expand rule of their own. Keys it leaves out ("u",
+// and now and then a default) cannot be marked by that peer.
+const richConfig = (r) => {
+  const styles = {};
+  for (const k of ["bold", "italic", "link", "comment"]) if (r() < 0.85) styles[k] = pickOf(r, expands);
+  for (const k of ["a", "b", "c", "d"]) if (r() < 0.9) styles[k] = pickOf(r, expands);
+  return styles;
+};
+
+function richScript(seed) {
+  const r = rng(seed * 2654435761);
+  const n = 1 + (seed % 3);
+  const s = new Script({ seed }, peerSets[Math.floor(seed / 3) % peerSets.length].slice(0, n));
+  s.deltas = ["t"];
+  for (let p = 0; p < n; p++) if (r() < 0.8) s.configStyle(p, richConfig(r));
+  s.textIns(0, "t", 0, word(r, 6 + Math.floor(r() * 6)));
+  const edges = s.docs.map(() => []);
+  const held = [];
+  const textLen = (p) => points(s.docs[p].getText("t").toString()).length;
+  for (let step = 25 + Math.floor(r() * 30); step > 0; step--) {
+    const p = Math.floor(r() * n);
+    const len = textLen(p);
+    const pick = r();
+    if (pick < 0.22 || len < 2) {
+      // Inserts land at the edge of a range this peer marked now and then.
+      let k = Math.floor(r() * (len + 1));
+      if (edges[p].length > 0 && r() < 0.5) k = Math.min(len, pickOf(r, edges[p]));
+      s.textIns(p, "t", k, word(r));
+    } else if (pick < 0.32) {
+      const k = Math.floor(r() * len);
+      s.textDel(p, "t", k, 1 + Math.floor(r() * Math.min(4, len - k)));
+    } else if (pick < 0.58) {
+      const a = Math.floor(r() * (len - 1));
+      const b = a + 1 + Math.floor(r() * Math.min(6, len - a));
+      edges[p].push(a, b);
+      s.mark(p, "t", a, Math.min(b, len), pickOf(r, richKeys), richValue(r));
+    } else if (pick < 0.68) {
+      const a = Math.floor(r() * (len - 1));
+      const b = a + 1 + Math.floor(r() * Math.min(6, len - a));
+      s.unmark(p, "t", a, Math.min(b, len), pickOf(r, richKeys));
+    } else if (pick < 0.76) {
+      if (r() < 0.3) s.commit(p, { message: pickOf(r, ["m1", "m2"]) });
+      else s.commit(p);
+    } else if (pick < 0.78) {
+      s.configStyle(p, richConfig(r));
+    } else {
+      const src = p;
+      const dst = n === 1 ? p : (p + 1 + Math.floor(r() * (n - 1))) % n;
+      const q = r();
+      if (q < 0.4) s.import(dst, s.export(src));
+      else if (q < 0.7) s.import(dst, s.export(src, { mode: "update", from: s.docs[dst].version() }));
+      else if (q < 0.85) held.push([dst, s.export(src, { mode: "update", from: s.docs[dst].version() })]);
+      else if (held.length > 0) {
+        const [to, blob] = held.splice(Math.floor(r() * held.length), 1)[0];
+        s.import(to, blob);
+      }
+      if (r() < 0.5) s.check();
+    }
+  }
+  for (const [to, blob] of held) s.import(to, blob);
+  s.check();
+  return s.out();
+}
+
+const rich = [];
+for (let seed = 1; seed <= 300; seed++) rich.push(richScript(seed));
+writeFileSync(join(outDir, "script_rich_corpus.json"), JSON.stringify(rich) + "\n");
+{
+  let actions = 0, checks = 0, peers = 0, marks = 0, unmarks = 0, refused = 0;
+  for (const c of rich) {
+    actions += c.actions.length;
+    peers += c.peers.length;
+    for (const a of c.actions) {
+      if (a.a === "check") checks++;
+      if (a.a === "mark") marks++;
+      if (a.a === "unmark") unmarks++;
+      if (a.refused) refused++;
+    }
+  }
+  console.log(`script_rich_corpus.json: ${rich.length} scripts, ${peers} peers, ${actions} actions, ${marks} marks, ${unmarks} unmarks, ${refused} refused, ${checks} checkpoints`);
+}
+
+const richNamed = [];
+const addRich = (name, peers, build) => {
+  const s = new Script({ name }, peers);
+  s.deltas = ["t", "r"];
+  build(s);
+  s.check();
+  richNamed.push(s.out());
+};
+
+// [8] A mark the range already has makes no op: the same mark again, one
+// inside it, and one over it and its anchors. Another value, or a range
+// that reaches past it, makes one.
+addRich("mark_skip_applied", [1, 2], (s) => {
+  s.textIns(0, "t", 0, "hello world");
+  s.mark(0, "t", 0, 5, "bold", true);
+  s.mark(0, "t", 0, 5, "bold", true);
+  s.mark(0, "t", 1, 3, "bold", true);
+  s.mark(0, "t", 0, 6, "bold", true);
+  s.mark(0, "t", 2, 4, "bold", "x");
+  s.mark(0, "t", 2, 4, "bold", "x");
+  s.mark(0, "t", 0, 3, "link", { href: 1 });
+  s.mark(0, "t", 0, 3, "link", { href: 1 });
+  s.mark(0, "t", 0, 3, "link", { href: 2 });
+  s.mark(0, "t", 5, 8, "italic", 1);
+  s.mark(0, "t", 5, 8, "italic", 1.5);
+  s.check();
+  s.import(1, s.export(0));
+  s.mark(1, "t", 0, 6, "bold", true);
+  s.mark(1, "t", 3, 4, "bold", "x");
+});
+
+// [8] Unmarking a key the range lacks makes no op, configured or not;
+// unmarking one it has makes one, and a second time none. Unmarking a key
+// the range has but the peer has not configured is refused.
+addRich("unmark_absent_key", [1, 2], (s) => {
+  s.textIns(0, "t", 0, "abcdefgh");
+  s.unmark(0, "t", 0, 4, "bold");
+  s.unmark(0, "t", 0, 4, "zzz");
+  s.mark(0, "t", 2, 6, "link", "x");
+  s.unmark(0, "t", 0, 2, "link");
+  s.unmark(0, "t", 0, 4, "link");
+  s.unmark(0, "t", 0, 4, "link");
+  s.mark(0, "t", 6, 8, "italic", true);
+  s.import(1, s.export(0));
+  s.configStyle(1, { bold: "after" });
+  s.unmark(1, "t", 5, 8, "italic");
+  s.unmark(1, "t", 0, 8, "underline");
+});
+
+// [8] Marking a key the peer has not configured is refused and makes no
+// op, until the key is configured. The check comes after the one for a
+// mark the range already has: a peer that has not configured a key can
+// repeat another peer's mark of it, which makes no op, but not change it.
+addRich("mark_unconfigured_key", [1, 2], (s) => {
+  s.textIns(0, "t", 0, "abcdef");
+  s.mark(0, "t", 0, 3, "zzz", 1);
+  s.mark(0, "t", 0, 3, "zzz:1", 1);
+  s.configStyle(0, { zzz: "both", bold: "after" });
+  s.mark(0, "t", 0, 3, "zzz", 1);
+  s.mark(0, "t", 1, 4, "zzz:1", 2);
+  s.mark(0, "t", 2, 5, "italic", true);
+  s.import(1, s.export(0));
+  s.mark(1, "t", 0, 3, "zzz", 1);
+  s.mark(1, "t", 1, 2, "zzz", 1);
+  s.mark(1, "t", 0, 3, "zzz", 2);
+  s.unmark(1, "t", 0, 3, "zzz");
+});
+
+// [8] The info byte of a mark is its key's expand rule; an unmark's is the
+// rule reversed: Before and After stay, Both and None swap. Text inserted
+// at each edge of each mark lands where the rules put it.
+addRich("expand_rules_and_flags", [1, 2], (s) => {
+  s.configStyle(0, { a: "before", b: "after", c: "both", d: "none" });
+  s.configStyle(1, { a: "before", b: "after", c: "both", d: "none" });
+  s.textIns(0, "t", 0, "0123456789abcdefghij");
+  s.mark(0, "t", 1, 3, "a", true);
+  s.mark(0, "t", 5, 7, "b", true);
+  s.mark(0, "t", 9, 11, "c", true);
+  s.mark(0, "t", 13, 15, "d", true);
+  for (const k of [1, 5, 9, 13]) s.textIns(0, "t", k, "<");
+  s.check();
+  for (const k of [5, 10, 15, 20]) s.textIns(0, "t", k, ">");
+  s.check();
+  s.import(1, s.export(0));
+  s.unmark(1, "t", 0, 24, "a");
+  s.unmark(1, "t", 0, 24, "b");
+  s.unmark(1, "t", 0, 24, "c");
+  s.unmark(1, "t", 0, 24, "d");
+  s.textIns(1, "t", 0, "^");
+  s.textIns(1, "t", 25, "$");
+  s.mark(1, "t", 2, 4, "link", 1);
+  s.unmark(1, "t", 2, 4, "link");
+});
+
+// [8] A key with a colon is marked with the configuration of the part
+// before it: "comment:1" as "comment". Overlapping marks of one key decide
+// by (lamport, peer); an unmark of one colon key leaves the other.
+addRich("colon_keys", [1, 2], (s) => {
+  s.configStyle(0, { comment: "before", x: "both" });
+  s.configStyle(1, { comment: "none", x: "after" });
+  s.textIns(0, "t", 0, "commentary here");
+  s.mark(0, "t", 0, 6, "comment:1", { by: "a" });
+  s.mark(0, "t", 3, 9, "comment:2", { by: "b" });
+  s.mark(0, "t", 4, 8, "x:y", [1, 2]);
+  s.mark(0, "t", 0, 2, "bold", true);
+  s.import(1, s.export(0));
+  s.mark(1, "t", 2, 10, "comment:1", "edited");
+  s.unmark(1, "t", 0, 15, "comment:2");
+  s.textIns(1, "t", 0, "+");
+  s.textIns(1, "t", 7, "+");
+});
+
+// [8] ConfigTextStyle replaces the whole configuration: a peer that
+// configures only x can no longer mark bold, until it configures bold.
+addRich("config_replaces_defaults", [1], (s) => {
+  s.textIns(0, "t", 0, "abcdef");
+  s.mark(0, "t", 0, 2, "bold", true);
+  s.configStyle(0, { x: "after" });
+  s.mark(0, "t", 2, 4, "bold", true);
+  s.mark(0, "t", 2, 4, "x", true);
+  s.unmark(0, "t", 0, 1, "bold");
+  s.configStyle(0, { bold: "none", x: "after" });
+  s.mark(0, "t", 3, 6, "bold", true);
+  s.unmark(0, "t", 0, 1, "bold");
+});
+
+// Marks by three peers at once on overlapping ranges, of one key and of
+// several; after the sync, marks that the merged text already has make no
+// op.
+addRich("concurrent_marks", [1, 2, 3], (s) => {
+  s.textIns(0, "t", 0, "shared text body");
+  for (const p of [1, 2]) s.import(p, s.export(0));
+  s.mark(0, "t", 0, 8, "bold", true);
+  s.mark(1, "t", 4, 12, "bold", "two");
+  s.mark(2, "t", 2, 6, "italic", { k: 3 });
+  s.mark(2, "t", 6, 14, "bold", 3);
+  s.textIns(1, "t", 4, "X");
+  const blobs = [0, 1, 2].map((p) => s.export(p));
+  for (const p of [0, 1, 2]) for (const b of blobs) s.import(p, b);
+  s.check();
+  s.mark(0, "t", 7, 9, "bold", 3);
+  s.mark(1, "t", 0, 3, "bold", true);
+  s.unmark(2, "t", 0, 17, "italic");
+});
+
+// A mark's ends go where text inserted there would go, among the anchors
+// of the marks already there; a false or null start anchor keeps new text
+// before it. Deletes across those anchors split around them.
+addRich("mark_ends_among_anchors", [1, 2], (s) => {
+  s.configStyle(0, { a: "before", b: "after", c: "both", d: "none" });
+  s.textIns(0, "t", 0, "abcdefghij");
+  s.mark(0, "t", 2, 5, "a", true);
+  s.mark(0, "t", 2, 5, "b", 1);
+  s.mark(0, "t", 5, 8, "c", "x");
+  s.mark(0, "t", 5, 8, "d", false);
+  s.mark(0, "t", 2, 8, "bold", true);
+  s.mark(0, "t", 5, 5 + 1, "italic", true);
+  s.unmark(0, "t", 4, 6, "a");
+  s.textIns(0, "t", 5, "|");
+  s.textIns(0, "t", 2, "|");
+  s.check();
+  s.import(1, s.export(0));
+  s.textDel(1, "t", 1, 9);
+  s.mark(1, "t", 0, 2, "underline", true);
+  s.textIns(1, "t", 1, "*");
+});
+
+// A mark with a null value is an unmark.
+addRich("mark_null_is_unmark", [1], (s) => {
+  s.textIns(0, "t", 0, "abcdef");
+  s.mark(0, "t", 0, 4, "link", "x");
+  s.mark(0, "t", 1, 3, "link", null);
+  s.mark(0, "t", 4, 6, "link", null);
+});
+
+writeFileSync(join(outDir, "script_rich_named.json"), JSON.stringify(richNamed) + "\n");
+console.log(`script_rich_named.json: ${richNamed.length} scripts: ${richNamed.map((n) => n.name).join(", ")}`);

@@ -166,7 +166,7 @@ func (d *Document) Import(blob []byte) error {
 	if !d.knocked(ruleImportCommits) {
 		d.commit("", 0, false)
 	}
-	b, err := decodeBlob(blob, func() int { d.blockGen--; return d.blockGen })
+	b, err := decodeBlob(blob, !d.knocked(ruleDecodeFold), func() int { d.blockGen--; return d.blockGen })
 	if err != nil {
 		return err
 	}

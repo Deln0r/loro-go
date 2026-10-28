@@ -28,7 +28,7 @@ type decodedBlob struct {
 // blocks as DecodeUpdates and DecodeSnapshot do, and keeps what Import needs
 // beyond the changes: the order of the blocks and of the ops in them, in
 // which loro registers containers, and the snapshot's state section.
-func decodeBlob(blob []byte, nextGen func() int) (*decodedBlob, error) {
+func decodeBlob(blob []byte, fold bool, nextGen func() int) (*decodedBlob, error) {
 	h, err := fast.ParseHeader(blob)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func decodeBlob(blob []byte, nextGen func() int) (*decodedBlob, error) {
 		if err != nil {
 			return nil, err
 		}
-		out.blocks = append(out.blocks, decodedProvenance(chs, nextGen()))
+		out.blocks = append(out.blocks, decodedProvenance(chs, nextGen(), fold))
 	}
 	return out, nil
 }
@@ -76,8 +76,9 @@ func decodeBlob(blob []byte, nextGen func() int) (*decodedBlob, error) {
 // block's own, generation gen, in op order; a one-item list insert inline,
 // which folds like a local one; the items of longer list inserts in one
 // buffer the inserts share, so one can grow in place only when it is the
-// block's only such insert.
-func decodedProvenance(chs []Change, gen int) []*storedChange {
+// block's only such insert. With fold, ops that continue each other are
+// folded as loro reads them (foldDecoded).
+func decodedProvenance(chs []Change, gen int, fold bool) []*storedChange {
 	multi := 0
 	for _, c := range chs {
 		for _, op := range c.Ops {
@@ -104,8 +105,59 @@ func decodedProvenance(chs []Change, gen int) []*storedChange {
 		}
 		c.Deps = depsOrder(c.Deps)
 		block[i] = &storedChange{ch: c, prov: prov}
+		if fold {
+			block[i] = foldDecoded(c, prov)
+		}
 	}
 	return block
+}
+
+// foldDecoded is how decode_block puts each op it reads into its change:
+// RleVec::push (block_encode.rs:791), which folds an op into the one before
+// it when they continue each other. A blob can hold two such ops when the
+// change was put together from parts its exporter imported apart, and loro
+// folds them as it reads them: text inserts whose bytes follow each other
+// in the block's buffer, a list insert after a one-item one (which loro
+// copies into a buffer of its own) or after the block's only longer one
+// (whose buffer it owns), a longer one right after another (they follow
+// each other in the shared buffer), and deletes that continue each other.
+func foldDecoded(c Change, prov []opProv) *storedChange {
+	out := &storedChange{ch: c}
+	out.ch.Ops = make([]Op, 0, len(c.Ops))
+	for j, op := range c.Ops {
+		if n := len(out.ch.Ops); n > 0 {
+			a := provOp{out.ch.Ops[n-1], out.prov[n-1]}
+			if decodedFolds(a, op, prov[j]) {
+				out.ch.Ops[n-1], out.prov[n-1] = foldOps(a, provOp{op, prov[j]})
+				continue
+			}
+		}
+		out.ch.Ops = append(out.ch.Ops, op)
+		out.prov = append(out.prov, prov[j])
+	}
+	return out
+}
+
+// decodedFolds is Op::is_mergable for two ops of one decoded block.
+func decodedFolds(a provOp, b Op, pb opProv) bool {
+	if keyOf(a.op) != keyOf(b) || a.op.Counter+a.op.Len != b.Counter || a.op.VKind != b.VKind {
+		return false
+	}
+	switch {
+	case a.op.VKind == change.VKStr && a.op.Kind == change.CText:
+		return a.prov.kind == provText && pb.kind == provText && a.prov.gen == pb.gen &&
+			a.prov.end == pb.start && a.op.Pos+a.op.Len == b.Pos
+	case isListInsert(a.op):
+		// ValueSlice::is_mergable: a one-item or owned slice, or a shared
+		// slice followed by the next one in its buffer.
+		shared := func(p opProv, op Op) bool { return p.kind == provNone && op.Len > 1 }
+		return a.op.Pos+a.op.Len == b.Pos && (a.prov.kind == provList || shared(a.prov, a.op) && shared(pb, b))
+	case a.op.VKind == change.VKDeleteSeq:
+		x, ok1 := delSpanOf(a.op)
+		y, ok2 := delSpanOf(b)
+		return ok1 && ok2 && x.mergeable(y)
+	}
+	return false
 }
 
 func isListInsert(op Op) bool {

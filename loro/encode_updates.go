@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 	"github.com/Deln0r/loro-go/encoding/fast"
@@ -396,6 +397,9 @@ func checkChange(ch Change) error {
 		}
 		self = true
 	}
+	if !utf8.ValidString(ch.CommitMsg) {
+		return fmt.Errorf("loro: change %d@%d has a commit message that is not UTF-8, which loro refuses", ch.ID.Counter, ch.ID.Peer)
+	}
 	ctr := ch.ID.Counter
 	for _, op := range ch.Ops {
 		if op.Peer != ch.ID.Peer || op.Counter != ctr || op.Lamport != ch.Lamport+(ctr-ch.ID.Counter) {
@@ -442,6 +446,14 @@ func checkOp(op Op) error {
 	if !slices.Contains(kinds, op.VKind) {
 		return fmt.Errorf("loro: op %d@%d writes value kind %d into a %v, which loro does not read", op.Counter, op.Peer, op.VKind, op.Kind)
 	}
+	// loro reads every string as UTF-8 and refuses the blob otherwise: keys
+	// (decode_keys in block_encode.rs), which hold root names, map keys and
+	// mark keys, string values (read_str in encoding/value.rs) and commit
+	// messages (decode_block).
+	if !utf8.ValidString(op.Container) || !utf8.ValidString(op.MapKey) || !utf8Strings(op.Value) {
+		return fmt.Errorf("loro: op %d@%d holds a name, key or string that is not UTF-8, which loro refuses", op.Counter, op.Peer)
+	}
+
 	// What the value names: the element a move or a set addresses by peer
 	// and lamport, the node and parent of a tree op, the container a nested
 	// op is in. loro reads each into a field of fixed width and truncates
@@ -523,6 +535,33 @@ func checkOp(op Op) error {
 		return err
 	}
 	return checkPositions(op)
+}
+
+// utf8Strings reports whether every string an op value holds is UTF-8: a
+// text, any string in a value at any depth, the keys of a map in a value,
+// and a mark's key.
+func utf8Strings(v any) bool {
+	switch x := v.(type) {
+	case string:
+		return utf8.ValidString(x)
+	case []any:
+		for _, e := range x {
+			if !utf8Strings(e) {
+				return false
+			}
+		}
+	case map[string]any:
+		for k, e := range x {
+			if !utf8.ValidString(k) || !utf8Strings(e) {
+				return false
+			}
+		}
+	case MarkInfo:
+		return utf8.ValidString(x.Key) && utf8Strings(x.Value)
+	case ListSetValue:
+		return utf8Strings(x.Value)
+	}
+	return true
 }
 
 // maxSeqPos is the largest position loro's decoder takes in a sequence op:

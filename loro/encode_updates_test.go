@@ -794,6 +794,20 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a tree op with a position", updatesOf(solo(withPos(treeOp("0@1", ""), 3)))},
 		{"a counter step with a position", updatesOf(solo(withPos(rootOp(change.CCounter, "c", change.VKI64, int64(1)), 1)))},
 		{"a map write with a position", updatesOf(solo(withPos(mapWrite("k", int64(1)), 1)))},
+
+		// A string that is not UTF-8: loro-crdt refused each of the text,
+		// the commit message, the map key and the string value as corrupted
+		// data.
+		{"text that is not UTF-8", updatesOf(solo(textIns(0, "\xff")))},
+		{"a commit message that is not UTF-8", updatesOf(func() Change { c := solo(textIns(0, "a")); c.CommitMsg = "\xff"; return c }())},
+		{"a map key that is not UTF-8", updatesOf(solo(mapWrite("\xff", int64(1))))},
+		{"a string value that is not UTF-8", updatesOf(solo(mapWrite("k", "\xff")))},
+		{"a nested key that is not UTF-8", updatesOf(solo(mapWrite("k", map[string]any{"\xff": int64(1)})))},
+		{"a string in a list item that is not UTF-8", updatesOf(solo(rootOp(change.CList, "l", change.VKLoroValue, []any{[]any{"\xff"}})))},
+		{"a mark key that is not UTF-8", updatesOf(solo(markOp(0, 1, "\xff", true)))},
+		{"a mark value that is not UTF-8", updatesOf(solo(markOp(0, 1, "b", "\xff")))},
+		{"a set value that is not UTF-8", updatesOf(solo(setOp(0, "\xff")))},
+		{"a root name that is not UTF-8", updatesOf(solo(rootOp(change.CCounter, "\xff", change.VKI64, int64(1))))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {
@@ -820,6 +834,8 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a backwards delete ending at 0", updatesOf(solo(textDel(1, 0, -2)))},
 		{"a mark ending at 1073741822", updatesOf(solo(markOp(1073741821, 1, "b", true)))},
 		{"a move between the last positions", updatesOf(solo(moveOp(1073741822, 1073741821, 0)))},
+		{"binary that is not UTF-8", updatesOf(solo(mapWrite("k", []byte{0xff})))},
+		{"text beyond the BMP", updatesOf(solo(textIns(0, "😀é")))},
 	}
 	for _, c := range accepted {
 		if _, err := EncodeUpdates(c.u); err != nil {

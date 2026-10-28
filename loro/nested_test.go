@@ -308,3 +308,24 @@ func TestUnreachableNestedNotShown(t *testing.T) {
 		t.Errorf("unreachable container shown: %s", b)
 	}
 }
+
+// TestNestedUnreachableCycleIsIgnored: a Map that holds itself but that no
+// root reaches cannot change the state, so MergeState shows the rest of the
+// document. loro-crdt refuses such a document at import; loro-go only checks
+// the cycles a root reaches.
+func TestNestedUnreachableCycleIsIgnored(t *testing.T) {
+	u := &Updates{Changes: []Change{{
+		ID: ID{Peer: 1, Counter: 0},
+		Ops: []Op{
+			{Container: "m", IsRoot: true, Kind: change.CMap, VKind: change.VKLoroValue, MapKey: "x", Value: int64(1), Peer: 1, Counter: 0, Len: 1},
+			{Container: "1@1", Kind: change.CMap, VKind: change.VKLoroValue, MapKey: "self", Value: change.CMap, Peer: 1, Counter: 1, Lamport: 1, Len: 1},
+		},
+	}}}
+	state, err := MergeState(u)
+	if err != nil {
+		t.Fatalf("MergeState: %v", err)
+	}
+	if got := normalize(state); !reflect.DeepEqual(got, map[string]any{"m": map[string]any{"x": 1.0}}) {
+		t.Errorf("state = %#v", got)
+	}
+}

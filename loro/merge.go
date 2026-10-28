@@ -80,8 +80,9 @@ func numFromF64(f float64) any {
 // container. The parent map holds a binary marker at the key; the child shows
 // there while the marker is the key's value, and never at the top level.
 //
-// A crafted container that is its own ancestor is an error: loro-crdt refuses
-// to import such a document at all.
+// A crafted container that a root reaches and that is its own ancestor is an
+// error: loro-crdt refuses to import such a document at all. A cycle no root
+// reaches cannot change what MergeState shows and is not looked for.
 //
 // Checked against loro-crdt on eight corpora of 300 random histories each in
 // testdata/fixtures: Text and List by one author inserting anywhere, by one

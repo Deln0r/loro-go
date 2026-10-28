@@ -71,6 +71,20 @@ func TestTextDeltaNested(t *testing.T) {
 	}
 }
 
+// TestBuildStateRefusesNested holds BuildState to an error on every history
+// with a container stored as a value, where it used to show the child as its
+// bare kind code, and on a mergeable child, which it would have shown at the
+// top level under its path name.
+func TestBuildStateRefusesNested(t *testing.T) {
+	for _, name := range []string{"nested_note", "nested_in_list", "nested_empty_children", "mergeable_text", "mergeable_empty"} {
+		u := decodeFixture(t, name+".update.bin")
+		state, err := BuildState(u)
+		if err == nil || !strings.Contains(err.Error(), "use MergeState") {
+			t.Errorf("%s: BuildState = %v, %v; want an error pointing at MergeState", name, state, err)
+		}
+	}
+}
+
 // TestMergeableMarker pins the marker against the bytes loro-crdt 1.17.1
 // wrote: for key "body" of root map "m" (fixture mergeable_text), and for key
 // "mt" of the meta map of tree node 7@1 (fixture mergeable_nested). The same

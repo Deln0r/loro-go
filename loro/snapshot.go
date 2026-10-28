@@ -12,7 +12,7 @@ import (
 // DecodeSnapshot decodes a loro-crdt FastSnapshot export. It reads the oplog
 // section (an SSTable), enumerates the 12-byte change-block keys, and decodes
 // each as a change. The DocState and shallow sections are not read (the same
-// state is reconstructed from the oplog via BuildState). Reserved keys
+// state is reconstructed from the oplog via MergeState). Reserved keys
 // vv/fr/sv/sf are skipped. Compressed blocks are not yet supported.
 func DecodeSnapshot(blob []byte) (*Updates, error) {
 	h, err := fast.ParseHeader(blob)

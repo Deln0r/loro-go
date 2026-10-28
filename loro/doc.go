@@ -2,6 +2,7 @@ package loro
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 )
@@ -11,10 +12,24 @@ import (
 // Map -> map, List -> []any). This applies ops in change/op order; it does NOT
 // yet implement the full CRDT merge (Fugue ordering, LWW conflict resolution),
 // so it is correct only for non-concurrent histories such as a single change.
+//
+// It cannot place a container inside another one: it returns an error for an
+// op in a nested container, mergeable children included, and for a value that
+// creates a child container, rather than show the child as its bare kind code.
+//
+// Deprecated: use MergeState, which merges concurrent edits as loro does,
+// reads MovableList, Tree and nested containers, and gives the same state as
+// BuildState on every one-author fixture BuildState is tested on. BuildState
+// applies each op where it lands, in arrival order, so it has nothing to put
+// where a child container sits: the child's value is the merge of every op
+// written into it, which is the work MergeState does.
 func BuildState(u *Updates) (map[string]any, error) {
 	state := map[string]any{}
 	for _, ch := range u.Changes {
 		for _, op := range ch.Ops {
+			if err := unnested(op); err != nil {
+				return nil, err
+			}
 			switch op.Kind {
 			case change.CText:
 				cur, _ := state[op.Container].(string)
@@ -70,6 +85,35 @@ func BuildState(u *Updates) (map[string]any, error) {
 		}
 	}
 	return state, nil
+}
+
+// unnested returns an error for an op BuildState cannot place: one written
+// into a container nested in another, which includes a mergeable child (a
+// root by name only), and one whose value creates a child container, either a
+// container value or a mergeable child's marker.
+func unnested(op Op) error {
+	k := keyOf(op)
+	if !op.IsRoot || isMergeableName(op.Container) {
+		return fmt.Errorf("loro: BuildState cannot place the nested container %s; use MergeState", k)
+	}
+	child := false
+	switch v := op.Value.(type) {
+	case change.ContainerType:
+		child = true
+	case []any:
+		child = slices.ContainsFunc(v, func(e any) bool {
+			_, ok := e.(change.ContainerType)
+			return ok
+		})
+	case []byte:
+		if op.Kind == change.CMap {
+			_, child = newMergeableParent(k).child(op.MapKey, v)
+		}
+	}
+	if child {
+		return fmt.Errorf("loro: BuildState cannot resolve the container op %d@%d creates in %s; use MergeState", op.Counter, op.Peer, k)
+	}
+	return nil
 }
 
 // deleteRange returns where a positional delete starts and how many elements

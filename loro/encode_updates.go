@@ -414,6 +414,39 @@ func checkChange(ch Change) error {
 			return fmt.Errorf("loro: op %d@%d of length %d ends past loro's counter or lamport range", op.Counter, op.Peer, op.Len)
 		}
 		ctr += op.Len
+		if err := checkOp(op); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// opKinds lists, for each kind of container, the value kinds loro reads in
+// it: decode_op in outdated_encode_reordered.rs, which decodes the ops of a
+// Fast block, refuses any other as corrupted data, and encode_op writes only
+// these. A Text holds inserts, deletes and the two ends of a mark (the end
+// is Null), a Map writes and deletes, a List inserts and deletes, a
+// MovableList those and moves and sets, a Tree moves (a create and a delete
+// are moves), and a Counter steps of an i64 or an f64.
+var opKinds = map[change.ContainerType][]change.ValueKind{
+	change.CText:        {change.VKStr, change.VKDeleteSeq, change.VKMarkStart, change.VKNull},
+	change.CMap:         {change.VKLoroValue, change.VKDeleteOnce},
+	change.CList:        {change.VKLoroValue, change.VKDeleteSeq},
+	change.CMovableList: {change.VKLoroValue, change.VKDeleteSeq, change.VKListMove, change.VKListSet},
+	change.CTree:        {change.VKRawTreeMove},
+	change.CCounter:     {change.VKI64, change.VKF64},
+}
+
+// checkOp checks one op against what loro reads back as written.
+func checkOp(op Op) error {
+	kinds, ok := opKinds[op.Kind]
+	if !ok {
+		// loro 1.17 decodes a container kind it does not know into an op it
+		// keeps but cannot apply, and never writes one.
+		return fmt.Errorf("loro: op %d@%d is in a container of kind %d, which loro does not write", op.Counter, op.Peer, op.Kind)
+	}
+	if !slices.Contains(kinds, op.VKind) {
+		return fmt.Errorf("loro: op %d@%d writes value kind %d into a %v, which loro does not read", op.Counter, op.Peer, op.VKind, op.Kind)
 	}
 	return nil
 }

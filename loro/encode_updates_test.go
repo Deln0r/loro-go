@@ -496,31 +496,55 @@ func TestEmitEncodedForJS(t *testing.T) {
 	t.Logf("wrote %d pairs to %s", written, dir)
 }
 
-// TestTreeDeleteHasNoPosition replays the first input FuzzEncodeUpdates
+// TestTreeDeleteHasNoPosition rebuilds the first input FuzzEncodeUpdates
 // found. A tree delete named a position index past its block's positions,
 // which decoded to no fractional index; EncodeUpdates wrote index 0, as loro
 // writes for every delete, and that decoded to the block's first position. A
 // delete has no position: loro writes 0 and its decoder returns the delete
 // before it looks the index up. So DecodeUpdates no longer shows one for a
-// delete either, whatever index the block names, and the round trip holds.
+// delete, whatever index the block names, and the round trip holds. The
+// block here creates node 0@1 at position 80 and deletes it twice, naming
+// index 0 and index 3 of a one-position arena. (The fuzzer's own input put
+// its tree ops in a container of kind 48, which EncodeUpdates now refuses.)
 func TestTreeDeleteHasNoPosition(t *testing.T) {
-	u, err := DecodeUpdates(reseal(corpusInput(t, "FuzzEncodeUpdates", "cad85b9284965ab9")))
+	treeOp := func(m change.RawTreeMove) []byte {
+		var w change.ValueWriter
+		w.RawTreeMove(m)
+		return w.Bytes()
+	}
+	deleted := change.RawTreeMove{ParentPeerIdx: 1, ParentCounter: math.MaxInt32}
+	var values []byte
+	values = append(values, treeOp(change.RawTreeMove{ParentNull: true})...)
+	for _, idx := range []int64{0, 3} {
+		deleted.PositionIdx = idx
+		values = append(values, treeOp(deleted)...)
+	}
+	blk := &change.Block{
+		CounterLen: 3, LamportLen: 3, NChanges: 1,
+		Header: change.EncodeHeader(&change.ChangeHeader{
+			Peers: []uint64{1, math.MaxUint64}, DepOnSelf: []bool{false}, DepLens: []uint64{0},
+		}),
+		ChangeMeta: change.EncodeChangeMeta(&change.ChangeMeta{Timestamps: []int64{0}, CommitMsgs: []string{""}}),
+		CIDs:       change.EncodeContainers([]change.Container{{IsRoot: true, Kind: change.CTree}}),
+		Keys:       change.EncodeKeys([]string{"tr"}),
+		Positions:  change.EncodePositions([][]byte{{0x80}}),
+		Ops: change.EncodeOps(&change.Ops{
+			ContainerIdx: []int64{0, 0, 0}, Prop: []int64{0, 0, 0},
+			ValueKind: []change.ValueKind{change.VKRawTreeMove, change.VKRawTreeMove, change.VKRawTreeMove},
+			Len:       []int64{1, 1, 1},
+		}),
+		Values: values,
+	}
+	u, err := DecodeUpdates(fast.Encode(fast.ModeFastUpdates, change.EncodeFastUpdates([][]byte{change.EncodeBlock(blk)})))
 	if err != nil {
 		t.Fatal(err)
 	}
-	deletes := 0
-	for _, ch := range u.Changes {
-		for _, op := range ch.Ops {
-			if n, ok := op.Value.(TreeNode); ok && isTreeDelete(n) {
-				deletes++
-				if n.FI != "" {
-					t.Errorf("delete %d@%d shows fractional index %q", op.Counter, op.Peer, n.FI)
-				}
-			}
-		}
+	var fis []string
+	for _, op := range u.Changes[0].Ops {
+		fis = append(fis, op.Value.(TreeNode).FI)
 	}
-	if deletes == 0 {
-		t.Fatal("the input holds no tree delete")
+	if want := []string{"80", "", ""}; !slices.Equal(fis, want) {
+		t.Errorf("fractional indexes %q, want %q: a delete has none", fis, want)
 	}
 	blob, err := EncodeUpdates(u)
 	if err != nil {
@@ -638,6 +662,20 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a dependency on counter -1 of the own peer", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 1, Counter: -1}))},
 		{"a dependency on counter -1 of another peer", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 2, Counter: -1}))},
 		{"a dependency on counter 2^31", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 2, Counter: math.MaxInt32 + 1}))},
+
+		// A value kind loro does not read in that kind of container. A map
+		// write of an i64 was written, and loro-crdt refused the blob as
+		// corrupted data.
+		{"an i64 map write", updatesOf(solo(rootOp(change.CMap, "m", change.VKI64, int64(5))))},
+		{"a true map write", updatesOf(solo(rootOp(change.CMap, "m", change.VKTrue, true)))},
+		{"a container index map write", updatesOf(solo(rootOp(change.CMap, "m", change.VKContainer, uint64(0))))},
+		{"a value in a Text", updatesOf(solo(rootOp(change.CText, "t", change.VKLoroValue, []any{int64(1)})))},
+		{"a string in a List", updatesOf(solo(rootOp(change.CList, "l", change.VKStr, "a")))},
+		{"a set in a List", updatesOf(solo(rootOp(change.CList, "l", change.VKListSet, ListSetValue{Value: int64(1)})))},
+		{"a mark in a MovableList", updatesOf(solo(rootOp(change.CMovableList, "ml", change.VKMarkStart, MarkInfo{Len: 1, Key: "b"})))},
+		{"a value in a Tree", updatesOf(solo(rootOp(change.CTree, "tr", change.VKLoroValue, int64(1))))},
+		{"a value in a Counter", updatesOf(solo(rootOp(change.CCounter, "c", change.VKLoroValue, int64(1))))},
+		{"a container of unknown kind", updatesOf(solo(rootOp(change.ContainerType(7), "u", change.VKLoroValue, int64(1))))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {
@@ -652,6 +690,9 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a change ending at lamport 2^32-1", updatesOf(at(solo(textIns(0, "a")), 0, math.MaxUint32-1))},
 		{"a dependency on the own previous op", updatesOf(solo(textIns(0, "a")), withDeps(at(solo(textIns(0, "b")), 1, 1), ID{Peer: 1, Counter: 0}))},
 		{"a dependency on counter 2^31-1", updatesOf(withDeps(solo(textIns(0, "a")), ID{Peer: 2, Counter: math.MaxInt32}))},
+		{"a fractional counter step", updatesOf(solo(rootOp(change.CCounter, "c", change.VKF64, 0.5)))},
+		{"a map delete", updatesOf(solo(rootOp(change.CMap, "m", change.VKDeleteOnce, nil)))},
+		{"a mark's end", updatesOf(solo(rootOp(change.CText, "t", change.VKNull, nil)))},
 	}
 	for _, c := range accepted {
 		if _, err := EncodeUpdates(c.u); err != nil {

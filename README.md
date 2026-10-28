@@ -51,11 +51,13 @@ func main() {
 	again, _ := loro.EncodeUpdates(u)
 	_ = again
 
-	// Or build a document in Go and export bytes loro-crdt can import.
-	d := loro.NewDoc(1)
-	d.TextInsert("title", 0, "hello")
-	d.MapSet("meta", "n", int64(7))
-	out := d.ExportUpdates()
+	// Or keep a live document: import, edit, commit, export.
+	d := loro.NewDocument(1)
+	_ = d.Import(blob)
+	_ = d.Text("title").Insert(0, "hello ") // positions in Unicode code points
+	_ = d.Map("meta").Set("n", int64(7))
+	d.CommitWith(loro.CommitOptions{Message: "edit from Go"})
+	out, _ := d.ExportUpdates() // loro-crdt imports it
 	_ = out
 }
 ```
@@ -75,6 +77,7 @@ func main() {
 - Rich-text `toDelta` (`loro.TextDelta`): the merged text split into styled runs, with overlapping marks of one key decided by (lamport, peer), unmarks, marks whose two anchors arrive in different exports, and style values of any shape. It matches loro-crdt's `toDelta` on 300 of 300 one-author histories, 300 of 300 concurrent ones, and 300 of 300 rich-text histories by one to three peers with marks of all four expand rules, inserts at the edges of styled runs and deletes of the whole text. A Text stored in another container is read by its id, `counter@peer`, and a mergeable one by its root name
 - Values of any shape: objects and arrays nested in list items, map values and style values, with a nested map's keys read and written as indexes into the block's key arena, as loro does
 - Nested containers: a container stored as a map value, a List or MovableList item, or a value in a tree node's meta map shows where its parent holds it, at any depth, as loro's `toJSON` shows it. A child is named by the id of the atom that placed it (the map write, the k-th item of a list insert, the MovableList `set`), so one under a key written over, in a deleted item or on the losing side of two concurrent writes to one key shows nowhere, no nested container shows at the top level, and one never written to shows its kind's empty value. Mergeable children (`ensureMergeableText` and its siblings, loro 1.13 and later) show under their parent's key while its marker is there, never at the top level, and two peers' ensures under one key write into one container. Checked against loro-crdt on 300 of 300 random histories by one to three peers with all six kinds nested up to three levels below a root, and on 14 named fixtures. A crafted container that is its own ancestor is an error when a root reaches it; loro-crdt refuses to import such a document at all, and loro-go shows the rest of a document whose cycle no root reaches
+- A live document, `loro.Document`: import `FastUpdates` and `FastSnapshot` blobs, edit root Text, Map, List and Counter containers through handles, commit with a message or a timestamp, export the whole history. It records what loro-crdt 1.17.1 records for the same edits: ids, lamports, dependencies, timestamps (never below those of the changes depended on), text deletes split where loro splits them, the map writes loro skips and the deletes it keeps, counter steps as I64 or F64 by loro's rule, changes waiting for missing dependencies kept out of the version, the state and the export until those arrive, changes merged and ops folded as loro's change store merges and folds them, and dependencies listed in the order of loro's hash map. Held to loro-crdt on 300 random edit scripts by one to three peers, with commits, messages, timestamps and syncs that deliver whole histories, tails from a version, tails before their prefix, duplicates and snapshots: at all 2554 checks of a peer, its JSON equals loro's `toJSON`, its history holds the same atoms as loro's export of that peer (ids, lamports, containers, positions, values, delete targets, causal pasts), and its export is loro's export byte for byte. 13 named scripts pin loro's rules one by one, and each of 14 rules switched off makes its script fail. loro-crdt imports every final export to the Go peer's state, checked on every CI run. One mutex guards each document, so it can be shared between goroutines. Marks, MovableList, Tree and containers stored in other containers are imported, shown and exported, but not yet edited
 - Encode from scratch: build a document and export `FastUpdates` byte-identical to loro-crdt, except for the key order of a map of two or more keys nested in a value (see Change blocks); loro-crdt imports it to the same document
 - KV/SSTable reader for the snapshot oplog section, with block and meta checksum verification
 - Malformed-input hardening: the decoders are fuzzed and bound every attacker-controlled length and RLE run count, and the key bytes that ops and nested maps reference by index, so a hostile blob errors out instead of panicking, hanging, or allocating without bound
@@ -94,15 +97,15 @@ homeserver on every push. It is a separate Go module, so this library's own
 ## Not yet
 
 - Fast merging of long concurrent branches. An edit made with everything already merged in view (typing, or editing after a sync) resolves at once; one made concurrently with edits already merged is resolved by scanning the merged sequence. Two peers that each made thousands of changes offline therefore cost time proportional to the product of the two, and past 2^28 steps `MergeState` returns an error rather than run on.
-- Writing nested containers: `Doc` builds root Text, Map and List containers only
-- Two root containers of different kinds under one name, such as a Text and a List both called `t`. `TextDelta` keeps them apart, but `MergeState` returns one value per name and can show the other one than loro's `toJSON` does: in the one case checked, loro shows the List and `MergeState` the Text
+- Writing nested containers: `Doc` builds root Text, Map and List containers only, and `Document` edits root Text, Map, List and Counter containers only; marks, MovableList, Tree and child containers come next
+- Two root containers of different kinds under one name, such as a Text and a List both called `t`. `TextDelta` keeps them apart, but `MergeState` returns one value per name and can show the other one than loro's `toJSON` does: in the one case checked, loro shows the List and `MergeState` the Text. `Document.JSON` shows the one loro shows: of the roots of that name in the order loro registered them, the last that is not empty
 
 ## Cross-language fixtures
 
-`testdata/gen` drives `loro-crdt` (npm) to emit binary + JSON fixtures, `testdata/rustgen` emits `serde_columnar` golden column vectors, and `testdata/gen/validate_go.mjs` imports a loro-go-produced blob back into `loro-crdt`. `testdata/gen/gen_encode.mjs` writes the exports the encoder is held to, and `testdata/gen/validate_encode.mjs` imports every re-encoded blob that is not byte-identical next to loro's own. The Go tests assert byte-identity and state equality against these. Regenerate with:
+`testdata/gen` drives `loro-crdt` (npm) to emit binary + JSON fixtures, `testdata/rustgen` emits `serde_columnar` golden column vectors, and `testdata/gen/validate_go.mjs` imports a loro-go-produced blob back into `loro-crdt`. `testdata/gen/gen_encode.mjs` writes the exports the encoder is held to, and `testdata/gen/validate_encode.mjs` imports every re-encoded blob that is not byte-identical next to loro's own. `testdata/gen/gen_scripts.mjs` writes the edit scripts `Document` is held to, with every blob and checkpoint loro-crdt produced running them, and `testdata/gen/validate_document.mjs` imports each Document's final export into loro-crdt. The Go tests assert byte-identity and state equality against these. Regenerate with:
 
 ```
-cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs
+cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs && node gen_scripts.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 

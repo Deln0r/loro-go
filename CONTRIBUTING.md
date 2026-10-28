@@ -63,7 +63,7 @@ The fixture suite is the ground truth. Two harnesses produce it:
 To regenerate:
 
 ```
-cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs
+cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs && node gen_scripts.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 

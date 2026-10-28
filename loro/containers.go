@@ -358,7 +358,8 @@ func (d *Document) holder(k contKey) (contKey, bool) {
 		return parent, isCont && ct == k.kind
 	case op.Kind == KindTree && k.kind == KindMap:
 		// A tree node's meta map, named by the node.
-		return parent, st.tree(parent).alive(k.name)
+		ti := st.tree(parent)
+		return parent, ti.err == nil && ti.alive(k.name)
 	}
 	return parent, false
 }

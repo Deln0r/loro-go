@@ -42,6 +42,7 @@ func (h handle) state() *docState {
 		st = h.st
 	}
 	st.work.steps = 0
+	st.knockTree = h.d.knocked(ruleTreeIncremental)
 	return st
 }
 

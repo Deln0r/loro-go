@@ -21,7 +21,12 @@ type docState struct {
 	// trees is each Tree's shape, built when first asked for and dropped
 	// when a local op changes it.
 	trees map[contKey]*treeIndex
-	work  *seqWork
+	// treeSteps counts the work done on tree indexes, for tests that bound
+	// it; knockTree switches their upkeep off (ruleTreeIncremental): every
+	// local tree op drops the index, and building walks for every op.
+	treeSteps int64
+	knockTree bool
+	work      *seqWork
 	// localOps counts the local ops applied, and localOpsNoted those the
 	// version vector has taken in (Document.noteLocalOps).
 	localOps, localOpsNoted int
@@ -114,8 +119,12 @@ func (s *docState) applyLocal(op Op) (err error) {
 	if m := s.maps[k]; m != nil && op.Kind == change.CMap {
 		m[op.MapKey] = op
 	}
-	if op.Kind == change.CTree {
-		delete(s.trees, k)
+	if t := s.trees[k]; t != nil && op.Kind == change.CTree {
+		if s.knockTree {
+			delete(s.trees, k)
+		} else {
+			t.applyLocal(op)
+		}
 	}
 	return nil
 }

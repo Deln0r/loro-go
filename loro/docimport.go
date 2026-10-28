@@ -97,20 +97,24 @@ func decodeBlob(blob []byte, d *Document) (*decodedBlob, error) {
 // DecodedBlockBuffers): the text of all its inserts in one buffer of the
 // block's own, generation gen, in op order; a one-item list insert inline,
 // which folds like a local one; the items of longer list inserts in one
-// buffer the inserts share, so one can grow in place only when it is the
-// block's only such insert. Ops that continue each other are folded as
+// buffer the inserts share, in op order too, which an insert appends to
+// only once it alone holds it. Ops that continue each other are folded as
 // loro reads them (foldDecoded).
 func decodedProvenance(chs []Change, gen int, d *Document) []*storedChange {
-	multi := 0
+	items := &sharedItems{}
 	for _, c := range chs {
 		for _, op := range c.Ops {
 			if isListInsert(op) && op.Len > 1 {
-				multi++
+				items.holders++
+				items.len += int(op.Len)
 			}
 		}
 	}
+	if d.knocked(ruleSharedOwner) {
+		items.holders++
+	}
 	block := make([]*storedChange, len(chs))
-	off := 0
+	off, at := 0, 0
 	for i, c := range chs {
 		prov := make([]opProv, len(c.Ops))
 		for j, op := range c.Ops {
@@ -119,8 +123,11 @@ func decodedProvenance(chs []Change, gen int, d *Document) []*storedChange {
 				s, _ := op.Value.(string)
 				prov[j] = opProv{kind: provText, gen: gen, start: off, end: off + len(s)}
 				off += len(s)
-			case isListInsert(op) && (op.Len == 1 || multi == 1):
+			case isListInsert(op) && op.Len == 1:
 				prov[j] = opProv{kind: provList}
+			case isListInsert(op):
+				prov[j] = opProv{kind: provShared, buf: items, start: at, end: at + int(op.Len)}
+				at += int(op.Len)
 			default:
 				prov[j] = opProv{kind: provNone}
 			}
@@ -134,15 +141,25 @@ func decodedProvenance(chs []Change, gen int, d *Document) []*storedChange {
 	return block
 }
 
+// checkChanges is checkChange on each change.
+func checkChanges(chs []Change) error {
+	for _, c := range chs {
+		if err := checkChange(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // foldDecoded is how decode_block puts each op it reads into its change:
 // RleVec::push (block_encode.rs:791), which folds an op into the one before
 // it when they continue each other. A blob can hold two such ops when the
 // change was put together from parts its exporter imported apart, and loro
 // folds them as it reads them: text inserts whose bytes follow each other
-// in the block's buffer, a list insert after a one-item one (which loro
-// copies into a buffer of its own) or after the block's only longer one
-// (whose buffer it owns), a longer one right after another (they follow
-// each other in the shared buffer), and deletes that continue each other.
+// in the block's buffer, deletes that continue each other, and list inserts
+// by listFolds. A list insert folded into another lets go of the block's
+// shared buffer, so the one left holding it comes to own it and appends
+// from then on (op.rs ValueSlice::merge, can_append).
 func foldDecoded(c Change, prov []opProv) *storedChange {
 	out := &storedChange{ch: c}
 	out.ch.Ops = make([]Op, 0, len(c.Ops))
@@ -170,26 +187,13 @@ func decodedFolds(a provOp, b Op, pb opProv) bool {
 		return a.prov.kind == provText && pb.kind == provText && a.prov.gen == pb.gen &&
 			a.prov.end == pb.start && a.op.Pos+a.op.Len == b.Pos
 	case isListInsert(a.op):
-		// ValueSlice::is_mergable: a one-item or owned slice, or a shared
-		// slice followed by the next one in its buffer.
-		shared := func(p opProv, op Op) bool { return p.kind == provNone && op.Len > 1 }
-		return a.op.Pos+a.op.Len == b.Pos && (a.prov.kind == provList || shared(a.prov, a.op) && shared(pb, b))
+		return a.op.Pos+a.op.Len == b.Pos && listFolds(a.prov, pb)
 	case a.op.VKind == change.VKDeleteSeq:
 		x, ok1 := delSpanOf(a.op)
 		y, ok2 := delSpanOf(b)
 		return ok1 && ok2 && x.mergeable(y)
 	}
 	return false
-}
-
-// checkChanges is checkChange on each change.
-func checkChanges(chs []Change) error {
-	for _, c := range chs {
-		if err := checkChange(c); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func isListInsert(op Op) bool {

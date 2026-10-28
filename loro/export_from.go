@@ -39,6 +39,7 @@ func (d *Document) ExportUpdatesFrom(from VersionVector) ([]byte, error) {
 // with the same peer's.
 func (l *opLog) exportBlocksFrom(from VersionVector, d *Document) [][]*storedChange {
 	fresh := newChangeStore()
+	held := map[*sharedItems]*sharedItems{}
 	var kept [][]*storedChange // the document's own blocks, for ruleExportRegroup
 	for _, p := range l.store.sortedPeers() {
 		start, _ := from.Get(p)
@@ -55,7 +56,7 @@ func (l *opLog) exportBlocksFrom(from VersionVector, d *Document) [][]*storedCha
 				if c.end() <= start {
 					continue
 				}
-				cut := cutChange(c, start, d)
+				cut := cutChange(c, start, held, d)
 				if d.knocked(ruleExportRegroup) {
 					block = append(block, cut)
 					continue
@@ -81,11 +82,11 @@ func (l *opLog) exportBlocksFrom(from VersionVector, d *Document) [][]*storedCha
 // change when it starts there or later, otherwise Change::slice
 // (change.rs:203), which starts the part one lamport later for each op cut
 // and makes it depend on the op of its own peer just before it.
-func cutChange(c *storedChange, start int64, d *Document) *storedChange {
+func cutChange(c *storedChange, start int64, held map[*sharedItems]*sharedItems, d *Document) *storedChange {
 	if c.start() >= start || d.knocked(ruleExportCut) {
-		return c.clone()
+		return exportedCopy(c, held, d)
 	}
-	out := c.slice(start-c.start(), c.end()-c.start())
+	out := exportedCopy(c, held, d).slice(start-c.start(), c.end()-c.start())
 	if d.knocked(ruleCutDeps) {
 		out.ch.Deps = slices.Clone(c.ch.Deps)
 	}
@@ -93,6 +94,56 @@ func cutChange(c *storedChange, start int64, d *Document) *storedChange {
 		out.setLamport(c.ch.Lamport)
 	}
 	return out
+}
+
+// exportedCopy is a change as an export takes it. loro slices every change
+// it exports, whole ones too (change_store.rs:1118), and a slice of a list
+// insert holds the insert's items beside the document's own op, so the
+// copy never appends to them; copies of slices of one buffer still follow
+// each other in it. held maps the document's buffers to the export's view
+// of them, one per export, so that what the export's store folds leaves
+// the document's buffers alone.
+func exportedCopy(c *storedChange, held map[*sharedItems]*sharedItems, d *Document) *storedChange {
+	out := c.clone()
+	if d.knocked(ruleSliceShares) {
+		return out
+	}
+	for i, op := range out.ch.Ops {
+		p := out.prov[i]
+		switch {
+		case !isListInsert(op):
+		case p.kind == provList && op.Len > 1:
+			// It owned its buffer; the document's op and the copy hold it.
+			out.prov[i] = opProv{kind: provShared, buf: &sharedItems{holders: 2, len: int(op.Len)}, start: 0, end: int(op.Len)}
+		case p.kind == provShared:
+			b, ok := held[p.buf]
+			if !ok {
+				b = &sharedItems{holders: p.buf.holders, len: p.buf.len}
+				held[p.buf] = b
+			}
+			b.holders++
+			out.prov[i].buf = b
+		}
+	}
+	return out
+}
+
+// cutItems is the provenance of a list insert cut into pieces that stay in
+// the document: each piece holds the insert's items (op.rs:562
+// ValueSlice::slice), one more holder than before the cut, so none appends
+// to them while another piece holds them. An insert of one item stays
+// inline, and a text insert keeps its bytes, which fold by where they lie.
+func cutItems(op Op, p opProv, d *Document) opProv {
+	if !isListInsert(op) || op.Len < 2 || d.knocked(ruleSliceShares) {
+		return p
+	}
+	if p.kind == provList {
+		p = opProv{kind: provShared, buf: &sharedItems{holders: 1, len: int(op.Len)}, start: 0, end: int(op.Len)}
+	}
+	if p.kind == provShared {
+		p.buf.holders++
+	}
+	return p
 }
 
 // IDSpan is a range of one peer's ops: the counters from Start up to End,
@@ -156,6 +207,7 @@ func (l *opLog) exportBlocksInRange(spans []IDSpan, d *Document) [][]*storedChan
 		}
 	}
 	var out [][]*storedChange
+	held := map[*sharedItems]*sharedItems{}
 	for _, layer := range layers {
 		fresh := newChangeStore()
 		for _, s := range layer {
@@ -165,7 +217,7 @@ func (l *opLog) exportBlocksInRange(spans []IDSpan, d *Document) [][]*storedChan
 					if from >= to {
 						continue
 					}
-					fresh.insert(c.slice(from-c.start(), to-c.start()), false, 0, d)
+					fresh.insert(exportedCopy(c, held, d).slice(from-c.start(), to-c.start()), false, 0, d)
 				}
 			}
 		}

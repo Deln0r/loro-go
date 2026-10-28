@@ -374,5 +374,7 @@ const (
 	ruleDecodeFold                       // ops that continue each other fold as a block is read
 	ruleFrontiersOrder                   // Frontiers keeps the order of loro's hash map
 	ruleRangeLayers                      // the k-th range of each peer goes into the k-th store
+	ruleSliceShares                      // a slice of a list insert owns no buffer
+	ruleSharedOwner                      // the insert left holding a block's shared items owns them
 	ruleCheckUnfolded                    // a blob's ops are checked as written, before they fold
 )

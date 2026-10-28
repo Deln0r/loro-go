@@ -112,11 +112,25 @@ func canFold(a provOp, b Op, pb opProv, d *Document) bool {
 		if d.knocked(ruleFoldLocalOnly) {
 			return a.op.Pos+a.op.Len == b.Pos
 		}
-		return a.prov.kind == provList && a.op.Pos+a.op.Len == b.Pos
+		return a.op.Pos+a.op.Len == b.Pos && listFolds(a.prov, pb)
 	case a.op.VKind == change.VKDeleteSeq:
 		x, ok1 := delSpanOf(a.op)
 		y, ok2 := delSpanOf(b)
 		return ok1 && ok2 && x.mergeable(y)
+	}
+	return false
+}
+
+// listFolds is ValueSlice::is_mergable for the items of list inserts a and
+// b: a takes any b when it is one item, copied into a buffer of its own, or
+// owns its buffer, and a shared slice takes the slice that follows it in
+// its buffer.
+func listFolds(a, b opProv) bool {
+	switch a.kind {
+	case provList:
+		return true
+	case provShared:
+		return b.kind == provShared && b.buf == a.buf && a.end == b.start || a.buf.owns(a)
 	}
 	return false
 }
@@ -154,6 +168,20 @@ func foldOps(a, b provOp) (Op, opProv) {
 		// the buffer behind the growBuf's back.
 		op.Value = g.list[:len(g.list):len(g.list)]
 		a.prov.grow = g
+		// ValueSlice::merge: a shared slice takes the next one by moving
+		// its end, or, owning its buffer, appends b's items to it; any
+		// other a holds a buffer of its own. b's slice is dropped.
+		if a.prov.kind == provShared {
+			if b.prov.kind == provShared && b.prov.buf == a.prov.buf && a.prov.end == b.prov.start {
+				a.prov.end = b.prov.end
+			} else {
+				a.prov.buf.len += int(b.op.Len)
+				a.prov.end = a.prov.buf.len
+			}
+		}
+		if b.prov.kind == provShared {
+			b.prov.buf.holders--
+		}
 	case change.VKDeleteSeq:
 		x, _ := delSpanOf(a.op)
 		y, _ := delSpanOf(b.op)

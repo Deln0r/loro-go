@@ -35,6 +35,13 @@ const (
 	// loro keeps in a buffer of its own (op.rs ValueSlice::new), or an
 	// imported one of a single item, which it keeps inline.
 	provList
+	// provShared: a list insert whose items are [start, end) of the buffer
+	// buf, which other ops may hold too: the buffer the longer inserts of a
+	// decoded block share, or the buffer of an insert that was cut, whose
+	// pieces each hold it (op.rs ValueSlice::slice). It folds with the slice
+	// that follows it in the same buffer, and by appending to the buffer
+	// once it alone holds it and ends it (ValueSlice::can_append).
+	provShared
 )
 
 // opProv is where one op's value lives: for a local text insert, the arena
@@ -46,7 +53,20 @@ type opProv struct {
 	// grow, when set, holds the op's value with room to grow, so that
 	// folding the next op into it appends in place (txn.go foldOps).
 	grow *growBuf
+	// buf is the buffer a provShared list insert is a slice of.
+	buf *sharedItems
 }
+
+// sharedItems is a buffer of list items that slices of it hold, loro's
+// Arc<Vec<LoroValue>> behind a ValueSlice: how many ops hold it, and how
+// many items it has.
+type sharedItems struct {
+	holders, len int
+}
+
+// owns is ValueSlice::can_append for a slice p of the buffer: the slice
+// ends the buffer and nothing else holds it.
+func (s *sharedItems) owns(p opProv) bool { return s.holders == 1 && p.end == s.len }
 
 // growBuf is the value of an op that ops were folded into, kept with room
 // to grow, as loro keeps a merged op's text in an append-only buffer and
@@ -166,6 +186,10 @@ func sliceOp(op Op, p opProv, span, keep idRange) (provOp, bool) {
 		return provOp{op, p}, false
 	}
 	p.grow = nil
+	if p.kind == provShared {
+		p.start += int(keep.start - span.start)
+		p.end = p.start + int(keep.end-keep.start)
+	}
 	if p.kind == provText {
 		if s, isStr := op.Value.(string); isStr {
 			p.start += runeBytes(s, keep.start-span.start)
@@ -359,6 +383,13 @@ func (s *changeStore) splitThenInsert(c *storedChange, d *Document) {
 			if !ok {
 				break
 			}
+			if fit < cur.op.Len {
+				// loro cuts the op with Op::slice, and each piece of a
+				// list insert holds the op's buffer (op.rs
+				// ValueSlice::slice): none appends to it while another
+				// holds it, and the pieces follow each other in it.
+				cur.prov = cutItems(cur.op, cur.prov, d)
+			}
 			span := idRange{start: cur.op.Counter, end: cur.op.Counter + cur.op.Len}
 			head, _ := sliceOp(cur.op, cur.prov, span, idRange{start: span.start, end: span.start + fit})
 			piece.pushOp(head.op, head.prov, d)
@@ -483,12 +514,30 @@ func (l *opLog) clone() *opLog {
 	if l.fr.tab != nil {
 		out.fr.tab = l.fr.tab.clone()
 	}
+	// The copy holds buffers of its own, so that folds into the log leave
+	// the copy's holders and lengths as they were.
+	bufs := map[*sharedItems]*sharedItems{}
+	copyChange := func(c *storedChange) *storedChange {
+		cc := c.clone()
+		for i, p := range cc.prov {
+			if p.buf == nil {
+				continue
+			}
+			nb, ok := bufs[p.buf]
+			if !ok {
+				nb = &sharedItems{holders: p.buf.holders, len: p.buf.len}
+				bufs[p.buf] = nb
+			}
+			cc.prov[i].buf = nb
+		}
+		return cc
+	}
 	for p, blocks := range l.store.peers {
 		cp := make([]*storeBlock, len(blocks))
 		for i, b := range blocks {
 			nb := &storeBlock{size: b.size, end: b.end, changes: make([]*storedChange, len(b.changes))}
 			for j, c := range b.changes {
-				nb.changes[j] = c.clone()
+				nb.changes[j] = copyChange(c)
 			}
 			cp[i] = nb
 		}
@@ -499,7 +548,7 @@ func (l *opLog) clone() *opLog {
 		for ctr, set := range byCounter {
 			cs := make([]*storedChange, len(set))
 			for i, c := range set {
-				cs[i] = c.clone()
+				cs[i] = copyChange(c)
 			}
 			cp[ctr] = cs
 		}
@@ -793,8 +842,9 @@ func (l *opLog) pendingLamportEnd() int64 {
 // blocks are what the exported blob holds.
 func (l *opLog) exportBlocks(d *Document) [][]*storedChange {
 	fresh := newChangeStore()
+	held := map[*sharedItems]*sharedItems{}
 	for _, c := range l.store.changes() {
-		fresh.insert(c.clone(), false, 0, d)
+		fresh.insert(exportedCopy(c, held, d), false, 0, d)
 	}
 	var out [][]*storedChange
 	for _, p := range fresh.sortedPeers() {

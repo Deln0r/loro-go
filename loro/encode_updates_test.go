@@ -534,3 +534,36 @@ func TestTreeDeleteHasNoPosition(t *testing.T) {
 		t.Error(d)
 	}
 }
+
+// TestBlockFillsToExactly4096 pins where loro closes a block: at an
+// estimated size of 4096 the block still takes the change, past it not
+// (ChangesBlock::push_change, change_store.rs). The fixture's first 819
+// changes are estimated at exactly 4096 together and share a block; the
+// 820th opens a second. EncodeUpdates, grouping on its own, must split them
+// the same way.
+func TestBlockFillsToExactly4096(t *testing.T) {
+	blob := readFixture(t, "encode_block_edge.update.bin")
+	u, err := DecodeUpdates(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []int{819, 1}; !slices.Equal(u.Blocks, want) {
+		t.Fatalf("loro wrote blocks %v, want %v", u.Blocks, want)
+	}
+	est := 0
+	for _, ch := range u.Changes[:819] {
+		est += estimateChange(ch)
+	}
+	if est != maxBlockSize {
+		t.Errorf("the first block is estimated at %d, want exactly %d", est, maxBlockSize)
+	}
+	u.Blocks = nil
+	got, err := EncodeUpdates(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, blob) {
+		back, _ := DecodeUpdates(got)
+		t.Errorf("grouped by EncodeUpdates: blocks %v, loro wrote [819 1]", back.Blocks)
+	}
+}

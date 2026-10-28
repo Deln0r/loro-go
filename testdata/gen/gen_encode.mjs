@@ -4,6 +4,7 @@
 //
 //   ../fixtures/encode_corpus.json        [{ seed, update, expected }]
 //   ../fixtures/encode_in_range.update.bin
+//   ../fixtures/encode_block_edge.update.bin
 //
 // Each corpus history has one to three peers editing a Text (inserts,
 // deletes, backspace runs, marks of each expand rule, unmarks), a Map
@@ -28,6 +29,12 @@
 // encode_in_range.update.bin is an export of two ranges of one peer and one
 // of another (mode "updates-in-range"). loro writes each peer's k-th range
 // into its k-th layer of blocks, so the blocks are not sorted by peer.
+//
+// encode_block_edge.update.bin is one peer's 820 changes whose estimated
+// sizes (Change::estimate_storage_size: 4, plus the text's bytes) add up to
+// exactly 4096 over the first 819: "ab" and then "c" 818 times, each commit
+// with its own message so that none merge. loro fills a block up to and
+// including 4096, so the last change opens a second block.
 //
 // Everything is seeded, so a rerun writes the same bytes.
 import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter } from "loro-crdt/nodejs";
@@ -270,4 +277,19 @@ console.log(`encode_corpus: ${corpus.length} histories`);
   });
   writeFileSync(join(outDir, "encode_in_range.update.bin"), Buffer.from(update));
   console.log(`encode_in_range: ${update.length}B`);
+}
+
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  const t = doc.getText("t");
+  t.insert(0, "ab");
+  doc.commit({ message: "m0" });
+  for (let i = 1; i <= 819; i++) {
+    t.insert(t.length, "c");
+    doc.commit({ message: "m" + i });
+  }
+  const update = doc.export({ mode: "update" });
+  writeFileSync(join(outDir, "encode_block_edge.update.bin"), Buffer.from(update));
+  console.log(`encode_block_edge: ${update.length}B`);
 }

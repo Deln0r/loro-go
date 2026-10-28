@@ -2,6 +2,7 @@ package change
 
 import (
 	"bytes"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -347,5 +348,31 @@ func TestKeyOrderReproducesTheStream(t *testing.T) {
 		if err := w.LoroValue(map[string]any{"a": nil, "b": nil}); err == nil {
 			t.Errorf("key order %q was accepted for keys a, b", bad)
 		}
+	}
+}
+
+// TestKeyOrderMayReuseItsBuffer writes {"a": {"x": 1, "y": 2}, "b": 3} with a
+// KeyOrder that hands out one buffer, refilled on every call. The writer
+// asks for the inner map's order while it is still walking the outer one, so
+// unless it keeps its own copy, the refill turns the outer order [a b] into
+// [x y] halfway through and "b": 3 comes out as "y": null.
+func TestKeyOrderMayReuseItsBuffer(t *testing.T) {
+	val := map[string]any{"a": map[string]any{"x": int64(1), "y": int64(2)}, "b": int64(3)}
+	var a testArena
+	buf := make([]string, 0, 4)
+	w := ValueWriter{Key: a.key, KeyOrder: func(m map[string]any) []string {
+		buf = append(buf[:0], slices.Sorted(maps.Keys(m))...)
+		return buf
+	}}
+	if err := w.LoroValue(val); err != nil {
+		t.Fatal(err)
+	}
+	sorted := ValueWriter{Key: a.key}
+	if err := sorted.LoroValue(val); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(w.Bytes(), sorted.Bytes()) {
+		got, _ := NewValueReader(w.Bytes(), a.keys).LoroValue()
+		t.Errorf("wrote %#v, want %#v", got, val)
 	}
 }

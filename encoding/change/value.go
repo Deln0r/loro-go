@@ -83,16 +83,17 @@ const (
 )
 
 // RecordKeyOrder makes the reader keep the order in which the stream lists
-// the keys of every map nested in a value; KeyOrders returns them. A decoded
-// map does not keep that order, and loro writes it in the order of its hash
-// map, so it is the one thing a re-encoder needs from the original bytes to
-// write them again exactly (see ValueWriter.KeyOrder).
+// the keys of every map nested in a value; KeyOrders returns them. It is for
+// tests and diagnostics. A decoded map does not keep that order, and loro
+// writes it in the order of its hash map, so it is the one thing a re-encoder
+// needs from the original bytes to write them again exactly (see
+// ValueWriter.KeyOrder); loro-go's own tests use it to show that.
 func (v *ValueReader) RecordKeyOrder() { v.recordOrder = true }
 
 // KeyOrders returns the key order of every map nested in the values read so
 // far, one slice per map, in the order the maps begin in the stream: a map
 // comes before the maps nested in it. It is nil unless RecordKeyOrder was
-// called first.
+// called first. It is for tests and diagnostics.
 func (v *ValueReader) KeyOrders() [][]string { return v.orders }
 
 // Empty reports whether the whole values blob has been consumed.
@@ -285,9 +286,12 @@ type ValueWriter struct {
 	Key func(string) uint64
 
 	// KeyOrder, when set, gives the order in which to write the keys of a map
-	// nested in a value. It is called once per map, a map before the maps
-	// nested in it, and must return each of the map's keys exactly once. With
-	// KeyOrder nil the keys are written sorted.
+	// nested in a value; it is for tests and diagnostics, which hand back the
+	// order ValueReader.KeyOrders recorded. It is called once per map, a map
+	// before the maps nested in it, and must return each of the map's keys
+	// exactly once. The writer copies the slice before it writes the map's
+	// values, which call KeyOrder again for maps nested in them, so KeyOrder
+	// may reuse one buffer. With KeyOrder nil the keys are written sorted.
 	KeyOrder func(map[string]any) []string
 }
 
@@ -379,7 +383,10 @@ func (w *ValueWriter) mapKeys(m map[string]any) ([]string, error) {
 	if w.KeyOrder == nil {
 		return slices.Sorted(maps.Keys(m)), nil
 	}
-	order := w.KeyOrder(m)
+	// A copy: writing the values below asks KeyOrder for the maps nested in
+	// them, and a KeyOrder that refills one buffer would overwrite this order
+	// halfway through the walk.
+	order := slices.Clone(w.KeyOrder(m))
 	if len(order) != len(m) {
 		return nil, fmt.Errorf("loro/change: key order names %d keys for a map of %d", len(order), len(m))
 	}

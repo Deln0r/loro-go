@@ -16,12 +16,9 @@ const corpora = [
   "rich_corpus.json",
 ];
 // Known loro.js divergences, each with the upstream report.
+// Crossing concurrent tree moves, which loro.js 0.3.0 got wrong
+// (loro-dev/loro#1182), agree since 0.4.0 and are no longer listed.
 const known = {
-  // Crossing concurrent tree moves left the tree empty, and a move loro skips
-  // came back later: loro-dev/loro#1182, fixed by loro-dev/loro#1205 after
-  // loro.js 0.3.0.
-  tree_crossing_moves: "loro-dev/loro#1182",
-  tree_rejected_stays: "loro-dev/loro#1182",
   // toDelta breaks runs where loro-crdt does not: see runBreaks below.
   rt_struct: "run breaks",
   rt_unmark_alone: "run breaks",

@@ -244,3 +244,13 @@ What in 1.17 touches a reader of these bytes:
   instead of panics on unreadable history, stack safety for deep trees and
   values, arena growth on repeated block parsing, undo fixes and TypeScript
   declarations.
+
+## loro.js 0.4.0 (checked 2026-10-28)
+
+The second oracle, `testdata/gen/lorojs_check.mjs`, was run on all 2152
+documents. The two tree fixtures with crossing concurrent moves, where loro.js
+0.3.0 gave an empty tree (loro-dev/loro#1182), now agree with loro-crdt: 0.4.0
+ships the fix from loro-dev/loro#1205. Their known entries are gone. The
+remaining differences are unchanged: where `toDelta` breaks runs, in 20
+rich-text histories and two fixtures, and a mark whose end anchor was deleted.
+The pin moved to `0.4.0` (Dependabot #21).

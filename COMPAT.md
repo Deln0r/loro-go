@@ -217,3 +217,30 @@ What in 1.16.4 touches a reader of these bytes:
   `revertTo` and undo made all-or-nothing, unknown container types, shallow
   snapshot re-export, movable-list `move`/`set` validation, and two rich-text
   fixes that change where new ops are recorded, not how old ones read.
+
+## loro-crdt 1.17.1 (checked 2026-10-28)
+
+**Result: Fast wire format unchanged.** All 225 fixture files were rewritten by
+the generator under 1.17.1 (1.17.0, out the same day, differs from it only in a
+Rust method signature). 223 are byte-identical. In the other two, the
+concurrent MovableList corpus and the rich-text corpus, 14 of 600 exports
+changed: 1.17 writes two adjacent inserts by one peer as one op where 1.16.4
+wrote two (seed 9 of the MovableList corpus: `[60]` then `[12]` became
+`[60, 12]`). Decoded atom by atom, both versions hold the same ids, lamports,
+values, changes and deps, and the expected states and deltas are unchanged.
+loro-go reads both forms, and re-encodes every new block byte-identically. The
+pin moved to `1.17.1` (Dependabot #20).
+
+What in 1.17 touches a reader of these bytes:
+
+- **Pending updates.** `exportPendingUpdates()` saves remote ops that are still
+  waiting for missing dependencies, in the ordinary updates format. Such a
+  blob holds changes whose deps are not in it. `MergeState` merges it as a
+  partial history: a delete is read by the ids it recorded, and an insert past
+  the end of its author's rebuilt view goes after the view's last element.
+- **History relayed through JSON.** The `UsedOpID` fix concerns JSON import; the
+  Fast format and binary import stay exact.
+- The rest is runtime behaviour: a configurable decoded-value cache, errors
+  instead of panics on unreadable history, stack safety for deep trees and
+  values, arena growth on repeated block parsing, undo fixes and TypeScript
+  declarations.

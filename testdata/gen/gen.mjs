@@ -4,7 +4,7 @@
 //   ../fixtures/<name>.snapshot.bin  FastSnapshot export (full doc)
 //   ../fixtures/<name>.json          doc.toJSON() expected final state
 // Peer IDs are pinned so the bytes are deterministic across runs.
-import { LoroDoc } from "loro-crdt/nodejs";
+import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter, LoroTree } from "loro-crdt/nodejs";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -1278,3 +1278,131 @@ function emitDoc(name, doc) {
   corpus("movable_concurrent_corpus.json", editList, (seed) => 2 + (seed % 2), 32452843);
   corpus("tree_corpus.json", editTree, (seed) => 1 + (seed % 3), 49979687);
 }
+
+// Containers stored as values in other containers. A child container's id is
+// the id of the atom that placed it: the map write, the k-th item of a list
+// insert, or the MovableList set, and its own ops name it by that id. The
+// parent's value is a container kind with no id of its own, so a reader that
+// does not look the child up shows the bare kind code.
+emit("nested_note", (doc) => {
+  const note = doc.getMap("note");
+  note.set("title", "Groceries");
+  const items = note.setContainer("items", new LoroList());
+  items.insert(0, "milk");
+  items.insert(1, "eggs");
+  note.setContainer("body", new LoroText()).insert(0, "milk, eggs");
+});
+
+// A plain item and a Map inserted in a row are one insert op, so the Map is
+// its second item and takes the op's id plus one.
+emit("nested_in_list", (doc) => {
+  const l = doc.getList("l");
+  l.insert(0, "a");
+  const inner = l.insertContainer(1, new LoroMap());
+  inner.set("k", 1);
+  l.insertContainer(2, new LoroText()).insert(0, "t");
+  inner.setContainer("deep", new LoroList()).insert(0, 7);
+});
+
+// A MovableList element's container is named by the op that wrote the value
+// it shows: the insert, or a later set that put another container there. The
+// counter the set replaced keeps its ops and is no longer shown.
+emit("nested_in_movable", (doc) => {
+  const ml = doc.getMovableList("ml");
+  ml.insertContainer(0, new LoroCounter()).increment(3);
+  ml.insert(1, "plain");
+  ml.insertContainer(2, new LoroMap()).set("k", "v");
+  doc.commit();
+  ml.setContainer(0, new LoroText()).insert(0, "x");
+  ml.move(0, 2);
+});
+
+// Children created and never written to show their kind's empty value.
+emit("nested_empty_children", (doc) => {
+  const e = doc.getMap("e");
+  e.setContainer("map", new LoroMap());
+  e.setContainer("list", new LoroList());
+  e.setContainer("text", new LoroText());
+  e.setContainer("tree", new LoroTree());
+  e.setContainer("ml", new LoroMovableList());
+  e.setContainer("counter", new LoroCounter());
+});
+
+// Four levels: a map in a list in a MovableList in a map, edited at each one.
+emit("nested_deep", (doc) => {
+  const root = doc.getMap("m");
+  root.set("n", 0);
+  const ml = root.setContainer("ml", new LoroMovableList());
+  ml.insert(0, 1);
+  const l = ml.insertContainer(1, new LoroList());
+  l.insert(0, "x");
+  const m = l.insertContainer(1, new LoroMap());
+  m.set("k", true);
+  m.setContainer("t", new LoroText()).insert(0, "deep");
+  doc.commit();
+  ml.move(1, 0);
+});
+
+// Containers no longer reachable: a key overwritten with a scalar while
+// another peer goes on writing into the container it held, a key overwritten
+// with another container, a key deleted, a list item deleted, a MovableList
+// element set to a scalar. None of them may show anywhere.
+{
+  const a = new LoroDoc();
+  a.setPeerId(1n);
+  const b = new LoroDoc();
+  b.setPeerId(2n);
+  const m = a.getMap("m");
+  m.setContainer("a", new LoroText()).insert(0, "old");
+  const replaced = m.setContainer("c", new LoroMap());
+  replaced.set("x", 1);
+  a.commit();
+  b.import(a.export({ mode: "update" }));
+  m.set("a", 1);
+  m.setContainer("c", new LoroCounter()).increment(2);
+  m.setContainer("b", new LoroList()).insert(0, 1);
+  m.delete("b");
+  const l = a.getList("l");
+  l.insertContainer(0, new LoroMap()).set("x", 1);
+  l.insert(1, "kept");
+  l.delete(0, 1);
+  const ml = a.getMovableList("ml");
+  ml.insertContainer(0, new LoroText()).insert(0, "gone");
+  ml.set(0, 5);
+  a.commit();
+  b.getMap("m").get("a").insert(3, "er");
+  b.getMap("m").get("c").set("y", 2);
+  b.commit();
+  a.import(b.export({ mode: "update" }));
+  emitDoc("nested_overwritten", a);
+}
+
+// Two peers put a container under one key concurrently: the later (lamport,
+// peer) write wins and the other container, edits and all, is not shown. The
+// two Maps they each insert into the list are both kept.
+emitMerged(
+  "nested_concurrent_set",
+  (d) => {
+    d.getMap("m").setContainer("k", new LoroText()).insert(0, "A");
+    d.getList("l").insertContainer(0, new LoroMap()).set("who", "A");
+  },
+  (d) => {
+    d.getMap("m").setContainer("k", new LoroList()).insert(0, "B");
+    d.getList("l").insertContainer(0, new LoroMap()).set("who", "B");
+  },
+);
+
+// Tree node meta maps holding containers, in a root tree and in a tree that is
+// itself a map value.
+emit("nested_tree_meta", (doc) => {
+  const tr = doc.getTree("tr");
+  const a = tr.createNode();
+  a.data.set("name", "a");
+  a.data.setContainer("notes", new LoroText()).insert(0, "note");
+  const b = tr.createNode(a.id);
+  b.data.setContainer("tags", new LoroList()).insert(0, "x");
+  const inner = doc.getMap("m").setContainer("tree", new LoroTree());
+  const n = inner.createNode();
+  n.data.setContainer("c", new LoroCounter()).increment(4);
+  inner.createNode(n.id);
+});

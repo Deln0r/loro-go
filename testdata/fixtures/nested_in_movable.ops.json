@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "🦜:cid:0@0:Counter"
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:0@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 0,
+            "prop": 0
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:0@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 3,
+            "prop": 0
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "insert",
+            "pos": 1,
+            "value": [
+              "plain",
+              "🦜:cid:4@0:Map"
+            ]
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:4@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "k",
+            "value": "v"
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "set",
+            "elem_id": "L0@0",
+            "value": "🦜:cid:6@0:Text"
+          },
+          "counter": 6
+        },
+        {
+          "container": "cid:6@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "x"
+          },
+          "counter": 7
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "move",
+            "from": 0,
+            "to": 2,
+            "elem_id": "L0@0"
+          },
+          "counter": 8
+        }
+      ]
+    }
+  ]
+}

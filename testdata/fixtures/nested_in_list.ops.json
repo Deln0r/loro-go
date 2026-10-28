@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "a",
+              "🦜:cid:1@0:Map"
+            ]
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:1@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "k",
+            "value": 1
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "insert",
+            "pos": 2,
+            "value": [
+              "🦜:cid:3@0:Text"
+            ]
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:3@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "t"
+          },
+          "counter": 4
+        },
+        {
+          "container": "cid:1@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "deep",
+            "value": "🦜:cid:5@0:List"
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:5@0:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              7
+            ]
+          },
+          "counter": 6
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "tr": [
+    {
+      "parent": null,
+      "index": 0,
+      "meta": {
+        "name": "a",
+        "notes": "note"
+      },
+      "id": "0@1",
+      "fractional_index": "80",
+      "children": [
+        {
+          "parent": "0@1",
+          "index": 0,
+          "meta": {
+            "tags": [
+              "x"
+            ]
+          },
+          "id": "7@1",
+          "fractional_index": "80",
+          "children": []
+        }
+      ]
+    }
+  ],
+  "m": {
+    "tree": [
+      {
+        "parent": null,
+        "index": 0,
+        "meta": {
+          "c": 4
+        },
+        "id": "11@1",
+        "fractional_index": "80",
+        "children": [
+          {
+            "parent": "11@1",
+            "index": 0,
+            "meta": {},
+            "id": "15@1",
+            "fractional_index": "80",
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

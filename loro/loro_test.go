@@ -104,6 +104,12 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		"post_merge_edits", "insert_after_delete", "insert_after_foreign_delete",
 		"insert_concurrent_with_delete", "delete_split_by_dep",
 		"insert_after_mark", "insert_after_foreign_mark", "delete_backwards_split_by_dep",
+		// Containers stored as values: in a map, at the k-th item of a list
+		// insert, in a MovableList element written by an insert or a set, in a
+		// tree node's meta map, four levels deep, and created empty. Ones that
+		// are overwritten, deleted or lose a concurrent write do not show.
+		"nested_note", "nested_in_list", "nested_in_movable", "nested_tree_meta",
+		"nested_deep", "nested_empty_children", "nested_overwritten", "nested_concurrent_set",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

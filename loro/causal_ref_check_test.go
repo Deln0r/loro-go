@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -15,18 +16,27 @@ import (
 )
 
 // refState renders every root Text and List container of u with the brute-force
-// reference, keyed by container name.
+// reference, keyed by container name. A List that holds containers shows their
+// contents where the reference has the bare values, so it is left out: the
+// reference orders sequences, it does not place children.
 func refState(u *Updates) map[string]any {
 	kinds := map[string]change.ContainerType{}
+	holds := map[string]bool{}
 	for _, ch := range u.Changes {
 		for _, op := range ch.Ops {
 			if op.IsRoot && (op.Kind == change.CText || op.Kind == change.CList) {
 				kinds[op.Container] = op.Kind
+				if items, ok := op.Value.([]any); ok && slices.ContainsFunc(items, holdsContainer) {
+					holds[op.Container] = true
+				}
 			}
 		}
 	}
 	out := map[string]any{}
 	for name, kind := range kinds {
+		if holds[name] {
+			continue
+		}
 		isText := kind == change.CText
 		out[name] = normalize(refRender(causalRefSeq(u.Changes, name, isText), isText))
 	}

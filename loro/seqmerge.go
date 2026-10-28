@@ -209,9 +209,16 @@ type seqNode struct {
 // moved from; the element sits at whichever of its positions has the highest
 // writer, and shows the value with the highest writer among its insert and
 // sets. A writer is (lamport, peer), compared in that order.
+//
+// valueID is the id of the atom that wrote the value shown: the insert's atom
+// for the element, or the set, which valueSet records. A container placed in
+// the list takes that id as its own, so a set that puts a new container in an
+// element names it by the set's id, not by the element's.
 type movElem struct {
 	value       any
 	valueWriter writer
+	valueID     ID
+	valueSet    bool
 	pos         *seqNode
 	posWriter   writer
 }
@@ -251,13 +258,6 @@ type seqCursor struct {
 	ok     bool
 	idx    int
 	before int64
-}
-
-// seqKey names a sequence: a container is its name and its kind, since a
-// root Text and a root List may share a name.
-type seqKey struct {
-	name string
-	kind change.ContainerType
 }
 
 func newSeqState(work *seqWork) *seqState {
@@ -335,6 +335,7 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 			if e := s.elems[set.Elem]; e != nil {
 				if w := (writer{op.Lamport, op.Peer}); w.after(e.valueWriter) {
 					e.value, e.valueWriter = set.Value, w
+					e.valueID, e.valueSet = ID{Peer: op.Peer, Counter: op.Counter}, true
 				}
 			}
 		}
@@ -347,7 +348,7 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 		}
 		for k, n := range run {
 			w := writer{op.Lamport + int64(k), op.Peer}
-			e := &movElem{value: items[k], valueWriter: w, pos: n, posWriter: w}
+			e := &movElem{value: items[k], valueWriter: w, valueID: ID{Peer: op.Peer, Counter: n.counter}, pos: n, posWriter: w}
 			n.elem, n.value = e, nil
 			s.elems[ListElem{Peer: op.Peer, Lamport: w.lamport}] = e
 		}
@@ -770,8 +771,8 @@ func (s *seqState) remove(op Op) error {
 	return s.work.spend(len(peerNodes) + 1)
 }
 
-// text renders a Text container, values a List or MovableList: every element
-// no delete removed, anchors left out.
+// text renders a Text container, each a List or MovableList: every element no
+// delete removed, anchors left out.
 func (s *seqState) text() string {
 	var sb strings.Builder
 	for _, n := range s.nodes {
@@ -783,23 +784,26 @@ func (s *seqState) text() string {
 	return sb.String()
 }
 
-func (s *seqState) values() []any {
-	out := []any{}
+// each calls f with the value of every list item no delete removed, in order,
+// and the id of the atom that wrote it: the item's own id in a List, and in a
+// MovableList the insert or set whose value the element shows. A container
+// placed in the list is named by that id. whole says the value is a set's
+// whole value rather than one item of an insert.
+func (s *seqState) each(f func(v any, id ID, whole bool)) {
 	for _, n := range s.nodes {
 		if len(n.deleters) != 0 || n.anchor {
 			continue
 		}
 		if n.elem == nil {
-			out = append(out, n.value)
+			f(n.value, ID{Peer: n.peer, Counter: n.counter}, false)
 			continue
 		}
 		// A MovableList element shows at its current position only; its other
 		// positions are moved-from or lost a concurrent move.
 		if n.elem.pos == n {
-			out = append(out, n.elem.value)
+			f(n.elem.value, n.elem.valueID, n.elem.valueSet)
 		}
 	}
-	return out
 }
 
 // mergeSequences replays every Text, List and MovableList op in (lamport,
@@ -814,7 +818,7 @@ func (s *seqState) values() []any {
 // in constant time; then the view is the whole merged sequence and typing at
 // the end is a lookup at the end. Only an op made concurrently with something
 // already merged needs its causal past from the change DAG and a scan.
-func mergeSequences(all, units []*seqChange, work *seqWork) (map[seqKey]*seqState, error) {
+func mergeSequences(all, units []*seqChange, work *seqWork) (map[contKey]*seqState, error) {
 	ix, err := newCausalIndex(all, work)
 	if err != nil {
 		return nil, err
@@ -848,7 +852,7 @@ func mergeSequences(all, units []*seqChange, work *seqWork) (map[seqKey]*seqStat
 		}
 		return a.Counter < b.Counter
 	})
-	seqs := map[seqKey]*seqState{}
+	seqs := map[contKey]*seqState{}
 	// frontier is the set of maximal ops merged so far. An op whose deps are
 	// exactly this set was made with everything merged in view.
 	var frontier []ID
@@ -874,7 +878,7 @@ func mergeSequences(all, units []*seqChange, work *seqWork) (map[seqKey]*seqStat
 				past = pastView{vv: vv, peer: op.Peer, own: op.Counter}
 			}
 			if isSeqOp(op) {
-				key := seqKey{op.Container, op.Kind}
+				key := keyOf(op)
 				s := seqs[key]
 				if s == nil {
 					s = newSeqState(work)

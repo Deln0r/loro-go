@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "0@0",
+            "parent": null,
+            "fractional_index": "80"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:0@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "name",
+            "value": "a"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:0@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "notes",
+            "value": "🦜:cid:2@0:Text"
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:2@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "note"
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:root-tr:Tree",
+          "content": {
+            "type": "create",
+            "target": "7@0",
+            "parent": "0@0",
+            "fractional_index": "80"
+          },
+          "counter": 7
+        },
+        {
+          "container": "cid:7@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "tags",
+            "value": "🦜:cid:8@0:List"
+          },
+          "counter": 8
+        },
+        {
+          "container": "cid:8@0:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "x"
+            ]
+          },
+          "counter": 9
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "tree",
+            "value": "🦜:cid:10@0:Tree"
+          },
+          "counter": 10
+        },
+        {
+          "container": "cid:10@0:Tree",
+          "content": {
+            "type": "create",
+            "target": "11@0",
+            "parent": null,
+            "fractional_index": "80"
+          },
+          "counter": 11
+        },
+        {
+          "container": "cid:11@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "c",
+            "value": "🦜:cid:12@0:Counter"
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:12@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 0,
+            "prop": 0
+          },
+          "counter": 13
+        },
+        {
+          "container": "cid:12@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 4,
+            "prop": 0
+          },
+          "counter": 14
+        },
+        {
+          "container": "cid:10@0:Tree",
+          "content": {
+            "type": "create",
+            "target": "15@0",
+            "parent": "11@0",
+            "fractional_index": "80"
+          },
+          "counter": 15
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1",
+    "2"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "a",
+            "value": "🦜:cid:0@0:Text"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:0@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "old"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "c",
+            "value": "🦜:cid:4@0:Map"
+          },
+          "counter": 4
+        },
+        {
+          "container": "cid:4@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "x",
+            "value": 1
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "a",
+            "value": 1
+          },
+          "counter": 6
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "c",
+            "value": "🦜:cid:7@0:Counter"
+          },
+          "counter": 7
+        },
+        {
+          "container": "cid:7@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 0,
+            "prop": 0
+          },
+          "counter": 8
+        },
+        {
+          "container": "cid:7@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 2,
+            "prop": 0
+          },
+          "counter": 9
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "b",
+            "value": "🦜:cid:10@0:List"
+          },
+          "counter": 10
+        },
+        {
+          "container": "cid:10@0:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              1
+            ]
+          },
+          "counter": 11
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "delete",
+            "key": "b"
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "🦜:cid:13@0:Map"
+            ]
+          },
+          "counter": 13
+        },
+        {
+          "container": "cid:13@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "x",
+            "value": 1
+          },
+          "counter": 14
+        },
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "insert",
+            "pos": 1,
+            "value": [
+              "kept"
+            ]
+          },
+          "counter": 15
+        },
+        {
+          "container": "cid:root-l:List",
+          "content": {
+            "type": "delete",
+            "pos": 0,
+            "len": 1,
+            "start_id": "13@0"
+          },
+          "counter": 16
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "🦜:cid:17@0:Text"
+            ]
+          },
+          "counter": 17
+        },
+        {
+          "container": "cid:17@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "gone"
+          },
+          "counter": 18
+        },
+        {
+          "container": "cid:root-ml:MovableList",
+          "content": {
+            "type": "set",
+            "elem_id": "L17@0",
+            "value": 5
+          },
+          "counter": 22
+        }
+      ]
+    },
+    {
+      "id": "0@1",
+      "timestamp": 0,
+      "deps": [
+        "5@0"
+      ],
+      "lamport": 6,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:0@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 3,
+            "text": "er"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:4@0:Map",
+          "content": {
+            "type": "insert",
+            "key": "y",
+            "value": 2
+          },
+          "counter": 2
+        }
+      ]
+    }
+  ]
+}

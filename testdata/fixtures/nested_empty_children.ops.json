@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-e:Map",
+          "content": {
+            "type": "insert",
+            "key": "map",
+            "value": "🦜:cid:0@0:Map"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-e:Map",
+          "content": {
+            "type": "insert",
+            "key": "list",
+            "value": "🦜:cid:1@0:List"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:root-e:Map",
+          "content": {
+            "type": "insert",
+            "key": "text",
+            "value": "🦜:cid:2@0:Text"
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-e:Map",
+          "content": {
+            "type": "insert",
+            "key": "tree",
+            "value": "🦜:cid:3@0:Tree"
+          },
+          "counter": 3
+        },
+        {
+          "container": "cid:root-e:Map",
+          "content": {
+            "type": "insert",
+            "key": "ml",
+            "value": "🦜:cid:4@0:MovableList"
+          },
+          "counter": 4
+        },
+        {
+          "container": "cid:root-e:Map",
+          "content": {
+            "type": "insert",
+            "key": "counter",
+            "value": "🦜:cid:5@0:Counter"
+          },
+          "counter": 5
+        },
+        {
+          "container": "cid:5@0:Counter",
+          "content": {
+            "type": "counter",
+            "value_type": "f64",
+            "value": 0,
+            "prop": 0
+          },
+          "counter": 6
+        }
+      ]
+    }
+  ]
+}

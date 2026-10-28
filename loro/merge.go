@@ -64,6 +64,19 @@ func numFromF64(f float64) any {
 // loro orders them. A Text or List delete removes the elements at its position
 // in its author's view, as loro's import applies it.
 //
+// A container stored as a value in another one, a Text under a map key or a
+// Map in a List, shows where its parent holds it, at any depth, tree nodes'
+// meta maps included. loro gives such a child the id of the atom that placed
+// it (the map write, the k-th item of a list insert, the MovableList set)
+// and names the child's ops by that id, so what shows is the child the
+// parent's current value names. A child under a key written over, in a
+// deleted list item or on the losing side of two concurrent writes to one
+// key keeps its ops and shows nowhere, and no nested container shows at the
+// top level. A child with no ops shows its kind's empty value, as in loro.
+//
+// A crafted container that is its own ancestor is an error: loro-crdt refuses
+// to import such a document at all.
+//
 // Checked against loro-crdt on six corpora of 300 random histories each in
 // testdata/fixtures: Text and List by one author inserting anywhere, by one
 // author with deletes, backspace runs and marks, and by two or three peers
@@ -95,18 +108,16 @@ func MergeState(u *Updates) (map[string]any, error) {
 
 // cinfo is one container's ops, duplicates clipped away, in arrival order.
 type cinfo struct {
-	kind   change.ContainerType
-	isRoot bool
-	ops    []Op
+	ops []Op
 }
 
-// collected is a history ready to merge: each container's ops, and every
-// change as it arrived with the ops that were new in it. The sequence merge
-// needs to know which change an op came from, since that change's deps say
-// what its author had seen.
+// collected is a history ready to merge: each container's ops, in the order
+// the containers first appeared, and every change as it arrived with the ops
+// that were new in it. The sequence merge needs to know which change an op
+// came from, since that change's deps say what its author had seen.
 type collected struct {
-	conts  map[string]*cinfo
-	order  []string
+	conts  map[contKey]*cinfo
+	order  []contKey
 	copies []*seqChange
 	units  []*seqChange
 }
@@ -132,8 +143,8 @@ type collected struct {
 // So each incoming op is clipped to the sub-ranges not already consumed, and
 // dropped only when its whole range is covered.
 func collect(u *Updates) collected {
-	conts := map[string]*cinfo{}
-	var order []string
+	conts := map[contKey]*cinfo{}
+	var order []contKey
 
 	type spanKey struct {
 		peer      uint64
@@ -161,11 +172,12 @@ func collect(u *Updates) collected {
 				continue
 			}
 
-			ci := conts[op.Container]
+			ck := keyOf(op)
+			ci := conts[ck]
 			if ci == nil {
-				ci = &cinfo{kind: op.Kind, isRoot: op.IsRoot}
-				conts[op.Container] = ci
-				order = append(order, op.Container)
+				ci = &cinfo{}
+				conts[ck] = ci
+				order = append(order, ck)
 			}
 			for _, r := range fresh {
 				clipped, ok := clipOp(op, span, r)
@@ -191,85 +203,29 @@ func collect(u *Updates) collected {
 // parameter, so a test can reach it without a huge input.
 func mergeState(u *Updates, seqLimit int) (map[string]any, error) {
 	c := collect(u)
-	conts, order := c.conts, c.order
 	seqs, err := mergeSequences(c.copies, c.units, &seqWork{limit: seqLimit})
 	if err != nil {
 		return nil, err
 	}
 
-	// buildOne reconstructs a single non-tree container's value.
-	buildOne := func(name string, ci *cinfo) (any, error) {
-		switch ci.kind {
-		case change.CMap:
-			ops := sortedOps(ci.ops)
-			m := map[string]any{}
-			for _, op := range ops { // ascending order => last write wins = max(lamport,peer)
-				if op.VKind == change.VKDeleteOnce {
-					delete(m, op.MapKey)
-					continue
-				}
-				m[op.MapKey] = op.Value
-			}
-			return m, nil
-		case change.CText:
-			if s := seqs[seqKey{name, ci.kind}]; s != nil {
-				return s.text(), nil
-			}
-			return "", nil
-		case change.CList:
-			if s := seqs[seqKey{name, ci.kind}]; s != nil {
-				return s.values(), nil
-			}
-			return []any{}, nil
-		case change.CMovableList:
-			if s := seqs[seqKey{name, ci.kind}]; s != nil {
-				return s.values(), nil
-			}
-			return []any{}, nil
-		case change.CCounter:
-			return counterValue(ci.ops), nil
-		default:
-			return nil, fmt.Errorf("loro: merge unsupported container kind %v", ci.kind)
-		}
-	}
-
-	built := map[string]any{}
-	// Non-root Map containers are tree-node meta maps, keyed by node id "counter@peer".
-	metaMaps := map[string]map[string]any{}
-	// Pass 1: every container except trees, which need the meta maps built first.
-	for _, name := range order {
-		ci := conts[name]
-		if ci.kind == change.CTree {
+	// The top level shows root containers, one per name: the kind whose ops
+	// arrived first. A container nested in another one is not a root at all.
+	var roots []contKey
+	named := map[string]bool{}
+	for _, k := range c.order {
+		if !k.root || named[k.name] {
 			continue
 		}
-		val, err := buildOne(name, ci)
-		if err != nil {
-			return nil, err
-		}
-		built[name] = val
-		if !ci.isRoot {
-			if m, ok := val.(map[string]any); ok {
-				metaMaps[name] = m
-			}
-		}
+		named[k.name] = true
+		roots = append(roots, k)
 	}
-	// Pass 2: trees, inlining each node's meta map by node id.
-	for _, name := range order {
-		if conts[name].kind == change.CTree {
-			tree, err := buildTree(conts[name].ops, metaMaps)
-			if err != nil {
-				return nil, err
-			}
-			built[name] = tree
-		}
+	r := &resolver{conts: c.conts, seqs: seqs, vals: map[contKey]any{}, state: map[contKey]uint8{}}
+	if err := r.resolve(roots); err != nil {
+		return nil, err
 	}
-
-	// Only root containers appear at the top level; nested ones are inlined above.
-	state := map[string]any{}
-	for _, name := range order {
-		if conts[name].isRoot {
-			state[name] = built[name]
-		}
+	state := make(map[string]any, len(roots))
+	for _, k := range roots {
+		state[k.name] = r.vals[k]
 	}
 	return state, nil
 }
@@ -292,8 +248,10 @@ const (
 )
 
 // buildTree reconstructs loro's Tree toJSON: a nested list of nodes ordered by
-// (fractional_index, lamport, peer) among siblings. metaMaps holds each node's meta map
-// (the node's data sub-container) keyed by node id; absent nodes get an empty meta.
+// (fractional_index, lamport, peer) among siblings. Each node's meta is its
+// data map, a Map container named by the node's id; meta is called with the id
+// and the node, and fills in the node's "meta" key, now or once that map is
+// built.
 //
 // Every tree op is a move. Creating a node moves a new node in; deleting one
 // moves it under deletedTreeRoot. So the state is not the set of ops but the
@@ -313,7 +271,7 @@ const (
 // a fatal error Go cannot recover from, reachable by honest concurrent edits.
 // None of the fixtures moved or deleted a node; the fuzzer found the cycle once
 // it was allowed below the checksum.
-func buildTree(ops []Op, metaMaps map[string]map[string]any) ([]any, error) {
+func buildTree(ops []Op, meta func(id string, node map[string]any)) ([]any, error) {
 	type placement struct {
 		parent    string // meaningful only when hasParent
 		hasParent bool
@@ -436,18 +394,15 @@ func buildTree(ops []Op, metaMaps map[string]map[string]any) ([]any, error) {
 			if k.hasParent {
 				parentVal = k.parent
 			}
-			meta := metaMaps[k.id]
-			if meta == nil {
-				meta = map[string]any{}
-			}
-			out = append(out, map[string]any{
+			node := map[string]any{
 				"parent":           parentVal,
 				"index":            float64(len(out)),
-				"meta":             meta,
 				"id":               k.id,
 				"fractional_index": k.fi,
-				"children":         build(k.id),
-			})
+			}
+			meta(k.id, node)
+			node["children"] = build(k.id)
+			out = append(out, node)
 		}
 		return out
 	}

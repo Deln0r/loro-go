@@ -53,7 +53,7 @@ func TextDelta(u *Updates, container string) ([]DeltaOp, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := seqs[seqKey{container, change.CText}]
+	s := seqs[contKey{root: true, name: container, kind: change.CText}]
 	if s == nil {
 		return nil, nil
 	}

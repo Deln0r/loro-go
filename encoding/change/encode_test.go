@@ -27,6 +27,7 @@ func TestFileRoundTrip(t *testing.T) {
 		"tree_simple", "tree_meta", "tree_wide", "mlist",
 		"richtext", "rt_one", "rt_two", "rt_overlap",
 		"rt_struct",
+		"nested_in_list", "nested_in_movable", "nested_tree_meta",
 	} {
 		orig, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
 		if err != nil {

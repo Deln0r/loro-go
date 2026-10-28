@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-note:Map",
+          "content": {
+            "type": "insert",
+            "key": "title",
+            "value": "Groceries"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:root-note:Map",
+          "content": {
+            "type": "insert",
+            "key": "items",
+            "value": "🦜:cid:1@0:List"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:1@0:List",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "value": [
+              "milk",
+              "eggs"
+            ]
+          },
+          "counter": 2
+        },
+        {
+          "container": "cid:root-note:Map",
+          "content": {
+            "type": "insert",
+            "key": "body",
+            "value": "🦜:cid:4@0:Text"
+          },
+          "counter": 4
+        },
+        {
+          "container": "cid:4@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "milk, eggs"
+          },
+          "counter": 5
+        }
+      ]
+    }
+  ]
+}

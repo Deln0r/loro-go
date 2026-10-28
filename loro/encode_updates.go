@@ -40,8 +40,8 @@ import (
 // changes of one peer. When it is nil, they are grouped the way loro's export
 // groups changes it does not merge (change_store.rs): sorted by peer and
 // counter, one peer's consecutive changes share a block until its estimated
-// size would pass loro's MAX_BLOCK_SIZE of 4096, and changes of one peer must
-// not overlap. On every plain export in the fixtures that grouping is loro's
+// size would pass loro's MAX_BLOCK_SIZE of 4096. Either way, a peer's changes
+// must not overlap, and must come out in counter order. On every plain export in the fixtures that grouping is loro's
 // own, long histories included; an export of id ranges is not grouped that
 // way, and needs Blocks.
 func EncodeUpdates(u *Updates) ([]byte, error) {
@@ -61,6 +61,9 @@ func encodeUpdates(u *Updates, keyOrder func(map[string]any) []string) ([]byte, 
 	}
 	blocks, err := groupBlocks(u)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkPeerOrder(blocks); err != nil {
 		return nil, err
 	}
 	raw := make([][]byte, len(blocks))
@@ -116,10 +119,6 @@ func groupBlocks(u *Updates) ([][]Change, error) {
 		est := estimateChange(ch)
 		if i > 0 {
 			prev := chs[i-1]
-			if ch.ID.Peer == prev.ID.Peer && ch.ID.Counter < changeEnd(prev) {
-				return nil, fmt.Errorf("loro: changes %d@%d and %d@%d overlap",
-					prev.ID.Counter, prev.ID.Peer, ch.ID.Counter, ch.ID.Peer)
-			}
 			// ChangesBlock::push_change: a change joins the block unless the
 			// two sizes together pass the limit. A peer's next change after a
 			// gap cannot join it at all.
@@ -135,6 +134,28 @@ func groupBlocks(u *Updates) ([][]Change, error) {
 		blocks = append(blocks, chs[start:])
 	}
 	return blocks, nil
+}
+
+// checkPeerOrder requires every peer's changes to come out in counter order
+// without overlapping, across blocks as within them. loro keeps the ids it
+// imports first and drops what a later change repeats: loro-crdt 1.17.1
+// showed "a" for two changes at 0@1 in separate blocks, "a" then "b", and
+// "ab" for changes at 0@1 ("ab") and 1@1 ("c"), losing the "c". A later
+// range written first it does import, holding it until the earlier one
+// arrives, but its exports never do that, layers of id ranges included, so
+// neither does EncodeUpdates.
+func checkPeerOrder(blocks [][]Change) error {
+	ends := map[uint64]Change{}
+	for _, b := range blocks {
+		for _, ch := range b {
+			if prev, ok := ends[ch.ID.Peer]; ok && ch.ID.Counter < changeEnd(prev) {
+				return fmt.Errorf("loro: change %d@%d overlaps or comes before change %d@%d, written ahead of it",
+					ch.ID.Counter, ch.ID.Peer, prev.ID.Counter, prev.ID.Peer)
+			}
+			ends[ch.ID.Peer] = ch
+		}
+	}
+	return nil
 }
 
 // changeEnd is the counter just past a change's last op.

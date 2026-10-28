@@ -808,6 +808,13 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a mark value that is not UTF-8", updatesOf(solo(markOp(0, 1, "b", "\xff")))},
 		{"a set value that is not UTF-8", updatesOf(solo(setOp(0, "\xff")))},
 		{"a root name that is not UTF-8", updatesOf(solo(rootOp(change.CCounter, "\xff", change.VKI64, int64(1))))},
+
+		// One peer's changes overlapping, or out of order, in separate
+		// blocks: of two changes at 0@1, loro-crdt kept the first.
+		{"one id in two blocks", &Updates{Changes: []Change{solo(textIns(0, "a")), solo(textIns(0, "b"))}, Blocks: []int{1, 1}}},
+		{"overlapping changes in two blocks", &Updates{Changes: []Change{solo(textIns(0, "ab")), at(solo(textIns(0, "c")), 1, 1)}, Blocks: []int{1, 1}}},
+		{"a peer's later change first", &Updates{Changes: []Change{at(solo(textIns(0, "b")), 5, 5), solo(textIns(0, "a"))}, Blocks: []int{1, 1}}},
+		{"overlapping changes grouped by EncodeUpdates", updatesOf(solo(textIns(0, "ab")), at(solo(textIns(0, "c")), 1, 1))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {
@@ -836,6 +843,9 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a move between the last positions", updatesOf(solo(moveOp(1073741822, 1073741821, 0)))},
 		{"binary that is not UTF-8", updatesOf(solo(mapWrite("k", []byte{0xff})))},
 		{"text beyond the BMP", updatesOf(solo(textIns(0, "😀é")))},
+		{"two ranges of a peer in order, another peer between", &Updates{Changes: []Change{
+			solo(textIns(0, "a")), func() Change { c := solo(textIns(0, "x")); c.ID.Peer, c.Ops[0].Peer = 2, 2; return c }(), at(solo(textIns(0, "b")), 5, 5),
+		}, Blocks: []int{1, 1, 1}}},
 	}
 	for _, c := range accepted {
 		if _, err := EncodeUpdates(c.u); err != nil {

@@ -115,6 +115,7 @@ func TestMergeStateMatchesToJSON(t *testing.T) {
 		// nested and tree-node maps with escaped keys, empty ones, and the
 		// marker deciding which kind shows and whether any does.
 		"mergeable_text", "mergeable_concurrent", "mergeable_nested", "mergeable_empty", "mergeable_marker",
+		"nested_text_delta",
 	} {
 		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
 		if err != nil {

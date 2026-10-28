@@ -1,0 +1,14 @@
+[
+  {
+    "insert": "a"
+  },
+  {
+    "insert": "b",
+    "attributes": {
+      "bold": true
+    }
+  },
+  {
+    "insert": "c"
+  }
+]

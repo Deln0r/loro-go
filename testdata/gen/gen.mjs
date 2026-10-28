@@ -1477,3 +1477,26 @@ emit("mergeable_marker", (doc) => {
   doc.commit();
   m.ensureMergeableText("z");
 });
+
+// toDelta of a nested Text, addressed by its id, and of a mergeable Text,
+// addressed by its root name.
+{
+  const doc = new LoroDoc();
+  doc.setPeerId(1n);
+  doc.configTextStyle({ bold: { expand: "after" } });
+  const m = doc.getMap("m");
+  const nested = m.setContainer("t", new LoroText());
+  nested.insert(0, "hello world");
+  nested.mark({ start: 0, end: 5 }, "bold", true);
+  const merged = m.ensureMergeableText("mt");
+  merged.insert(0, "abc");
+  merged.mark({ start: 1, end: 2 }, "bold", true);
+  doc.commit();
+  emitDoc("nested_text_delta", doc);
+  const replay = new LoroDoc();
+  replay.import(doc.export({ mode: "update" }));
+  const ids = { nested: nested.id, mergeable: merged.id };
+  writeFileSync(join(outDir, "nested_text_delta.nested.delta.json"), JSON.stringify(replay.getContainerById(ids.nested).toDelta(), null, 2) + "\n");
+  writeFileSync(join(outDir, "nested_text_delta.mergeable.delta.json"), JSON.stringify(replay.getContainerById(ids.mergeable).toDelta(), null, 2) + "\n");
+  console.log(`nested_text_delta: ids=${JSON.stringify(ids)}`);
+}

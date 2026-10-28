@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "start_version": {},
+  "peers": [
+    "1"
+  ],
+  "changes": [
+    {
+      "id": "0@0",
+      "timestamp": 0,
+      "deps": [],
+      "lamport": 0,
+      "msg": null,
+      "ops": [
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "t",
+            "value": "🦜:cid:0@0:Text"
+          },
+          "counter": 0
+        },
+        {
+          "container": "cid:0@0:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "hello world"
+          },
+          "counter": 1
+        },
+        {
+          "container": "cid:0@0:Text",
+          "content": {
+            "type": "mark",
+            "start": 0,
+            "end": 5,
+            "style_key": "bold",
+            "style_value": true,
+            "info": 132
+          },
+          "counter": 12
+        },
+        {
+          "container": "cid:0@0:Text",
+          "content": {
+            "type": "mark_end"
+          },
+          "counter": 13
+        },
+        {
+          "container": "cid:root-m:Map",
+          "content": {
+            "type": "insert",
+            "key": "mt",
+            "value": [
+              0,
+              76,
+              77,
+              1,
+              2,
+              175,
+              247,
+              181
+            ]
+          },
+          "counter": 14
+        },
+        {
+          "container": "cid:root-🤝:$m>mt:Text",
+          "content": {
+            "type": "insert",
+            "pos": 0,
+            "text": "abc"
+          },
+          "counter": 15
+        },
+        {
+          "container": "cid:root-🤝:$m>mt:Text",
+          "content": {
+            "type": "mark",
+            "start": 1,
+            "end": 2,
+            "style_key": "bold",
+            "style_value": true,
+            "info": 132
+          },
+          "counter": 18
+        },
+        {
+          "container": "cid:root-🤝:$m>mt:Text",
+          "content": {
+            "type": "mark_end"
+          },
+          "counter": 19
+        }
+      ]
+    }
+  ]
+}

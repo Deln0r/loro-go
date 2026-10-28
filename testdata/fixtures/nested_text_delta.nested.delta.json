@@ -1,0 +1,11 @@
+[
+  {
+    "insert": "hello",
+    "attributes": {
+      "bold": true
+    }
+  },
+  {
+    "insert": " world"
+  }
+]

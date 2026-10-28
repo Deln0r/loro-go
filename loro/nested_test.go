@@ -19,6 +19,7 @@ var nestedFixtures = []string{
 	"nested_note", "nested_in_list", "nested_in_movable", "nested_tree_meta",
 	"nested_deep", "nested_empty_children", "nested_overwritten", "nested_concurrent_set",
 	"mergeable_text", "mergeable_concurrent", "mergeable_nested", "mergeable_empty", "mergeable_marker",
+	"nested_text_delta",
 }
 
 // TestNestedFromSnapshot reads the same histories from loro's FastSnapshot
@@ -48,6 +49,24 @@ func TestNestedFromSnapshot(t *testing.T) {
 		}
 		if got := normalize(state); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s snapshot state:\n got  %#v\n want %#v", name, got, want)
+		}
+	}
+}
+
+// TestTextDeltaNested reads the delta of a Text stored under a map key, by its
+// id "counter@peer", and of a mergeable Text, by its root name.
+func TestTextDeltaNested(t *testing.T) {
+	u := decodeFixture(t, "nested_text_delta.update.bin")
+	for container, file := range map[string]string{
+		"0@1":     "nested_text_delta.nested.delta.json",
+		"🤝:$m>mt": "nested_text_delta.mergeable.delta.json",
+	} {
+		delta, err := TextDelta(u, container)
+		if err != nil {
+			t.Fatalf("%s: %v", container, err)
+		}
+		if got, want := deltaJSON(delta), readDelta(t, file); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s delta:\n got  %#v\n want %#v", container, got, want)
 		}
 	}
 }

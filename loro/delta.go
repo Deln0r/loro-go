@@ -32,6 +32,15 @@ type markEnd struct{}
 // into runs by the styles over it. It merges u as MergeState does, so it
 // assumes the same of u and stops at the same step limit.
 //
+// container names the Text the way loro's container id does. A root Text is
+// named by its name, and so is a mergeable one (map.ensureMergeableText),
+// whose root name loro builds from the path to it: "🤝:$m>body" for key
+// "body" of root map "m". A Text nested in a map, a list or a MovableList is
+// named by its id, "counter@peer", the id of the op or list item that placed
+// it. A root name is looked up first, so a root Text that happens to be
+// called "3@1" hides the nested Text with that id. The result is the
+// container's delta whether or not the document still shows it.
+//
 // A mark is a pair of anchors in the merged sequence, placed like characters,
 // and it styles the text between them. A mark whose end anchor is missing, as
 // in an export that stops between the two, or was deleted styles nothing, as
@@ -54,6 +63,9 @@ func TextDelta(u *Updates, container string) ([]DeltaOp, error) {
 		return nil, err
 	}
 	s := seqs[contKey{root: true, name: container, kind: change.CText}]
+	if s == nil {
+		s = seqs[contKey{name: container, kind: change.CText}]
+	}
 	if s == nil {
 		return nil, nil
 	}

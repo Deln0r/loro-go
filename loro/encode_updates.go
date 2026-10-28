@@ -23,27 +23,34 @@ import (
 // bytes differ and loro-crdt imports them to the same document.
 //
 // Every Change is written as one change, ops as given: EncodeUpdates neither
-// merges nor splits changes or ops. It checks what loro's format assumes of
-// them:
+// merges nor splits changes or ops. It refuses, with an error, what loro
+// would read back otherwise than written, or refuse:
 //
 //   - a change has at least one op, and its ops follow one another: the first
 //     starts at the change's ID, each next one where the one before it ends,
 //     each carries the change's peer and the lamport its place in the change
-//     gives it, and an insert or a delete is as long as what it inserts or
-//     removes;
+//     gives it;
+//   - an insert is as long as what it inserts, a delete as what it removes,
+//     and every other op is one atom;
+//   - each container kind holds only the value kinds loro reads in it, and
+//     loro's six container kinds are the only ones written;
 //   - a dependency on the author's own peer names the op just before the
 //     change, because loro stores it as a flag, and there is at most one;
-//   - counters, lamports and dependency counters fit loro's 32-bit fields.
+//   - counters, lamports and every id a value names fit loro's fields: an
+//     i32 counter, a u32 lamport;
+//   - a Text, List or MovableList position lies in [0, 1073741822], the range
+//     loro's decoder takes, and an op that carries no position has 0;
+//   - every name, key, string and commit message is UTF-8.
 //
 // When u.Blocks is set, as DecodeUpdates sets it, the changes are written in
 // those blocks and in that order, and each block must hold consecutive
 // changes of one peer. When it is nil, they are grouped the way loro's export
 // groups changes it does not merge (change_store.rs): sorted by peer and
 // counter, one peer's consecutive changes share a block until its estimated
-// size would pass loro's MAX_BLOCK_SIZE of 4096. Either way, a peer's changes
-// must not overlap, and must come out in counter order. On every plain export in the fixtures that grouping is loro's
-// own, long histories included; an export of id ranges is not grouped that
-// way, and needs Blocks.
+// size would pass loro's MAX_BLOCK_SIZE of 4096. On every plain export in the
+// fixtures that grouping is loro's own, long histories included; an export of
+// id ranges is not grouped that way, and needs Blocks. Either way, a peer's
+// changes must come out in counter order without overlapping.
 func EncodeUpdates(u *Updates) ([]byte, error) {
 	return encodeUpdates(u, nil)
 }

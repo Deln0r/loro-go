@@ -422,10 +422,12 @@ writeFileSync(join(outDir, "versions_corpus.json"), JSON.stringify(corpus) + "\n
 //
 //   text_ins {p, c, pos, s}   text_del {p, c, pos, n}   mark {p, c, start, end, k, v}
 //   map_set  {p, c, k, v}     list_ins {p, c, pos, v: [items]}   inc {p, c, v}
-//   commit   {p, msg?}        import {p, blob}
+//   commit   {p, msg?}        import {p, blob, refused?}
 //   version  {p, vv, frontiers, fb}   vv and fb index blobs: the encoded
 //            oplogVersion() and encodeFrontiers(oplogFrontiers()), taken
 //            without a commit
+//   export_range {p, spans, blob}  export({mode: "updates-in-range"}) with
+//            spans as [peer, counter, len]
 //   export_from {p, from, blob}   from indexes the encoded version vector
 //            exported from, blob the export; with panicked, loro-crdt
 //            panicked instead, and the Go export must equal the export from
@@ -476,6 +478,18 @@ class Script {
     this.docs[p].import(bytes);
     this.actions.push({ a: "import", p, blob: this.blobs.add(bytes) });
   }
+  // importRefused records a blob loro-crdt refuses: the Go peer must refuse
+  // it too.
+  importRefused(p, bytes) {
+    let err;
+    try {
+      this.docs[p].import(bytes);
+    } catch (e) {
+      err = String(e);
+    }
+    if (err === undefined) throw new Error(`${this.name}: loro-crdt imported a blob expected to be refused`);
+    this.actions.push({ a: "import", p, blob: this.blobs.add(bytes), refused: err.slice(0, 120) });
+  }
   // version records peer p's version and frontiers and returns the
   // version vector.
   version(p) {
@@ -505,6 +519,10 @@ class Script {
       console.error = report;
     }
     this.actions.push(a);
+  }
+  exportRange(p, spans) {
+    const bytes = this.docs[p].export({ mode: "updates-in-range", spans: spans.map(([peer, counter, len]) => ({ id: { peer, counter }, len })) });
+    this.actions.push({ a: "export_range", p, spans, blob: this.blobs.add(bytes) });
   }
   out() {
     return { name: this.name, peers: this.peers, actions: this.actions, blobs: this.blobs.list };
@@ -725,6 +743,171 @@ add("export_regroups_blocks", [1], (s) => {
     s.commit(0);
     s.version(0);
     s.exportFrom(0, vvOf([[s.peers[1], 1]]));
+  });
+}
+
+// A list insert that owns its buffer appends what folds into it; one whose
+// items others hold too does not, and folds only with the slice that
+// follows it in the same buffer (op.rs ValueSlice::is_mergable,
+// can_append, slice).
+//
+// The blob, written by loro-go's Doc, holds three list inserts in one
+// change, [1, 2], [3, 4] and [5], which loro-crdt only writes when it put
+// the change together from parts. Reading it, loro folds the second into
+// the first, which follow each other in the block's shared buffer; the
+// first then holds that buffer alone, owns it, and appends the third.
+add("decoded_list_inserts_fold", [9], (s) => {
+  s.import(0, Buffer.from("bG9ybwAAAAAAAAAAAAAAAOjdLQQABEwABQAFARABAQAAAAAAAAABAQAAAAAABQEAAAEABgEEAQEAAAIBbAASAQQCBgAEAQAEBAIGCwQEAgEBABAHAgMBAwIHAgMDAwQHAQMF", "base64"));
+  s.version(0);
+  s.exportFrom(0, new VersionVector());
+});
+
+// An export slices the changes it takes, and a slice of a list insert
+// holds the insert's items beside the document's op: the first change cut
+// at 1020 keeps two items it cannot append to, so the next change's insert
+// stays an op of its own. Cutting a big insert to fit the change store's
+// blocks makes pieces that hold one buffer: they fold with each other
+// again, and no later insert appends to them.
+add("list_slices_share_their_items", [1], (s) => {
+  for (let i = 0; i < 1022; i++) s.listIns(0, "l", i, [i]);
+  s.commit(0);
+  s.listIns(0, "l", 1022, [1022]);
+  s.mapSet(0, "m", "x", 1);
+  s.commit(0);
+  s.exportFrom(0, vvOf([[1, 1020]]));
+  s.exportRange(0, [["1", 1020, 4]]);
+  for (let i = 0; i < 1100; i++) s.listIns(0, "big", i, [i]);
+  s.commit(0);
+  s.listIns(0, "big", 1100, [1100]);
+  s.commit(0);
+  s.version(0);
+  s.exportFrom(0, new VersionVector());
+  s.exportFrom(0, vvOf([[1, 1500]]));
+});
+
+// loro checks each op's positions as it reads it, before it folds the op
+// into the one before it (outdated_encode_reordered.rs:546). Two deletes at
+// position 1073741822, the last loro reads, fold into one that ends past
+// it; loro takes the change, as pending since its dependency is missing.
+add("ops_checked_before_folding", [9], (s) => {
+  s.import(0, Buffer.from("bG9ybwAAAAAAAAAAAAAAABRRc8kABEsCAgICAREBAQAAAAAAAAAAAQEAAAAAAAUBAAABAAYBBAEBAAACAWwAEwEEAgQABwP8////BwACBAkCBAENAQMCBAADAwACAwMCAAA=", "base64"));
+  s.version(0);
+});
+
+// A snapshot whose stored version vector and frontiers are not what its
+// changes make: loro installs them as they are decoded (loro_dag.rs:643),
+// asking only that each frontier lie in some change (change_store.rs:1244).
+// The snapshot is rebuilt with its oplog's "vv" and "fr" entries replaced:
+// a version vector with an entry of counter 0, a frontier on an op that is
+// not its change's last, and one past every change, which loro refuses.
+{
+  const xxh32 = (data) => {
+    const P1 = 2654435761, P2 = 2246822519, P3 = 3266489917, P4 = 668265263, P5 = 374761393;
+    const rotl = (x, r) => ((x << r) | (x >>> (32 - r))) >>> 0;
+    const le = (i) => (data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24)) >>> 0;
+    const seed = 0x4f524f4c;
+    const n = data.length;
+    let h, i = 0;
+    if (n >= 16) {
+      const round = (acc, x) => Math.imul(rotl((acc + Math.imul(x, P2)) >>> 0, 13), P1) >>> 0;
+      let v1 = (seed + P1 + P2) >>> 0, v2 = (seed + P2) >>> 0, v3 = seed, v4 = (seed - P1) >>> 0;
+      for (; i <= n - 16; i += 16) {
+        v1 = round(v1, le(i)); v2 = round(v2, le(i + 4)); v3 = round(v3, le(i + 8)); v4 = round(v4, le(i + 12));
+      }
+      h = (rotl(v1, 1) + rotl(v2, 7) + rotl(v3, 12) + rotl(v4, 18)) >>> 0;
+    } else h = (seed + P5) >>> 0;
+    h = (h + n) >>> 0;
+    for (; i <= n - 4; i += 4) h = Math.imul(rotl((h + Math.imul(le(i), P3)) >>> 0, 17), P4) >>> 0;
+    for (; i < n; i++) h = Math.imul(rotl((h + Math.imul(data[i], P5)) >>> 0, 11), P1) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), P2) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), P3) >>> 0;
+    return (h ^ (h >>> 16)) >>> 0;
+  };
+  const u32le = (b, i) => b.readUInt32LE(i);
+  // The entries of an SSTable whose blocks are not compressed
+  // (crates/kv-store/src/sstable.rs, block.rs).
+  const readSSTable = (b) => {
+    const metaOff = u32le(b, b.length - 4);
+    const meta = b.subarray(metaOff, b.length - 4);
+    const num = u32le(meta, 0);
+    const metas = [];
+    let p = 4;
+    for (let i = 0; i < num; i++) {
+      const offset = u32le(meta, p); p += 4;
+      const fk = meta.readUInt16LE(p); p += 2;
+      const firstKey = meta.subarray(p, p + fk); p += fk;
+      const flags = meta[p]; p += 1;
+      if ((flags & 0x7f) !== 0) throw new Error("compressed SSTable block");
+      const large = (flags & 0x80) !== 0;
+      if (!large) { const lk = meta.readUInt16LE(p); p += 2 + lk; }
+      metas.push({ offset, firstKey, large });
+    }
+    const entries = [];
+    metas.forEach((m, i) => {
+      const end = i + 1 < metas.length ? metas[i + 1].offset : metaOff;
+      const data = b.subarray(m.offset, end - 4);
+      if (m.large) { entries.push([Buffer.from(m.firstKey), Buffer.from(data)]); return; }
+      const n = data.readUInt16LE(data.length - 2);
+      const dataEnd = data.length - 2 * (n + 1);
+      const offs = [];
+      for (let k = 0; k < n; k++) offs.push(data.readUInt16LE(dataEnd + 2 * k));
+      for (let k = 0; k < n; k++) {
+        const st = offs[k], en = k + 1 < n ? offs[k + 1] : dataEnd;
+        if (k === 0) { entries.push([Buffer.from(m.firstKey), Buffer.from(data.subarray(st, en))]); continue; }
+        const prefix = data[st], suffix = data.readUInt16LE(st + 1);
+        const key = Buffer.concat([m.firstKey.subarray(0, prefix), data.subarray(st + 3, st + 3 + suffix)]);
+        entries.push([key, Buffer.from(data.subarray(st + 3 + suffix, en))]);
+      }
+    });
+    return entries;
+  };
+  // An SSTable of the entries, sorted, each in a large block of its own.
+  const writeSSTable = (entries) => {
+    const parts = [Buffer.from("LORO"), Buffer.from([0])];
+    let off = 5;
+    const meta = [];
+    for (const [key, value] of entries) {
+      const sum = Buffer.alloc(4); sum.writeUInt32LE(xxh32(value));
+      parts.push(value, sum);
+      meta.push({ off, key });
+      off += value.length + 4;
+    }
+    const m = [];
+    for (const { off: o, key } of meta) {
+      const h = Buffer.alloc(6); h.writeUInt32LE(o); h.writeUInt16LE(key.length, 4);
+      m.push(h, key, Buffer.from([0x80]));
+    }
+    const body = Buffer.concat(m);
+    const head = Buffer.alloc(4); head.writeUInt32LE(meta.length);
+    const sum = Buffer.alloc(4); sum.writeUInt32LE(xxh32(body));
+    const tail = Buffer.alloc(4); tail.writeUInt32LE(off);
+    return Buffer.concat([...parts, head, body, sum, tail]);
+  };
+  // The snapshot with the oplog entries named in replace changed.
+  const rewrite = (snap, replace) => {
+    const s = Buffer.from(snap);
+    const body = s.subarray(22);
+    const oplogLen = u32le(body, 0);
+    const entries = readSSTable(body.subarray(4, 4 + oplogLen)).map(([k, v]) => [k, replace[k.toString("latin1")] ?? v]);
+    const oplog = writeSSTable(entries);
+    const len = Buffer.alloc(4); len.writeUInt32LE(oplog.length);
+    const out = Buffer.concat([s.subarray(0, 22), len, oplog, body.subarray(4 + oplogLen)]);
+    out.writeUInt32LE(xxh32(out.subarray(20)), 16);
+    return out;
+  };
+  add("snapshot_stored_version_installed", [9, 1], (s) => {
+    s.textIns(1, "t", 0, "ab");
+    s.commit(1);
+    const snap = s.docs[1].export({ mode: "snapshot" });
+    // Version vector {1: 2, 2: 0}, frontiers [0@1].
+    s.import(0, rewrite(snap, { vv: Buffer.from([2, 1, 4, 2, 0]), fr: Buffer.from([1, 1, 0]) }));
+    s.version(0);
+    s.textIns(0, "t", 0, "z");
+    s.commit(0);
+    s.version(0);
+    s.exportFrom(0, new VersionVector());
+    // A frontier past every change: loro refuses the snapshot.
+    s.importRefused(0, rewrite(snap, { fr: Buffer.from([1, 1, 14]) }));
   });
 }
 

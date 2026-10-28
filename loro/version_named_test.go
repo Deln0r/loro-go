@@ -30,6 +30,10 @@ type versionsAction struct {
 	FB        int             `json:"fb"`
 	From      int             `json:"from"`
 	Panicked  bool            `json:"panicked"`
+	// Refused is loro-crdt's error when it refused the import.
+	Refused string `json:"refused"`
+	// Spans are an export_range's spans, as [peer, counter, len].
+	Spans [][3]any `json:"spans"`
 }
 
 // versionsNamedResult counts the checks of one named script.
@@ -100,6 +104,13 @@ func runVersionsScript(s *script, knock ruleSet, emit func(d *Document, from, go
 			}
 		case "import":
 			err = d.Import(blobs[a.Blob])
+			if a.Refused != "" {
+				if err == nil {
+					err = fmt.Errorf("imported what loro-crdt refused (%s)", a.Refused)
+				} else {
+					err = nil
+				}
+			}
 		case "version":
 			r.versions++
 			got, want := d.Version().Encode(), blobs[a.VV]
@@ -144,6 +155,30 @@ func runVersionsScript(s *script, knock ruleSet, emit func(d *Document, from, go
 			} else {
 				kind, why := classifyExport(got, want)
 				r.fail("%s: export from % x differs in %s: %s", where, blobs[a.From], kind, why)
+			}
+		case "export_range":
+			r.exports++
+			var spans []IDSpan
+			for _, x := range a.Spans {
+				id, e := jsID([2]any{x[0], x[1]})
+				if e != nil {
+					err = e
+					break
+				}
+				n, _ := x[2].(float64)
+				spans = append(spans, IDSpan{Peer: id.Peer, Start: id.Counter, End: id.Counter + int64(n)})
+			}
+			var got []byte
+			if err == nil {
+				got, err = d.ExportUpdatesInRange(spans)
+			}
+			if err == nil {
+				if bytes.Equal(got, blobs[a.Blob]) {
+					r.exportsOK++
+				} else {
+					kind, why := classifyExport(got, blobs[a.Blob])
+					r.fail("%s: export of %v differs in %s: %s", where, spans, kind, why)
+				}
 			}
 		default:
 			err = fmt.Errorf("unknown action")
@@ -194,6 +229,10 @@ func TestVersionsNamedNeedTheirRules(t *testing.T) {
 		{ruleLocalReserve, "local_op_grows_full_map"},
 		{ruleLocalReserve, "local_op_in_full_map"},
 		{ruleSnapshotVersion, "snapshot_brings_version"},
+		{ruleSnapshotVersion, "snapshot_stored_version_installed"},
+		{ruleSharedOwner, "decoded_list_inserts_fold"},
+		{ruleSliceShares, "list_slices_share_their_items"},
+		{ruleCheckUnfolded, "ops_checked_before_folding"},
 	} {
 		s := scripts[c.script]
 		if s == nil {

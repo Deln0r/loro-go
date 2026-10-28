@@ -190,11 +190,35 @@ func (d *Document) Import(blob []byte) error {
 	// whose diff its state cannot apply.
 	saved := d.save()
 	snapshotInPlace := b.snapshot && d.canTakeSnapshot()
+	registerOps := func(c *storedChange) {
+		for _, op := range c.ch.Ops {
+			if op.IsRoot && !isMergeableName(op.Container) {
+				d.register(keyOf(op))
+			}
+		}
+	}
 	if snapshotInPlace {
 		// loro replaces the state of an empty document with the snapshot's
 		// (loro.rs:745 decode_snapshot), so a root acquired before is gone
-		// and the roots the snapshot's state holds are there.
+		// and the roots the snapshot's state holds are there. Which of two
+		// roots of one name and different kinds shows depends on the order
+		// loro registers them, which its lazy loading of the change store
+		// decides. Registering the roots the ops name, peer by peer in the
+		// order of the snapshot's version vector and each peer's ops in
+		// order, before the state's, gives what loro-crdt shows for every
+		// one-peer history (a Counter then a Map called r shows the Map,
+		// as after an update import) and for 178 of 200 random three-peer
+		// histories, measured; the state's order first gave 62 of 200.
 		clear(d.acquired)
+		for _, id := range b.vv.t.ids() {
+			for _, block := range b.blocks {
+				for _, c := range block {
+					if c.ch.ID.Peer == id.Peer {
+						registerOps(c)
+					}
+				}
+			}
+		}
 		for _, k := range b.stateRoots {
 			d.register(k)
 			d.acquired[k] = true
@@ -202,11 +226,7 @@ func (d *Document) Import(blob []byte) error {
 	}
 	for _, block := range b.blocks {
 		for _, c := range block {
-			for _, op := range c.ch.Ops {
-				if op.IsRoot && !isMergeableName(op.Container) {
-					d.register(keyOf(op))
-				}
-			}
+			registerOps(c)
 		}
 	}
 	if b.snapshot && !snapshotInPlace {

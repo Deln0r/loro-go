@@ -1729,5 +1729,23 @@ addStruct("get_container_by_id", [1, 2, 3], (s) => {
   s.exists(2, waiting);
 });
 
+// Roots of one name and different kinds, read back by a peer that takes
+// the author's snapshot and by one that takes its updates: of two that are
+// not empty, the one whose op came last shows, either way.
+addStruct("typed_roots_after_snapshot", [1, 2, 3], (s) => {
+  X.inc(s, 0, "cid:root-a:Counter", 6);
+  X.set(s, 0, "cid:root-a:Map", "k", 1);
+  X.set(s, 0, "cid:root-b:Map", "k", 1);
+  X.inc(s, 0, "cid:root-b:Counter", 6);
+  X.inc(s, 0, "cid:root-c:Counter", 6);
+  X.create(s, 0, "cid:root-c:Tree", null);
+  X.inc(s, 0, "cid:root-e:Counter", 6);
+  X.mlIns(s, 0, "cid:root-e:MovableList", 0, [1]);
+  X.text(s, 0, "cid:root-f:Text", 0, "a");
+  X.lins(s, 0, "cid:root-f:List", 0, 1);
+  s.import(1, s.snapshot(0));
+  s.import(2, s.export(0));
+});
+
 writeFileSync(join(outDir, "script_struct_named.json"), JSON.stringify(structNamed) + "\n");
 console.log(`script_struct_named.json: ${structNamed.length} scripts: ${structNamed.map((n) => n.name).join(", ")}`);

@@ -495,3 +495,42 @@ func TestEmitEncodedForJS(t *testing.T) {
 	}
 	t.Logf("wrote %d pairs to %s", written, dir)
 }
+
+// TestTreeDeleteHasNoPosition replays the first input FuzzEncodeUpdates
+// found. A tree delete named a position index past its block's positions,
+// which decoded to no fractional index; EncodeUpdates wrote index 0, as loro
+// writes for every delete, and that decoded to the block's first position. A
+// delete has no position: loro writes 0 and its decoder returns the delete
+// before it looks the index up. So DecodeUpdates no longer shows one for a
+// delete either, whatever index the block names, and the round trip holds.
+func TestTreeDeleteHasNoPosition(t *testing.T) {
+	u, err := DecodeUpdates(reseal(corpusInput(t, "FuzzEncodeUpdates", "cad85b9284965ab9")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletes := 0
+	for _, ch := range u.Changes {
+		for _, op := range ch.Ops {
+			if n, ok := op.Value.(TreeNode); ok && isTreeDelete(n) {
+				deletes++
+				if n.FI != "" {
+					t.Errorf("delete %d@%d shows fractional index %q", op.Counter, op.Peer, n.FI)
+				}
+			}
+		}
+	}
+	if deletes == 0 {
+		t.Fatal("the input holds no tree delete")
+	}
+	blob, err := EncodeUpdates(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := DecodeUpdates(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := diffUpdates(u, back); d != "" {
+		t.Error(d)
+	}
+}

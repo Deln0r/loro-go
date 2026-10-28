@@ -1,7 +1,10 @@
 package loro
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,5 +100,54 @@ func FuzzDecodeBlock(f *testing.F) {
 		u := &Updates{Changes: chs}
 		_, _ = BuildState(u)
 		_, _ = MergeState(u)
+	})
+}
+
+// FuzzEncodeUpdates holds EncodeUpdates to DecodeUpdates on whatever decodes.
+// Encoding the decoded changes may fail, with an error, when they break a rule
+// loro's format assumes (a change without ops, ops that leave a gap, a
+// dependency on the author's own peer that is not its previous op, a counter
+// past 32 bits), which a block can say and loro never writes. Otherwise the
+// blob it gives must decode to the same changes in the same blocks, and
+// encoding those again must give the same bytes. It starts from every update
+// fixture and every history of the encoder corpus, so the mutations begin from
+// every op kind, child containers, commit messages and blocks of many changes.
+func FuzzEncodeUpdates(f *testing.F) {
+	seedFuzz(f, ".update.bin")
+	if raw, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "encode_corpus.json")); err == nil {
+		var corpus []struct {
+			Update string `json:"update"`
+		}
+		if json.Unmarshal(raw, &corpus) == nil {
+			for _, c := range corpus {
+				if b, err := base64.StdEncoding.DecodeString(c.Update); err == nil {
+					f.Add(b)
+				}
+			}
+		}
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		u, err := DecodeUpdates(reseal(data))
+		if err != nil {
+			return
+		}
+		blob, err := EncodeUpdates(u)
+		if err != nil {
+			return
+		}
+		back, err := DecodeUpdates(blob)
+		if err != nil {
+			t.Fatalf("the encoded blob does not decode: %v", err)
+		}
+		if d := diffUpdates(u, back); d != "" {
+			t.Fatalf("decoding the encoded blob gave other changes: %s", d)
+		}
+		again, err := EncodeUpdates(back)
+		if err != nil {
+			t.Fatalf("the decoded changes do not encode again: %v", err)
+		}
+		if !bytes.Equal(again, blob) {
+			t.Fatalf("encoding the decoded changes again gave other bytes:\n got  % x\n want % x", again, blob)
+		}
 	})
 }

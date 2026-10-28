@@ -135,3 +135,26 @@ func TestRichTextCorpusAgainstLoro(t *testing.T) {
 		t.Errorf("%d of %d rich-text histories diverge from loro-crdt", len(seeds), len(corpus))
 	}
 }
+
+// TestNestedCorpusAgainstLoro replays 300 random histories by one to three
+// peers in which containers of all six kinds are stored as values: put under
+// map keys, inserted into Lists and MovableLists, a burst at a time so that one
+// insert op holds several, set over MovableList elements, and nested up to
+// three levels below a root, with edits inside each, keys overwritten and
+// list items deleted while they hold containers, containers put under one key
+// by two peers concurrently, and mergeable children, some ensured under one
+// key by two peers concurrently. Every history must come out as loro-crdt has
+// it. Before child containers were resolved, a map key or list item holding
+// one showed the container's bare kind code.
+func TestNestedCorpusAgainstLoro(t *testing.T) {
+	corpus := loadCorpus(t, "nested_corpus.json")
+	seeds, got, want := divergences(t, corpus)
+	for i := range seeds {
+		if i < 3 {
+			t.Errorf("seed %d diverged:\n got  %s\n want %s", seeds[i], got[i], want[i])
+		}
+	}
+	if len(seeds) > 0 {
+		t.Errorf("%d of %d nested-container histories diverge from loro-crdt", len(seeds), len(corpus))
+	}
+}

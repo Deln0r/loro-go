@@ -4,7 +4,7 @@
 //   ../fixtures/<name>.snapshot.bin  FastSnapshot export (full doc)
 //   ../fixtures/<name>.json          doc.toJSON() expected final state
 // Peer IDs are pinned so the bytes are deterministic across runs.
-import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter, LoroTree } from "loro-crdt/nodejs";
+import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter, LoroTree, isContainer } from "loro-crdt/nodejs";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -1499,4 +1499,208 @@ emit("mergeable_marker", (doc) => {
   writeFileSync(join(outDir, "nested_text_delta.nested.delta.json"), JSON.stringify(replay.getContainerById(ids.nested).toDelta(), null, 2) + "\n");
   writeFileSync(join(outDir, "nested_text_delta.mergeable.delta.json"), JSON.stringify(replay.getContainerById(ids.mergeable).toDelta(), null, 2) + "\n");
   console.log(`nested_text_delta: ids=${JSON.stringify(ids)}`);
+}
+
+// Acceptance corpus for containers stored as values: random histories by one
+// to three peers that import one another's updates now and then, with
+// loro-crdt's own replay as the answer. Each step edits a container the peer
+// can reach from the roots m, l and ml: a map sets numbers, deletes keys, puts
+// a container of any of the six kinds under a key (over whatever was there)
+// or ensures a mergeable one; a list inserts numbers and containers, a burst
+// of up to three at once so that one insert op holds several, and deletes; a
+// MovableList also moves, sets numbers and sets containers; a text inserts,
+// deletes and marks; a counter counts; a tree creates, moves and deletes
+// nodes, whose meta maps are maps like any other. Containers nest up to three
+// levels below a root. Keys come from a small set, so peers overwrite and
+// delete one another's containers and write to the same key concurrently;
+// mergeable children go under "p" and "q", so two peers ensure the same one.
+// A step loro refuses (a key holding a plain value cannot become mergeable, a
+// tree move into the node's own subtree) is skipped. Map values are numbers,
+// never maps, so every block re-encodes byte-identically.
+{
+  const rng = (seed) => { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; };
+  const pickOf = (r, xs) => xs[Math.floor(r() * xs.length)];
+  const kinds = [LoroMap, LoroList, LoroText, LoroTree, LoroMovableList, LoroCounter];
+  const ensures = ["ensureMergeableMap", "ensureMergeableList", "ensureMergeableText", "ensureMergeableTree", "ensureMergeableMovableList", "ensureMergeableCounter"];
+  const maxDepth = 3;
+  // Every container the peer can reach, with how far below a root it sits.
+  const reachable = (doc) => {
+    const out = [];
+    const walk = (c, depth) => {
+      out.push({ c, depth });
+      const kind = c.kind();
+      if (kind === "Map") {
+        for (const k of c.keys()) {
+          const v = c.get(k);
+          if (isContainer(v)) walk(v, depth + 1);
+        }
+      } else if (kind === "List" || kind === "MovableList") {
+        for (let i = 0; i < c.length; i++) {
+          const v = c.get(i);
+          if (isContainer(v)) walk(v, depth + 1);
+        }
+      } else if (kind === "Tree") {
+        for (const n of c.nodes()) if (!n.isDeleted()) walk(n.data, depth + 1);
+      }
+    };
+    walk(doc.getMap("m"), 0);
+    walk(doc.getList("l"), 0);
+    walk(doc.getMovableList("ml"), 0);
+    return out;
+  };
+  const stats = { deepest: 0 };
+  const child = (r) => new (pickOf(r, kinds))();
+  const editMap = (m, depth, r) => {
+    const pick = r();
+    if (pick < 0.25 || depth >= maxDepth) m.set(pickOf(r, ["a", "b", "c", "p"]), Math.floor(r() * 100));
+    else if (pick < 0.35) m.delete(pickOf(r, ["a", "b", "c", "p", "q"]));
+    else if (pick < 0.65) {
+      m.setContainer(pickOf(r, ["a", "b", "c"]), child(r));
+      stats.deepest = Math.max(stats.deepest, depth + 1);
+    } else {
+      m[pickOf(r, ensures)](pickOf(r, ["p", "q"]));
+      stats.deepest = Math.max(stats.deepest, depth + 1);
+    }
+  };
+  const editList = (l, depth, r, movable) => {
+    const n = l.length;
+    const pick = r();
+    if (pick < 0.5 || n === 0) {
+      let at = Math.floor(r() * (n + 1));
+      for (let j = 1 + Math.floor(r() * 3); j > 0; j--, at++) {
+        if (depth < maxDepth && r() < 0.5) {
+          l.insertContainer(at, child(r));
+          stats.deepest = Math.max(stats.deepest, depth + 1);
+        } else l.insert(at, Math.floor(r() * 100));
+      }
+    } else if (pick < 0.7 || !movable) {
+      const k = Math.floor(r() * n);
+      l.delete(k, 1 + Math.floor(r() * Math.min(2, n - k)));
+    } else if (pick < 0.8) l.move(Math.floor(r() * n), Math.floor(r() * n));
+    else if (pick < 0.9 || depth >= maxDepth) l.set(Math.floor(r() * n), 100 + Math.floor(r() * 100));
+    else {
+      l.setContainer(Math.floor(r() * n), child(r));
+      stats.deepest = Math.max(stats.deepest, depth + 1);
+    }
+  };
+  const editText = (t, r) => {
+    const n = t.length;
+    const pick = r();
+    if (pick < 0.5 || n === 0) t.insert(Math.floor(r() * (n + 1)), pickOf(r, ["a", "bc", "def"]));
+    else if (pick < 0.8) {
+      const k = Math.floor(r() * n);
+      t.delete(k, 1 + Math.floor(r() * Math.min(2, n - k)));
+    } else {
+      const a = Math.floor(r() * n);
+      t.mark({ start: a, end: a + 1 + Math.floor(r() * (n - a)) }, "bold", true);
+    }
+  };
+  const editTree = (t, r) => {
+    const alive = t.nodes().filter((x) => !x.isDeleted());
+    const pick = r();
+    if (pick < 0.5 || alive.length === 0) {
+      const parent = alive.length > 0 && r() < 0.5 ? pickOf(r, alive) : undefined;
+      const count = parent ? parent.children()?.length ?? 0 : t.roots().length;
+      if (parent) parent.createNode(Math.floor(r() * (count + 1)));
+      else t.createNode(undefined, Math.floor(r() * (count + 1)));
+    } else if (pick < 0.8) {
+      const node = pickOf(r, alive);
+      const parent = r() < 0.3 ? undefined : pickOf(r, alive);
+      const count = parent ? parent.children()?.length ?? 0 : t.roots().length;
+      node.move(parent, Math.floor(r() * (count + 1)));
+    } else t.delete(pickOf(r, alive).id);
+  };
+  // A root is picked a third of the time, so peers often write under the same
+  // keys of the same map without having synced.
+  const edit = (doc, r) => {
+    const reach = reachable(doc);
+    const { c, depth } = r() < 0.3 ? reach[Math.floor(r() * 3)] : pickOf(r, reach);
+    try {
+      switch (c.kind()) {
+        case "Map": editMap(c, depth, r); break;
+        case "List": editList(c, depth, r, false); break;
+        case "MovableList": editList(c, depth, r, true); break;
+        case "Text": editText(c, r); break;
+        case "Counter": c.increment(Math.floor(r() * 10) - 3); break;
+        case "Tree": editTree(c, r); break;
+      }
+    } catch {
+      // loro refused the step.
+    }
+  };
+  const nested = [];
+  for (let seed = 1; seed <= 300; seed++) {
+    const r = rng(seed * 67867967);
+    const peers = [];
+    for (let p = 0; p < 1 + (seed % 3); p++) {
+      const doc = new LoroDoc();
+      doc.setPeerId(BigInt(p + 1));
+      peers.push(doc);
+    }
+    for (let i = 6 + Math.floor(r() * 30); i > 0; i--) {
+      const doc = pickOf(r, peers);
+      if (peers.length > 1 && r() < 0.25) {
+        const other = pickOf(r, peers);
+        if (other !== doc) doc.import(other.export({ mode: "update" }));
+        continue;
+      }
+      edit(doc, r);
+      doc.commit();
+    }
+    const all = new LoroDoc();
+    for (const doc of peers) all.import(doc.export({ mode: "update" }));
+    const update = all.export({ mode: "update" });
+    const replay = new LoroDoc();
+    replay.import(update);
+    nested.push({ seed, update: Buffer.from(update).toString("base64"), expected: replay.toJSON() });
+  }
+  writeFileSync(join(outDir, "nested_corpus.json"), JSON.stringify(nested, null, 1) + "\n");
+  // What the corpus covers, counted on the ops each history exported. Two
+  // writes are concurrent when neither author had seen the other's op, read
+  // from the changes' deps as version vectors.
+  const count = { child: 0, mergeable: 0, concEnsure: 0, concSet: 0, setChild: 0, multiChild: 0 };
+  for (const entry of nested) {
+    const d = new LoroDoc();
+    d.import(Buffer.from(entry.update, "base64"));
+    const changes = d.exportJsonUpdates().changes;
+    const parse = (id) => { const [c, p] = id.split("@"); return { c: Number(c), p }; };
+    const atoms = (o) => {
+      const { type, value, text, len, key } = o.content;
+      if (type === "insert" && key === undefined) return text !== undefined ? [...text].length : value.length;
+      return type === "delete" ? Math.abs(len) : 1;
+    };
+    const memo = new Map();
+    const vvOf = (ch) => {
+      if (memo.has(ch)) return memo.get(ch);
+      const { c, p } = parse(ch.id);
+      const vv = { [p]: c };
+      const add = (dep) => {
+        const id = parse(dep);
+        vv[id.p] = Math.max(vv[id.p] ?? 0, id.c + 1);
+        const z = changes.find((x) => { const s = parse(x.id); return s.p === id.p && s.c <= id.c && id.c < s.c + x.ops.reduce((n, o) => n + atoms(o), 0); });
+        if (z && z !== ch) for (const [q, e] of Object.entries(vvOf(z))) vv[q] = Math.max(vv[q] ?? 0, e);
+      };
+      ch.deps.forEach(add);
+      if (c > 0) add(`${c - 1}@${p}`);
+      memo.set(ch, vv);
+      return vv;
+    };
+    const ops = changes.flatMap((ch) => ch.ops.map((o) => ({ ...o, peer: parse(ch.id).p, vv: vvOf(ch) })));
+    const isChild = (v) => typeof v === "string" && v.startsWith("🦜:cid:");
+    const isMarker = (v) => Array.isArray(v) && v.length === 8 && v[0] === 0 && v[1] === 76 && v[2] === 77;
+    const concurrent = (pred) => {
+      const writes = ops.filter((o) => o.content.type === "insert" && o.content.key !== undefined && pred(o.content.value));
+      return writes.some((a) => writes.some((b) => a.peer !== b.peer && a.container === b.container && a.content.key === b.content.key &&
+        !((b.vv[a.peer] ?? 0) > a.counter) && !((a.vv[b.peer] ?? 0) > b.counter)));
+    };
+    if (ops.some((o) => isChild(o.content.value) || (Array.isArray(o.content.value) && o.content.value.some(isChild)))) count.child++;
+    if (ops.some((o) => o.container.includes("🤝"))) count.mergeable++;
+    if (concurrent(isMarker)) count.concEnsure++;
+    if (concurrent(isChild)) count.concSet++;
+    if (ops.some((o) => o.content.type === "set" && isChild(o.content.value))) count.setChild++;
+    if (ops.some((o) => Array.isArray(o.content.value) && o.content.value.length > 1 && o.content.value.slice(1).some(isChild))) count.multiChild++;
+  }
+  console.log(`nested_corpus.json: ${nested.length} histories, ${count.child} with child containers, ${count.mergeable} with mergeable ones, ` +
+    `${count.concEnsure} with one mergeable key ensured by two peers concurrently, ${count.concSet} with containers put under one key by two peers concurrently, ` +
+    `${count.setChild} with a MovableList set of a container, ${count.multiChild} with a container past the first item of an insert, deepest ${stats.deepest}`);
 }

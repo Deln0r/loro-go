@@ -13,7 +13,7 @@ const fixtures = join("..", "fixtures");
 const corpora = [
   "ordering_corpus.json", "seq_single_corpus.json", "seq_concurrent_corpus.json",
   "movable_single_corpus.json", "movable_concurrent_corpus.json", "tree_corpus.json",
-  "rich_corpus.json",
+  "rich_corpus.json", "nested_corpus.json",
 ];
 // Known loro.js divergences, each with the upstream report.
 // Crossing concurrent tree moves, which loro.js 0.3.0 got wrong

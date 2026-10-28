@@ -897,11 +897,18 @@ func atomAt(c *storedChange, ctr int64) (opAtom, bool) {
 		}
 		k := ctr - op.Counter
 		a := opAtom{cont: keyOf(op), vk: op.VKind, pos: op.Pos, from: op.MoveFrom, key: op.MapKey, value: op.Value}
+		// Only an insert's value is one item per atom: a map write of a
+		// string or a list is one atom whatever the value's length, and an
+		// empty one would index nothing.
 		switch v := op.Value.(type) {
 		case string:
-			a.value, a.pos = string([]rune(v)[k]), op.Pos+k
+			if op.VKind == change.VKStr {
+				a.value, a.pos = string([]rune(v)[k]), op.Pos+k
+			}
 		case []any:
-			a.value, a.pos = v[k], op.Pos+k
+			if isListInsert(op) {
+				a.value, a.pos = v[k], op.Pos+k
+			}
 		case DeleteSpan:
 			start, n := v.Normalize()
 			if v.Len >= 0 {

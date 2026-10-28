@@ -36,10 +36,7 @@ func TestImportFoldsInLinearWork(t *testing.T) {
 	// blob, the whole import 720 and the import of the known change 10.
 	const perByte = 2048
 	d := NewDocument(9)
-	if got := allocated(func() error {
-		_, err := decodeBlob(first, !d.knocked(ruleDecodeFold), func() int { d.blockGen--; return d.blockGen })
-		return err
-	}); got > perByte*uint64(len(first)) {
+	if got := allocated(func() error { _, err := decodeBlob(first, d); return err }); got > perByte*uint64(len(first)) {
 		t.Errorf("decoding and folding %d inserts allocated %d bytes, over %d per byte of the %d-byte blob", n, got, perByte, len(first))
 	}
 	if got := allocated(func() error { return d.Import(first) }); got > perByte*uint64(len(first)) {

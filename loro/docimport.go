@@ -28,7 +28,7 @@ type decodedBlob struct {
 // blocks as DecodeUpdates and DecodeSnapshot do, and keeps what Import needs
 // beyond the changes: the order of the blocks and of the ops in them, in
 // which loro registers containers, and the snapshot's state section.
-func decodeBlob(blob []byte, fold bool, nextGen func() int) (*decodedBlob, error) {
+func decodeBlob(blob []byte, d *Document) (*decodedBlob, error) {
 	h, err := fast.ParseHeader(blob)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,29 @@ func decodeBlob(blob []byte, fold bool, nextGen func() int) (*decodedBlob, error
 		if err != nil {
 			return nil, err
 		}
-		out.blocks = append(out.blocks, decodedProvenance(chs, nextGen(), fold))
+		// A change the document could not export again is refused:
+		// EncodeUpdates' checks are what loro reads back as written, and
+		// loro's own import refuses most of what they catch. They hold
+		// each op as the blob writes it, before the ops are folded, as
+		// loro checks each op's positions as it reads it
+		// (outdated_encode_reordered.rs:546 check_positions) and not the
+		// op it folds it into.
+		checked := !d.knocked(ruleCheckUnfolded)
+		if checked {
+			if err := checkChanges(chs); err != nil {
+				return nil, err
+			}
+		}
+		d.blockGen--
+		block := decodedProvenance(chs, d.blockGen, d)
+		if !checked {
+			for _, c := range block {
+				if err := checkChange(c.ch); err != nil {
+					return nil, err
+				}
+			}
+		}
+		out.blocks = append(out.blocks, block)
 	}
 	return out, nil
 }
@@ -76,9 +98,9 @@ func decodeBlob(blob []byte, fold bool, nextGen func() int) (*decodedBlob, error
 // block's own, generation gen, in op order; a one-item list insert inline,
 // which folds like a local one; the items of longer list inserts in one
 // buffer the inserts share, so one can grow in place only when it is the
-// block's only such insert. With fold, ops that continue each other are
-// folded as loro reads them (foldDecoded).
-func decodedProvenance(chs []Change, gen int, fold bool) []*storedChange {
+// block's only such insert. Ops that continue each other are folded as
+// loro reads them (foldDecoded).
+func decodedProvenance(chs []Change, gen int, d *Document) []*storedChange {
 	multi := 0
 	for _, c := range chs {
 		for _, op := range c.Ops {
@@ -105,7 +127,7 @@ func decodedProvenance(chs []Change, gen int, fold bool) []*storedChange {
 		}
 		c.Deps = depsOrder(c.Deps)
 		block[i] = &storedChange{ch: c, prov: prov}
-		if fold {
+		if !d.knocked(ruleDecodeFold) {
 			block[i] = foldDecoded(c, prov)
 		}
 	}
@@ -158,6 +180,16 @@ func decodedFolds(a provOp, b Op, pb opProv) bool {
 		return ok1 && ok2 && x.mergeable(y)
 	}
 	return false
+}
+
+// checkChanges is checkChange on each change.
+func checkChanges(chs []Change) error {
+	for _, c := range chs {
+		if err := checkChange(c); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isListInsert(op Op) bool {

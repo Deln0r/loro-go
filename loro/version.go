@@ -374,4 +374,5 @@ const (
 	ruleDecodeFold                       // ops that continue each other fold as a block is read
 	ruleFrontiersOrder                   // Frontiers keeps the order of loro's hash map
 	ruleRangeLayers                      // the k-th range of each peer goes into the k-th store
+	ruleCheckUnfolded                    // a blob's ops are checked as written, before they fold
 )

@@ -166,21 +166,14 @@ func (d *Document) Import(blob []byte) error {
 	if !d.knocked(ruleImportCommits) {
 		d.commit("", 0, false)
 	}
-	b, err := decodeBlob(blob, !d.knocked(ruleDecodeFold), func() int { d.blockGen--; return d.blockGen })
+	b, err := decodeBlob(blob, d)
 	if err != nil {
 		return err
 	}
 	var changes []*storedChange
 	for _, block := range b.blocks {
-		for _, c := range block {
-			// A change the document could not export again is refused:
-			// EncodeUpdates' checks are what loro reads back as written,
-			// and loro's own import refuses most of what they catch.
-			if err := checkChange(c.ch); err != nil {
-				return err
-			}
-			changes = append(changes, c)
-		}
+		// decodeBlob refused what the document could not export again.
+		changes = append(changes, block...)
 	}
 	// loro sorts a blob's changes by lamport before it checks and applies
 	// them (fast_snapshot.rs:412), with Rust's unstable sort: the order of

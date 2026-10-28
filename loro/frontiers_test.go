@@ -5,10 +5,12 @@ import (
 	"testing"
 )
 
-// TestFrontiersOrder pins the order loro-crdt 1.17.1 lists two dependencies
-// in, as read from its exports in script_corpus.json: for every pair of
-// peers that occurs there, the same order every time. The pair 3 and 7
-// lands in one bucket, so it keeps the order its ids went in.
+// TestFrontiersOrder pins the order loro-crdt 1.17.1 lists dependencies
+// in, as read from its exports: for every pair of peers in
+// script_corpus.json, the same order every time (the pair 3 and 7 lands in
+// one bucket, so it keeps the order its ids went in), and for a peer that
+// imported one change of each of 9 peers in ascending order, which fills a
+// table of 16 buckets, probed 8 at a time.
 func TestFrontiersOrder(t *testing.T) {
 	for _, c := range []struct{ in, want []uint64 }{
 		{[]uint64{1, 2}, []uint64{2, 1}},
@@ -21,6 +23,7 @@ func TestFrontiersOrder(t *testing.T) {
 		{[]uint64{4, 9}, []uint64{4, 9}},
 		{[]uint64{9, 1<<40 + 5}, []uint64{1<<40 + 5, 9}},
 		{[]uint64{4, 1<<40 + 5}, []uint64{4, 1<<40 + 5}},
+		{[]uint64{12, 29, 46, 47, 64, 81, 98, 115, 132}, []uint64{64, 81, 98, 12, 29, 46, 47, 115, 132}},
 	} {
 		var ids []ID
 		for i, p := range c.in {

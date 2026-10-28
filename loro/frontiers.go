@@ -7,14 +7,12 @@ import "math/bits"
 // counter and writes a change's deps in that map's iteration order, so the
 // bytes of a change with deps on two other peers depend on where the hash
 // table put them. loro-crdt's npm package is a 32-bit WebAssembly build:
-// FxHasher (rustc-hash 2.1) hashes a peer id in two 32-bit words, and the
-// table is hashbrown's portable one, whose control groups are 4 bytes wide.
-// fxTable replays that table: where each id lands depends on the ids and on
-// the order they were inserted and removed in.
-//
-// On the 9 pairs of peers that depend on each other in the script corpus,
-// loro lists the two in the order this gives, the colliding pair 3 and 7
-// included.
+// FxHasher (rustc-hash 2.1.1) hashes a peer id in two 32-bit words, and the
+// table is hashbrown's portable one, whose control groups are 8 bytes wide
+// on wasm32 (hashbrown 0.15 src/control/group/generic.rs, which lists
+// wasm32 with the 64-bit targets). fxTable replays that table: where each
+// id lands depends on the ids and on the order they were inserted and
+// removed in.
 type frontiers struct {
 	n   int // 0, 1 (one) or a map (tab)
 	one ID
@@ -130,10 +128,12 @@ func depsOrder(deps []ID) []ID {
 	return f.ids()
 }
 
-// fxTable is a hashbrown RawTable of (peer, counter) with FxHasher on a
-// 32-bit target, as far as where entries sit: control bytes with 4-byte
-// groups and their trailing mirror, triangular probing, tombstones, and
-// growth by rehashing in iteration order.
+// fxTable is a hashbrown RawTable of (peer, counter) with FxHasher on
+// wasm32, as far as where entries sit (hashbrown 0.15 src/raw/mod.rs):
+// control bytes probed in 8-byte groups, with a trailing copy of the first
+// group (of the whole table, when it is smaller than a group), triangular
+// probing, tombstones, growth by rehashing in iteration order, and rehash
+// in place when tombstones fill a table that is at most half full.
 type fxTable struct {
 	ctrl       []byte // buckets + fxGroup bytes, nil while unallocated
 	keys       []uint64
@@ -143,14 +143,14 @@ type fxTable struct {
 }
 
 const (
-	fxGroup   = 4
+	fxGroup   = 8
 	fxEmpty   = 0xff
 	fxDeleted = 0x80
 )
 
 // fxHash is FxHasher::finish after write_u64 on a 32-bit target
-// (rustc-hash 2.1): the two halves added and multiplied in turn, rotated
-// left by 15.
+// (rustc-hash 2.1.1 src/lib.rs): the two halves added and multiplied in
+// turn, rotated left by 15. hashbrown takes it as a usize, all 32 bits.
 func fxHash(peer uint64) uint32 {
 	const k = 0x93d765dd
 	var h uint32
@@ -159,6 +159,7 @@ func fxHash(peer uint64) uint32 {
 	return bits.RotateLeft32(h, 15)
 }
 
+// fxH2 is the 7 top bits of the hash, which a full control byte holds.
 func fxH2(h uint32) byte { return byte(h>>25) & 0x7f }
 
 func (t *fxTable) buckets() int {
@@ -177,9 +178,13 @@ func (t *fxTable) clone() *fxTable {
 	}
 }
 
-// group returns the 4 control bytes from pos.
+// group returns the 8 control bytes from pos.
 func (t *fxTable) group(pos int) []byte { return t.ctrl[pos : pos+fxGroup] }
 
+func full(c byte) bool { return c&0x80 == 0 }
+
+// capacityOf is bucket_mask_to_capacity: one bucket kept empty in tables of
+// up to 8 buckets, an eighth of them in larger ones.
 func capacityOf(mask int) int {
 	if mask < 8 {
 		return mask
@@ -187,12 +192,34 @@ func capacityOf(mask int) int {
 	return (mask + 1) / 8 * 7
 }
 
+// bucketsFor is capacity_to_buckets for an entry of 16 bytes (a u64 peer and
+// an i32 counter, padded): 4 buckets for up to 3 entries, 8 for 7, 16 for
+// 14, and past that room for an eighth more, rounded up to a power of two.
+func bucketsFor(capacity int) int {
+	switch {
+	case capacity < 4:
+		return 4
+	case capacity < 8:
+		return 8
+	case capacity < 15:
+		return 16
+	}
+	n := 1
+	for n < capacity*8/7 {
+		n *= 2
+	}
+	return n
+}
+
+// setCtrl is set_ctrl: the byte and its copy in the trailing group.
 func (t *fxTable) setCtrl(i int, c byte) {
 	t.ctrl[i] = c
 	t.ctrl[((i-fxGroup)&t.mask())+fxGroup] = c
 }
 
-// find returns the bucket holding peer, or -1.
+// find returns the bucket holding peer, or -1. A probe stops at a group
+// with an empty byte; the trailing bytes of a table smaller than a group
+// are empty.
 func (t *fxTable) find(peer uint64) int {
 	if t.ctrl == nil {
 		return -1
@@ -203,7 +230,7 @@ func (t *fxTable) find(peer uint64) int {
 		g := t.group(pos)
 		for i, c := range g {
 			if c == fxH2(h) {
-				if b := (pos + i) & t.mask(); t.keys[b] == peer {
+				if b := (pos + i) & t.mask(); full(t.ctrl[b]) && t.keys[b] == peer {
 					return b
 				}
 			}
@@ -225,14 +252,24 @@ func (t *fxTable) get(peer uint64) (int64, bool) {
 	return 0, false
 }
 
-// insertSlot is find_insert_slot: the first empty or deleted bucket on the
-// probe sequence.
+// insertSlot is find_insert_slot and fix_insert_slot: the first empty or
+// deleted byte of the probe sequence. In a table smaller than a group that
+// can be a trailing byte, which wraps onto a full bucket; then the first
+// free bucket from the start is taken.
 func (t *fxTable) insertSlot(h uint32) int {
 	pos, stride := int(h)&t.mask(), 0
 	for {
 		for i, c := range t.group(pos) {
-			if c&0x80 != 0 {
-				return (pos + i) & t.mask()
+			if !full(c) {
+				b := (pos + i) & t.mask()
+				if full(t.ctrl[b]) {
+					for j, c := range t.group(0) {
+						if !full(c) {
+							return j
+						}
+					}
+				}
+				return b
 			}
 		}
 		stride += fxGroup
@@ -240,8 +277,9 @@ func (t *fxTable) insertSlot(h uint32) int {
 	}
 }
 
-// insertMax is InternalMap::insert: entry(peer).and_modify(max).or_insert,
-// which grows the table first when the key is new and there is no room.
+// insertMax is InternalMap::insert: entry(peer).and_modify(max).or_insert.
+// hashbrown's rustc_entry reserves room for one more only when the key is
+// new.
 func (t *fxTable) insertMax(id ID) {
 	if b := t.find(id.Peer); b >= 0 {
 		t.vals[b] = max(t.vals[b], id.Counter)
@@ -261,8 +299,8 @@ func (t *fxTable) insertMax(id ID) {
 }
 
 // remove is remove_entry then erase: the bucket becomes empty, unless the
-// empty buckets around it are too far apart for a probe to stop, and then a
-// tombstone.
+// bytes on both sides of it hold no empty one within a group's width, and
+// then a tombstone, so that probes do not stop short.
 func (t *fxTable) remove(id ID) bool {
 	b := t.find(id.Peer)
 	if b < 0 || t.vals[b] != id.Counter {
@@ -270,11 +308,11 @@ func (t *fxTable) remove(id ID) bool {
 	}
 	before := t.group((b - fxGroup) & t.mask())
 	after := t.group(b)
-	lead := 0 // empty bytes at the end of before, counted from its last
+	lead := 0 // bytes at the end of before up to its last empty one
 	for i := fxGroup - 1; i >= 0 && before[i] != fxEmpty; i-- {
 		lead++
 	}
-	trail := 0 // non-empty bytes at the start of after
+	trail := 0 // bytes at the start of after up to its first empty one
 	for i := 0; i < fxGroup && after[i] != fxEmpty; i++ {
 		trail++
 	}
@@ -289,6 +327,8 @@ func (t *fxTable) remove(id ID) bool {
 	return true
 }
 
+// reserveRehash is reserve_rehash_inner: rehash in place when the table is
+// at most half full and only tombstones took its room, grow otherwise.
 func (t *fxTable) reserveRehash() {
 	newItems := t.items + 1
 	full := capacityOf(t.mask())
@@ -299,53 +339,46 @@ func (t *fxTable) reserveRehash() {
 	t.resize(max(newItems, full+1))
 }
 
+// resize is resize_inner: a new table, the entries inserted in bucket order.
 func (t *fxTable) resize(capacity int) {
-	buckets := 8
-	switch {
-	case capacity < 4:
-		buckets = 4
-	case capacity >= 8:
-		buckets = 1
-		for buckets < capacity*8/7 {
-			buckets *= 2
-		}
-	}
+	n := bucketsFor(capacity)
 	old := t.clone()
 	*t = fxTable{
-		ctrl: make([]byte, buckets+fxGroup),
-		keys: make([]uint64, buckets),
-		vals: make([]int64, buckets),
+		ctrl: make([]byte, n+fxGroup),
+		keys: make([]uint64, n),
+		vals: make([]int64, n),
 	}
 	for i := range t.ctrl {
 		t.ctrl[i] = fxEmpty
 	}
-	t.growthLeft = capacityOf(buckets - 1)
 	for b := 0; b < old.buckets(); b++ {
-		if old.ctrl[b]&0x80 != 0 {
+		if !full(old.ctrl[b]) {
 			continue
 		}
 		h := fxHash(old.keys[b])
 		nb := t.insertSlot(h)
 		t.setCtrl(nb, fxH2(h))
 		t.keys[nb], t.vals[nb] = old.keys[b], old.vals[b]
-		t.items++
-		t.growthLeft--
 	}
+	t.items = old.items
+	t.growthLeft = capacityOf(n-1) - old.items
 }
 
-// rehashInPlace is hashbrown's rehash_in_place: tombstones cleared and every
-// entry moved to the first free bucket of its probe sequence, unless it is
-// already in the group the sequence starts in.
+// rehashInPlace is rehash_in_place: full bytes become tombstones and
+// tombstones empty, then every entry moves to the first free bucket of its
+// probe sequence unless that lies in the group the sequence starts in.
 func (t *fxTable) rehashInPlace() {
 	n := t.buckets()
 	for i := 0; i < n; i++ {
-		if t.ctrl[i]&0x80 == 0 {
+		if full(t.ctrl[i]) {
 			t.ctrl[i] = fxDeleted
 		} else {
 			t.ctrl[i] = fxEmpty
 		}
 	}
-	copy(t.ctrl[n:], t.ctrl[:fxGroup])
+	for i := 0; i < n; i++ {
+		t.setCtrl(i, t.ctrl[i])
+	}
 	for i := 0; i < n; i++ {
 		if t.ctrl[i] != fxDeleted {
 			continue
@@ -376,7 +409,7 @@ func (t *fxTable) rehashInPlace() {
 func (t *fxTable) ids() []ID {
 	var out []ID
 	for b := 0; b < t.buckets(); b++ {
-		if t.ctrl[b]&0x80 == 0 {
+		if full(t.ctrl[b]) {
 			out = append(out, ID{Peer: t.keys[b], Counter: t.vals[b]})
 		}
 	}

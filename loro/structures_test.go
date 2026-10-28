@@ -16,8 +16,12 @@ import (
 // MovableList and Tree edits, containers stored in containers at any depth,
 // mergeable children and edits through deleted handles, by one to three
 // peers with partial and out-of-order syncs, and holds every Document to
-// loro-crdt at every checkpoint, its version and frontiers included.
+// loro-crdt at every checkpoint, its version and frontiers included. Every
+// local MovableList op also checks the list's kept index against one built
+// anew.
 func TestScriptStructCorpus(t *testing.T) {
+	movIndexCheck = true
+	defer func() { movIndexCheck = false }()
 	scripts := loadScripts(t, "script_struct_corpus.json")
 	r := runScripts(t, scripts, 0)
 	reportScripts(t, "script_struct_corpus.json", len(scripts), r)
@@ -29,6 +33,8 @@ func TestScriptStructCorpus(t *testing.T) {
 // TestScriptStructCrowdCorpus is TestScriptStructCorpus for the 60 scripts
 // of script_struct_crowd_corpus.json, by 4 to 12 peers.
 func TestScriptStructCrowdCorpus(t *testing.T) {
+	movIndexCheck = true
+	defer func() { movIndexCheck = false }()
 	scripts := loadScripts(t, "script_struct_crowd_corpus.json")
 	r := runScripts(t, scripts, 0)
 	reportScripts(t, "script_struct_crowd_corpus.json", len(scripts), r)

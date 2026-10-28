@@ -29,6 +29,9 @@ const seqVersionCacheLimit = 1 << 22
 type seqWork struct {
 	steps, limit int
 	strict       bool
+	// total counts every step spent, never reset, and movSteps the work
+	// of MovableList indexes, for tests that bound them.
+	total, movSteps int64
 }
 
 // beyondView is the error a strict merge returns for a position past its
@@ -39,6 +42,7 @@ func beyondView(op Op, pos, length int64) error {
 
 func (w *seqWork) spend(n int) error {
 	w.steps += n
+	w.total += int64(n)
 	if w.steps > w.limit {
 		return fmt.Errorf("loro: sequence merge exceeded %d steps", w.limit)
 	}
@@ -262,6 +266,7 @@ type seqState struct {
 	work       *seqWork
 	cursor     seqCursor
 	elems      map[ListElem]*movElem // MovableList elements by their creating op
+	movIx      *movIndex             // a MovableList's user view, once asked for
 }
 
 // seqCursor remembers where the fast path last found an element: before is

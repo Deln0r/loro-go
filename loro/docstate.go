@@ -26,7 +26,10 @@ type docState struct {
 	// local tree op drops the index, and building walks for every op.
 	treeSteps int64
 	knockTree bool
-	work      *seqWork
+	// knockMov switches the upkeep of MovableList indexes off
+	// (ruleMovableIndex): a local op drops the index instead.
+	knockMov bool
+	work     *seqWork
 	// localOps counts the local ops applied, and localOpsNoted those the
 	// version vector has taken in (Document.noteLocalOps).
 	localOps, localOpsNoted int
@@ -108,7 +111,17 @@ func (s *docState) applyLocal(op Op) (err error) {
 		if op.VKind == change.VKMarkStart {
 			s.anchored[k] = true
 		}
-		return q.apply(op, true, pastView{}, true)
+		if err := q.apply(op, true, pastView{}, true); err != nil {
+			return err
+		}
+		if op.Kind == change.CMovableList {
+			if s.knockMov {
+				q.movIx = nil
+			} else {
+				q.noteLocal(op)
+			}
+		}
+		return nil
 	}
 	ci := s.conts[k]
 	if ci == nil {

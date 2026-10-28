@@ -416,6 +416,7 @@ const (
 	ruleCounterAttach                   // item 16: a new Counter child is incremented by zero, an op
 	ruleKnownContainers                 // GetContainer knows only the containers getContainerById knows
 	ruleTreeIncremental                 // review F1: a tree index is kept current, and building it walks only from nodes with children
+	ruleMovableIndex                    // review F4: a MovableList's user view is kept current, not scanned per call
 )
 
 type ruleSet uint64

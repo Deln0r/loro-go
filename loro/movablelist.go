@@ -2,6 +2,8 @@ package loro
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 
 	"github.com/Deln0r/loro-go/encoding/change"
 )
@@ -32,53 +34,147 @@ func (l *MovableList) IsDeleted() bool { return l.h.isDeleted() }
 // JSON returns the list's items, the containers in it included.
 func (l *MovableList) JSON() (any, error) { return l.h.json() }
 
-// movSlots lists, in order, the merged sequence's live positions that hold
-// their element, each with its index among all live positions: users
-// count the first, ops the second (convert_index, movable_list_state.rs:857).
-type movSlot struct {
-	node *seqNode
-	op   int
+// movIndex is a MovableList's user view of its merged sequence: the live
+// positions that hold their element, in order (slots), and, for each live
+// position whose element went elsewhere in a concurrent move (one loro
+// keeps, state/movable_list_state.rs), how many slots come before it
+// (lost, ascending). A user index is an index into slots; an op index,
+// which loro's ops record (convert_index, movable_list_state.rs:857),
+// counts the lost positions too. Local ops never lose a position, so lost
+// stays as an import left it and is usually empty. The index is built
+// once per state and kept current by each local op, so a call costs a
+// binary search among the lost positions and copies of the slot slice,
+// not a scan of every position ever made.
+type movIndex struct {
+	slots []*seqNode
+	lost  []int
 }
 
-func movSlots(s *seqState) []movSlot {
+// movIndexCheck makes every update of a movIndex compare itself with one
+// built anew, for tests.
+var movIndexCheck bool
+
+// mov returns s's movIndex, building it when s has none.
+func (s *seqState) mov() *movIndex {
 	if s == nil {
-		return nil
+		return &movIndex{}
 	}
-	var out []movSlot
-	op := 0
+	if s.movIx == nil {
+		s.movIx = buildMovIndex(s)
+	}
+	return s.movIx
+}
+
+func buildMovIndex(s *seqState) *movIndex {
+	ix := &movIndex{}
 	for _, n := range s.nodes {
+		s.work.movSteps++
 		if len(n.deleters) != 0 {
 			continue
 		}
 		if n.elem != nil && n.elem.pos == n {
-			out = append(out, movSlot{n, op})
+			ix.slots = append(ix.slots, n)
+		} else {
+			ix.lost = append(ix.lost, len(ix.slots))
 		}
-		op++
 	}
-	return out
+	return ix
 }
 
-// opIndex converts a user index to the op index loro records: the index
-// among all live positions of the position at user index i, and for the
-// end of the list the number of live positions.
-func opIndex(s *seqState, slots []movSlot, i int, d *Document) int64 {
-	if i == len(slots) {
-		if s == nil {
-			return 0
-		}
-		return int64(s.live)
+// lostBefore is how many lost positions lie before op index o: the t-th
+// lost position, of rank r, has op index r + t.
+func (ix *movIndex) lostBefore(o int64) int {
+	return sort.Search(len(ix.lost), func(t int) bool { return int64(ix.lost[t]+t) >= o })
+}
+
+// opIndex is the op index of user index i, the end of the list for i past
+// the last slot.
+func (ix *movIndex) opIndex(i int, d *Document) int64 {
+	if i >= len(ix.slots) {
+		return int64(len(ix.slots) + len(ix.lost))
 	}
 	if d.knocked(ruleMovableOpIndex) {
 		return int64(i)
 	}
-	return int64(slots[i].op)
+	return int64(i + sort.Search(len(ix.lost), func(t int) bool { return ix.lost[t] > i }))
+}
+
+// noteLocal brings the index up to date with local op op, which s has just
+// applied: an insert adds slots at its op index, a delete removes the slot
+// at its op index, a move does both. The lost positions after the change
+// shift by the slots it added or removed.
+func (s *seqState) noteLocal(op Op) {
+	ix := s.movIx
+	if ix == nil {
+		return
+	}
+	insert := func(o int64, nodes []*seqNode) {
+		t := ix.lostBefore(o)
+		j := int(o) - t
+		ix.slots = slices.Insert(ix.slots, j, nodes...)
+		for ; t < len(ix.lost); t++ {
+			ix.lost[t] += len(nodes)
+			s.work.movSteps++
+		}
+	}
+	// remove takes out the slot at op index o, which must satisfy is.
+	remove := func(o int64, is func(*seqNode) bool) bool {
+		t := ix.lostBefore(o)
+		j := int(o) - t
+		if t < len(ix.lost) && int64(ix.lost[t]+t) == o || j < 0 || j >= len(ix.slots) || !is(ix.slots[j]) {
+			return false
+		}
+		ix.slots = slices.Delete(ix.slots, j, j+1)
+		for ; t < len(ix.lost); t++ {
+			ix.lost[t]--
+			s.work.movSteps++
+		}
+		return true
+	}
+	ok := true
+	switch op.VKind {
+	case change.VKLoroValue:
+		items, _ := op.Value.([]any)
+		nodes := make([]*seqNode, len(items))
+		for k := range items {
+			nodes[k] = s.byID[ID{Peer: op.Peer, Counter: op.Counter + int64(k)}]
+			ok = ok && nodes[k] != nil
+		}
+		if ok {
+			insert(op.Pos, nodes)
+		}
+	case change.VKDeleteSeq:
+		span, isSpan := op.Value.(DeleteSpan)
+		ok = isSpan && span.Len == 1 && remove(op.Pos, func(n *seqNode) bool { return n.peer == span.Peer && n.counter == span.Counter })
+	case change.VKListMove:
+		// The old position is the slot at MoveFrom: the element's, now
+		// deleted by the move.
+		le, _ := op.Value.(ListElem)
+		e := s.elems[le]
+		ok = e != nil && e.pos != nil && remove(op.MoveFrom, func(n *seqNode) bool { return n.elem == e && len(n.deleters) != 0 })
+		if ok {
+			insert(op.Pos, []*seqNode{e.pos})
+		}
+	}
+	if !ok {
+		// Not a change this index follows: build it anew when next asked.
+		s.movIx = nil
+		return
+	}
+	if movIndexCheck {
+		fresh := buildMovIndex(s)
+		if !slices.Equal(fresh.slots, ix.slots) || !slices.Equal(fresh.lost, ix.lost) {
+			panic(fmt.Sprintf("loro: MovableList index after %v@%d: kept %d slots %v lost, built %d slots %v lost",
+				op.VKind, op.Counter, len(ix.slots), ix.lost, len(fresh.slots), fresh.lost))
+		}
+	}
 }
 
 // Len returns the number of items.
 func (l *MovableList) Len() int {
 	l.h.d.mu.Lock()
 	defer l.h.d.mu.Unlock()
-	return len(movSlots(l.h.state().seqs[l.h.k]))
+	return len(l.h.state().seqs[l.h.k].mov().slots)
 }
 
 // Get returns the item at index i. A container stored there is returned as
@@ -86,11 +182,11 @@ func (l *MovableList) Len() int {
 func (l *MovableList) Get(i int) (any, error) {
 	l.h.d.mu.Lock()
 	defer l.h.d.mu.Unlock()
-	slots := movSlots(l.h.state().seqs[l.h.k])
+	slots := l.h.state().seqs[l.h.k].mov().slots
 	if i < 0 || i >= len(slots) {
 		return nil, outOfRange(i, 1, len(slots))
 	}
-	e := slots[i].node.elem
+	e := slots[i].elem
 	return copyValue(plainValue(e.value, e.valueID, e.valueSet)), nil
 }
 
@@ -100,11 +196,11 @@ func (l *MovableList) GetContainer(i int) (Container, bool) {
 	d := l.h.d
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	slots := movSlots(l.h.state().seqs[l.h.k])
+	slots := l.h.state().seqs[l.h.k].mov().slots
 	if i < 0 || i >= len(slots) {
 		return nil, false
 	}
-	e := slots[i].node.elem
+	e := slots[i].elem
 	ct, ok := e.value.(change.ContainerType)
 	if !ok || !editableKind(ct) {
 		return nil, false
@@ -157,12 +253,12 @@ func (l *MovableList) insert(pos int, v any) (ID, error) {
 	}
 	st := l.h.state()
 	s := st.seqs[l.h.k]
-	slots := movSlots(s)
-	if pos < 0 || pos > len(slots) {
-		return ID{}, outOfRange(pos, 0, len(slots))
+	ix := s.mov()
+	if pos < 0 || pos > len(ix.slots) {
+		return ID{}, outOfRange(pos, 0, len(ix.slots))
 	}
 	op := l.h.op(change.VKLoroValue)
-	op.Pos = opIndex(s, slots, pos, d)
+	op.Pos = ix.opIndex(pos, d)
 	op.Value = []any{v}
 	id := ID{Peer: d.peer, Counter: d.begin().nextCounter}
 	return id, d.apply(st, op, opProv{kind: provList})
@@ -183,9 +279,9 @@ func (l *MovableList) Delete(pos, n int) error {
 	}
 	st := l.h.state()
 	s := st.seqs[l.h.k]
-	slots := movSlots(s)
-	if !inRange(pos, n, len(slots)) {
-		return outOfRange(pos, n, len(slots))
+	ix := s.mov()
+	if !inRange(pos, n, len(ix.slots)) {
+		return outOfRange(pos, n, len(ix.slots))
 	}
 	type del struct {
 		id ID
@@ -193,8 +289,8 @@ func (l *MovableList) Delete(pos, n int) error {
 	}
 	var dels []del
 	for i := pos; i < pos+n; i++ {
-		nd := slots[i].node
-		dels = append(dels, del{ID{Peer: nd.peer, Counter: nd.counter}, opIndex(s, slots, i, d) - int64(i-pos)})
+		nd := ix.slots[i]
+		dels = append(dels, del{ID{Peer: nd.peer, Counter: nd.counter}, ix.opIndex(i, d) - int64(i-pos)})
 	}
 	for _, x := range dels {
 		op := l.h.op(change.VKDeleteSeq)
@@ -222,17 +318,17 @@ func (l *MovableList) Move(from, to int) error {
 	}
 	st := l.h.state()
 	s := st.seqs[l.h.k]
-	slots := movSlots(s)
-	if from < 0 || from >= len(slots) {
-		return outOfRange(from, 1, len(slots))
+	ix := s.mov()
+	if from < 0 || from >= len(ix.slots) {
+		return outOfRange(from, 1, len(ix.slots))
 	}
-	if to < 0 || to >= len(slots) {
-		return outOfRange(to, 1, len(slots))
+	if to < 0 || to >= len(ix.slots) {
+		return outOfRange(to, 1, len(ix.slots))
 	}
 	op := l.h.op(change.VKListMove)
-	op.MoveFrom = opIndex(s, slots, from, d)
-	op.Pos = opIndex(s, slots, to, d)
-	op.Value = slots[from].node.elem.key
+	op.MoveFrom = ix.opIndex(from, d)
+	op.Pos = ix.opIndex(to, d)
+	op.Value = ix.slots[from].elem.key
 	return d.apply(st, op, opProv{})
 }
 
@@ -273,11 +369,11 @@ func (l *MovableList) set(pos int, v any) (ID, error) {
 		return ID{}, err
 	}
 	st := l.h.state()
-	slots := movSlots(st.seqs[l.h.k])
+	slots := st.seqs[l.h.k].mov().slots
 	if pos < 0 || pos >= len(slots) {
 		return ID{}, outOfRange(pos, 1, len(slots))
 	}
-	e := slots[pos].node.elem
+	e := slots[pos].elem
 	if d.knocked(ruleMovableSetSkipEqual) && valueEqual(e.value, v) {
 		return ID{}, nil
 	}

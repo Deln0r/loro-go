@@ -439,6 +439,9 @@ type opLog struct {
 	// counter of the op they wait for, as loro files them.
 	pending map[uint64]map[int64][]*storedChange
 	arena   strArena
+	// vvTab is vv as loro's hash map holds it, which decides the order
+	// Version encodes its peers in (version.go).
+	vvTab fxTable
 }
 
 func newOpLog() *opLog {
@@ -457,6 +460,7 @@ func (l *opLog) clone() *opLog {
 		fr:      l.fr,
 		pending: make(map[uint64]map[int64][]*storedChange, len(l.pending)),
 		arena:   l.arena,
+		vvTab:   *l.vvTab.clone(),
 	}
 	if l.fr.tab != nil {
 		out.fr.tab = l.fr.tab.clone()
@@ -547,6 +551,7 @@ func (l *opLog) insertLocal(c *storedChange, interval int64, d *Document) {
 	l.vv[c.ch.ID.Peer] = c.end()
 	l.fr = frontiers{n: 1, one: c.lastID()}
 	l.store.insert(c, true, interval, d)
+	d.noteLocalOps()
 }
 
 // insertRemote adds an imported change whose deps are all applied. A change
@@ -566,6 +571,9 @@ func (l *opLog) insertRemote(c *storedChange, d *Document) error {
 	}
 	l.updateFrontiers(c.lastID(), c.ch.Deps)
 	l.vv[c.ch.ID.Peer] = c.end()
+	// extend_to_include_last_id (version.rs:851): a peer new to the map
+	// goes in, one it holds takes the higher end.
+	l.vvTab.insertMax(ID{Peer: c.ch.ID.Peer, Counter: c.end()})
 	l.store.insert(c, true, 0, d)
 	return nil
 }

@@ -19,6 +19,9 @@ type docState struct {
 	// maps is each Map's winning op per key, built when first asked for.
 	maps map[contKey]map[string]Op
 	work *seqWork
+	// localOps counts the local ops applied, and localOpsNoted those the
+	// version vector has taken in (Document.noteLocalOps).
+	localOps, localOpsNoted int
 }
 
 func newDocState() *docState {
@@ -79,7 +82,12 @@ func (d *Document) rebuild() error {
 // applyLocal puts one local op into the state. Its author has everything
 // merged so far in view, so a sequence op takes the merge's fast path, and a
 // map write has the highest lamport there is and wins its key.
-func (s *docState) applyLocal(op Op) error {
+func (s *docState) applyLocal(op Op) (err error) {
+	defer func() {
+		if err == nil {
+			s.localOps++
+		}
+	}()
 	k := keyOf(op)
 	s.work.steps = 0
 	if isSeqOp(op) {

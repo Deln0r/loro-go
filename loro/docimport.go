@@ -17,6 +17,11 @@ type decodedBlob struct {
 	// stateRoots are the root containers a snapshot's state holds, in key
 	// order. A root acquired with no op has state but no op in the history.
 	stateRoots []contKey
+	// vv and fr are a snapshot's version vector and frontiers, the ids as
+	// written, which loro takes as the document's when the snapshot
+	// replaces its state.
+	vv VersionVector
+	fr []ID
 }
 
 // decodeBlob reads a FastUpdates or FastSnapshot blob for Import. It decodes
@@ -41,7 +46,7 @@ func decodeBlob(blob []byte, nextGen func() int) (*decodedBlob, error) {
 	case fast.ModeFastSnapshot:
 		out.snapshot = true
 		var state []byte
-		if raws, state, err = snapshotSections(h.Body); err != nil {
+		if raws, state, out.vv, out.fr, err = snapshotSections(h.Body); err != nil {
 			return nil, err
 		}
 		if out.stateRoots, err = stateRoots(state); err != nil {
@@ -108,9 +113,12 @@ func isListInsert(op Op) bool {
 }
 
 // snapshotSections splits a FastSnapshot body (encoding/fast_snapshot.rs:1):
-// the oplog's change blocks, and the state section, nil when the snapshot
-// marks it empty or the state holds nothing. A shallow snapshot is refused.
-func snapshotSections(body []byte) ([][]byte, []byte, error) {
+// the oplog's change blocks, the state section, nil when the snapshot marks
+// it empty or the state holds nothing, and the version vector and frontiers
+// the oplog keeps under "vv" and "fr", which loro decodes on every snapshot
+// import and refuses the snapshot without (change_store.rs:1197). A shallow
+// snapshot is refused.
+func snapshotSections(body []byte) (raws [][]byte, state []byte, vv VersionVector, fr []ID, err error) {
 	section := func(b []byte) ([]byte, []byte, error) {
 		if len(b) < 4 {
 			return nil, nil, fmt.Errorf("loro: snapshot section length cut short")
@@ -121,27 +129,30 @@ func snapshotSections(body []byte) ([][]byte, []byte, error) {
 		}
 		return b[4 : 4+int(n)], b[4+int(n):], nil
 	}
+	fail := func(e error) ([][]byte, []byte, VersionVector, []ID, error) {
+		return nil, nil, VersionVector{}, nil, e
+	}
 	oplog, rest, err := section(body)
 	if err != nil {
-		return nil, nil, err
+		return fail(err)
 	}
-	state, rest, err := section(rest)
+	state, rest, err = section(rest)
 	if err != nil {
-		return nil, nil, err
+		return fail(err)
 	}
 	shallow, rest, err := section(rest)
 	if err != nil {
-		return nil, nil, err
+		return fail(err)
 	}
 	if len(rest) != 0 {
-		return nil, nil, fmt.Errorf("loro: %d bytes after the snapshot's sections", len(rest))
+		return fail(fmt.Errorf("loro: %d bytes after the snapshot's sections", len(rest)))
 	}
 	if len(state) == 0 || string(state) == "E" {
 		state = nil
 	}
 	entries, err := kv.ParseSSTable(oplog)
 	if err != nil {
-		return nil, nil, err
+		return fail(err)
 	}
 	// A shallow snapshot (export mode "shallow-snapshot") starts its history
 	// at a version past the beginning: loro reads it by its third section,
@@ -150,18 +161,28 @@ func snapshotSections(body []byte) ([][]byte, []byte, error) {
 	// depend on ops it does not hold, which a Document cannot merge.
 	shallowErr := fmt.Errorf("loro: shallow snapshots are not supported; export a full snapshot or updates")
 	if len(shallow) != 0 {
-		return nil, nil, shallowErr
+		return fail(shallowErr)
 	}
-	var raws [][]byte
+	var vvRaw, frRaw []byte
 	for _, e := range entries {
 		switch {
 		case len(e.Key) == 12: // a change block; vv, fr, sv and sf are 2 bytes
 			raws = append(raws, e.Value)
 		case string(e.Key) == "sv" || string(e.Key) == "sf":
-			return nil, nil, shallowErr
+			return fail(shallowErr)
+		case string(e.Key) == "vv":
+			vvRaw = e.Value
+		case string(e.Key) == "fr":
+			frRaw = e.Value
 		}
 	}
-	return raws, state, nil
+	if vv, err = DecodeVersionVector(vvRaw); err != nil {
+		return fail(fmt.Errorf("loro: snapshot: %w", err))
+	}
+	if fr, err = decodeIDList(frRaw); err != nil {
+		return fail(fmt.Errorf("loro: snapshot: %w", err))
+	}
+	return raws, state, vv, fr, nil
 }
 
 // stateRoots lists the root containers a snapshot's state section holds. Its

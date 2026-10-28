@@ -225,8 +225,12 @@ func (d *Document) Import(blob []byte) error {
 	}
 	if err != nil {
 		d.restore(saved)
+		return err
 	}
-	return err
+	if snapshotInPlace {
+		d.takeSnapshotVersion(b.vv, b.fr)
+	}
+	return nil
 }
 
 // savedDoc is what an import may change besides the state.

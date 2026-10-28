@@ -1,6 +1,10 @@
 package loro
 
-import "math/bits"
+import (
+	"cmp"
+	"math/bits"
+	"slices"
+)
 
 // rustSortUnstable sorts v as Rust's slice::sort_unstable_by sorts a slice of
 // elements larger than 96 bytes, such as loro's Change, which is how loro
@@ -215,6 +219,10 @@ func rustHeapsort[T any](v []T, less func(a, b T) bool) {
 
 // sortByLamport sorts a blob's changes by lamport as loro does
 // (sort_unstable_by_key(|x| x.lamport)), with Rust's unstable sort.
-func sortByLamport(changes []*storedChange, _ *Document) {
+func sortByLamport(changes []*storedChange, d *Document) {
+	if d.knocked(ruleUnstableSort) {
+		slices.SortStableFunc(changes, func(a, b *storedChange) int { return cmp.Compare(a.ch.Lamport, b.ch.Lamport) })
+		return
+	}
 	rustSortUnstable(changes, func(a, b *storedChange) bool { return a.ch.Lamport < b.ch.Lamport })
 }

@@ -12,11 +12,14 @@ import (
 // MovableList and Tree edits, containers stored in containers at any depth,
 // mergeable children and edits through deleted handles, by one to three
 // peers with partial and out-of-order syncs, and holds every Document to
-// loro-crdt at every checkpoint.
+// loro-crdt at every checkpoint, its version and frontiers included.
 func TestScriptStructCorpus(t *testing.T) {
 	scripts := loadScripts(t, "script_struct_corpus.json")
 	r := runScripts(t, scripts, 0)
 	reportScripts(t, "script_struct_corpus.json", len(scripts), r)
+	if r.versionChecks != r.checks {
+		t.Errorf("%d of %d checks recorded a version", r.versionChecks, r.checks)
+	}
 }
 
 // TestScriptStructCrowdCorpus is TestScriptStructCorpus for the 60 scripts
@@ -25,6 +28,9 @@ func TestScriptStructCrowdCorpus(t *testing.T) {
 	scripts := loadScripts(t, "script_struct_crowd_corpus.json")
 	r := runScripts(t, scripts, 0)
 	reportScripts(t, "script_struct_crowd_corpus.json", len(scripts), r)
+	if r.versionChecks != r.checks {
+		t.Errorf("%d of %d checks recorded a version", r.versionChecks, r.checks)
+	}
 }
 
 // TestStructNamedScripts runs the scripts of script_struct_named.json, one
@@ -38,8 +44,10 @@ func TestStructNamedScripts(t *testing.T) {
 			for _, f := range r.failures {
 				t.Error(f)
 			}
-			if r.checks == 0 || r.json != r.checks || r.atoms != r.checks || r.shape != r.checks || r.bytes != r.checks {
-				t.Errorf("%d checks: JSON %d, atoms %d, shape %d, bytes %d", r.checks, r.json, r.atoms, r.shape, r.bytes)
+			if r.checks == 0 || r.json != r.checks || r.atoms != r.checks || r.shape != r.checks || r.bytes != r.checks ||
+				r.versionChecks != r.checks || r.versions != r.checks {
+				t.Errorf("%d checks: JSON %d, atoms %d, shape %d, bytes %d, version and frontiers %d of %d recorded",
+					r.checks, r.json, r.atoms, r.shape, r.bytes, r.versions, r.versionChecks)
 			}
 		})
 	}

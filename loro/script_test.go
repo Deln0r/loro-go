@@ -72,6 +72,10 @@ type scriptAction struct {
 		// Delta is toDelta of each text the peer shows, by name, when the
 		// script records them.
 		Delta map[string]json.RawMessage `json:"delta"`
+		// VV and FR are the peer's oplogVersion().encode() and
+		// encodeFrontiers(oplogFrontiers()), when the script records them.
+		VV []byte `json:"vv"`
+		FR []byte `json:"fr"`
 	} `json:"peers"`
 }
 
@@ -325,7 +329,10 @@ type checkResult struct {
 	// deltaChecks counts the checks that recorded deltas, deltas those
 	// where every delta matched.
 	deltaChecks, deltas int
-	failures            []string
+	// versionChecks counts the checks that recorded a version and
+	// frontiers, versions those where both encodings matched.
+	versionChecks, versions int
+	failures                []string
 	// pairs are the Go exports that differ from loro's in bytes, with
 	// loro's, for loro-crdt to import side by side.
 	pairs [][3]string
@@ -451,6 +458,9 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 			for i, want := range a.Peers {
 				where := fmt.Sprintf("%s check at action %d peer %d", s.label(), ai, s.Peers[i])
 				e := checkPeer(where, docs[i], want.JSON, want.Delta, blobs[want.Export], r)
+				if want.VV != nil {
+					checkVersion(where, docs[i], want.VV, want.FR, r)
+				}
 				if r.last != nil && e != nil {
 					e.Script, e.Peer = s.file+" "+s.label(), s.Peers[i]
 					r.last[fmt.Sprintf("%s %s/%d", s.file, s.label(), s.Peers[i])] = *e
@@ -463,6 +473,26 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 			r.fail("%s: %v", where, err)
 			return
 		}
+	}
+}
+
+// checkVersion holds a peer's version vector and frontiers, encoded, to
+// what loro-crdt encoded for the same peer at the same point: each local
+// op must reach the version as loro's update_version_on_new_local_op
+// takes it, in the order loro's hash map ends up holding the peers.
+func checkVersion(where string, d *Document, wantVV, wantFR []byte, r *checkResult) {
+	r.versionChecks++
+	vv := d.Version().Encode()
+	fr, err := EncodeFrontiers(d.Frontiers())
+	switch {
+	case err != nil:
+		r.fail("%s: frontiers: %v", where, err)
+	case !bytes.Equal(vv, wantVV):
+		r.fail("%s: version %x, loro-crdt %x", where, vv, wantVV)
+	case !bytes.Equal(fr, wantFR):
+		r.fail("%s: frontiers %x, loro-crdt %x", where, fr, wantFR)
+	default:
+		r.versions++
 	}
 }
 
@@ -644,6 +674,12 @@ func reportScripts(t *testing.T, name string, n int, r *checkResult) {
 		name, n, r.checks, r.json, r.checks, r.deltas, r.deltaChecks, r.atoms, r.checks, r.shape, r.checks, r.bytes, r.checks)
 	if r.json != r.checks || r.atoms != r.checks || r.deltas != r.deltaChecks {
 		t.Errorf("%s: JSON %d/%d, delta %d/%d, atoms %d/%d", name, r.json, r.checks, r.deltas, r.deltaChecks, r.atoms, r.checks)
+	}
+	if r.versionChecks > 0 {
+		t.Logf("%s: version and frontiers %d/%d", name, r.versions, r.versionChecks)
+		if r.versions != r.versionChecks {
+			t.Errorf("%s: version and frontiers %d/%d", name, r.versions, r.versionChecks)
+		}
 	}
 }
 

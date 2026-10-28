@@ -24,8 +24,10 @@
 //   export    {}         the peer exported; the export commits its open edits
 //   import    {blob, refused?}  the peer imported blobs[blob]; with refused,
 //                        loro-crdt refused it with that error and nothing changed
-//   check     {peers: [{json, export}]}  toJSON and the full export of every
-//                        peer; taking the exports commits every peer's edits
+//   check     {peers: [{json, export, vv?, fr?}]}  toJSON and the full export
+//                        of every peer, and in the structure scripts its encoded
+//                        version and frontiers; taking the exports commits every
+//                        peer's edits
 //
 // A sync delivers the exact blob the source exported: its whole history, a
 // tail from a version (the receiver's, or one the source saved earlier, so it
@@ -37,7 +39,7 @@
 //
 // Everything is seeded and peer ids are fixed, so a rerun writes the same
 // bytes.
-import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter, LoroTree } from "loro-crdt/nodejs";
+import { LoroDoc, LoroText, LoroMap, LoroList, LoroMovableList, LoroCounter, LoroTree, encodeFrontiers } from "loro-crdt/nodejs";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -250,6 +252,12 @@ class Script {
         out.delta = delta;
       }
       out.export = this.blob(d.export({ mode: "update" }));
+      // With versions set, the peer's version vector and frontiers, as
+      // oplogVersion().encode() and encodeFrontiers write them.
+      if (this.versions) {
+        out.vv = b64(d.oplogVersion().encode());
+        out.fr = b64(encodeFrontiers(d.oplogFrontiers()));
+      }
       return out;
     });
     this.actions.push({ a: "check", peers });
@@ -1265,6 +1273,7 @@ function structScript(seed, crowd) {
       })()
     : peerSets[Math.floor(seed / 3) % peerSets.length].slice(0, n);
   const s = new Script({ seed }, peers);
+  s.versions = true;
   const pool = [ML, TR, MP, LS];
   const nodes = new Map();
   const held = [];
@@ -1326,6 +1335,7 @@ for (const [file, count, crowd] of [["script_struct_corpus.json", 300, false], [
 const structNamed = [];
 const addStruct = (name, peers, build) => {
   const s = new Script({ name }, peers);
+  s.versions = true;
   build(s);
   s.check();
   structNamed.push(s.out());

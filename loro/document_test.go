@@ -480,3 +480,166 @@ func TestCounterPastInt64(t *testing.T) {
 		}
 	}
 }
+
+// pastViewBlobs are histories, complete but for an op whose position lies
+// past what its author saw. loro-crdt refuses each ("list diff retains
+// 1000 items but state only has 0", state/list_state.rs:585), which
+// testdata/gen/validate_document.mjs checks on the same bytes.
+func pastViewBlobs(t testing.TB) map[string][]byte {
+	t.Helper()
+	op := func(c string, kind change.ContainerType, vk change.ValueKind, ctr, pos, n int64, v any) Op {
+		return Op{Container: c, IsRoot: true, Kind: kind, VKind: vk, Pos: pos, Len: n, Value: v, Peer: 7, Counter: ctr, Lamport: ctr}
+	}
+	insert := op("t", change.CText, change.VKStr, 0, 0, 2, "ab")
+	out := map[string][]byte{}
+	for name, ops := range map[string][]Op{
+		"list_insert_at_1000": {op("l", change.CList, change.VKLoroValue, 0, 1000, 1, []any{int64(1)})},
+		"text_insert_at_5":    {op("t", change.CText, change.VKStr, 0, 5, 1, "x")},
+		"text_delete_past_end": {insert,
+			op("t", change.CText, change.VKDeleteSeq, 2, 1, 3, DeleteSpan{Peer: 7, Counter: 0, Len: 3})},
+	} {
+		blob, err := EncodeUpdates(&Updates{Changes: []Change{{ID: ID{Peer: 7}, Ops: ops}}})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		out[name] = blob
+	}
+	return out
+}
+
+// skippedCounterBlob is a change at counter 2 of peer 7 with no deps, so
+// what it depends on is there but 1@7 is not: it skips counters of its
+// peer, and loro refuses it (oplog/known_history.rs:150).
+func skippedCounterBlob(t testing.TB) []byte {
+	t.Helper()
+	blob, err := EncodeUpdates(&Updates{Changes: []Change{{ID: ID{Peer: 7, Counter: 2}, Lamport: 2, Ops: []Op{
+		{Container: "m", IsRoot: true, Kind: change.CMap, VKind: change.VKLoroValue, MapKey: "k", Value: int64(1), Len: 1, Peer: 7, Counter: 2, Lamport: 2},
+	}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return blob
+}
+
+// TestImportRefusesSkippedCounters imports a change that skips counters of
+// its peer: refused, nothing changed.
+func TestImportRefusesSkippedCounters(t *testing.T) {
+	d := NewDocument(1)
+	err := d.Import(skippedCounterBlob(t))
+	if err == nil || !strings.Contains(err.Error(), "skips counters") {
+		t.Fatalf("got %v", err)
+	}
+	if state, _ := d.JSON(); len(state) != 0 {
+		t.Errorf("state %v", state)
+	}
+	d.mu.Lock()
+	vv := len(d.log.vv)
+	d.mu.Unlock()
+	if vv != 0 {
+		t.Error("the refused change moved the version")
+	}
+}
+
+// refusedBlobs are the histories a Document refuses, and loro-crdt too,
+// for testdata/gen/validate_document.mjs to check on loro.
+func refusedBlobs(t testing.TB) map[string][]byte {
+	t.Helper()
+	out := pastViewBlobs(t)
+	out["skipped_counter"] = skippedCounterBlob(t)
+	return out
+}
+
+// TestImportRefusesPositionsPastTheView imports histories with an op whose
+// position lies past what its author saw. A Document holds every change's
+// causal past, so it refuses each, as loro does, and is left as it was;
+// MergeState keeps clamping such positions.
+func TestImportRefusesPositionsPastTheView(t *testing.T) {
+	for name, blob := range pastViewBlobs(t) {
+		d := NewDocument(1)
+		if err := d.Text("keep").Insert(0, "hi"); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := d.ExportUpdates()
+		beforeJSON, _ := d.JSON()
+		err := d.Import(blob)
+		if err == nil || !strings.Contains(err.Error(), "its author saw") {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		after, _ := d.ExportUpdates()
+		afterJSON, _ := d.JSON()
+		if !bytes.Equal(before, after) || fmt.Sprint(beforeJSON) != fmt.Sprint(afterJSON) {
+			t.Errorf("%s: a refused import changed the document: %v", name, afterJSON)
+		}
+		u, err := DecodeUpdates(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := MergeState(u); err != nil {
+			t.Errorf("%s: MergeState no longer clamps: %v", name, err)
+		}
+	}
+	// The same ops within the view import.
+	ok, err := EncodeUpdates(&Updates{Changes: []Change{{ID: ID{Peer: 7}, Ops: []Op{
+		{Container: "l", IsRoot: true, Kind: change.CList, VKind: change.VKLoroValue, Len: 1, Value: []any{int64(1)}, Peer: 7},
+	}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewDocument(1).Import(ok); err != nil {
+		t.Errorf("a list insert at 0: %v", err)
+	}
+}
+
+// TestImportIsAtomic refuses an import that also releases a waiting change
+// and registers a root, and checks that the waiting change still waits.
+func TestImportIsAtomic(t *testing.T) {
+	src := NewDocument(3)
+	if err := src.Text("t").Insert(0, "ab"); err != nil {
+		t.Fatal(err)
+	}
+	src.Commit()
+	prefix, _ := src.ExportUpdates()
+	if err := src.Text("t").Insert(2, "cd"); err != nil {
+		t.Fatal(err)
+	}
+	full, _ := src.ExportUpdates()
+	u, _ := DecodeUpdates(full)
+	tail := u.Changes[0]
+	if len(tail.Ops) != 1 {
+		t.Fatalf("one op expected, got %d", len(tail.Ops))
+	}
+
+	d := NewDocument(1)
+	// The tail [2, 4) alone waits for 3@1.
+	sliced := (&storedChange{ch: tail, prov: make([]opProv, 1)}).slice(2, 4)
+	tailBlob, err := EncodeUpdates(&Updates{Changes: []Change{sliced.ch}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Import(tailBlob); err != nil {
+		t.Fatal(err)
+	}
+	// The prefix, with a list insert past the view in another change.
+	pu, _ := DecodeUpdates(prefix)
+	bad := pu.Changes[0]
+	bad.Ops = append(bad.Ops, Op{Container: "l", IsRoot: true, Kind: change.CList, VKind: change.VKLoroValue,
+		Pos: 9, Len: 1, Value: []any{int64(1)}, Peer: 3, Counter: 2, Lamport: 2})
+	badBlob, err := EncodeUpdates(&Updates{Changes: []Change{bad}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Import(badBlob); err == nil {
+		t.Fatal("imported a list insert past the view")
+	}
+	if state, _ := d.JSON(); fmt.Sprint(state) != "map[t:]" {
+		t.Errorf("state after a refused import: %v", state)
+	}
+	// The good prefix releases the tail, which waited all along.
+	if err := d.Import(prefix); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := d.JSON(); fmt.Sprint(state) != "map[t:abcd]" {
+		t.Errorf("state %v, want t:abcd", state)
+	}
+}

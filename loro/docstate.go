@@ -27,11 +27,13 @@ func newDocState() *docState {
 		seqs:     map[contKey]*seqState{},
 		anchored: map[contKey]bool{},
 		maps:     map[contKey]map[string]Op{},
-		work:     &seqWork{limit: seqWorkLimit},
+		work:     &seqWork{limit: seqWorkLimit, strict: true},
 	}
 }
 
-// buildState merges changes as MergeState does and keeps the result.
+// buildState merges changes as MergeState does and keeps the result. The
+// merge is strict: the changes are causally complete, so a position past
+// its author's view is an error, not something to clamp.
 func buildState(changes []Change) (*docState, error) {
 	st := newDocState()
 	c := collect(&Updates{Changes: changes})
@@ -56,8 +58,7 @@ func buildState(changes []Change) (*docState, error) {
 
 // rebuild replaces the state with the merge of the applied history, and of
 // the open transaction's ops when one is still open. When the merge refuses
-// the history, the document is marked broken rather than left showing a
-// state its history no longer gives.
+// the history the state is left as it was and the error returned.
 func (d *Document) rebuild() error {
 	stored := d.log.store.changes()
 	changes := make([]Change, 0, len(stored)+1)
@@ -69,10 +70,9 @@ func (d *Document) rebuild() error {
 	}
 	st, err := buildState(changes)
 	if err != nil {
-		d.broken = err
 		return err
 	}
-	d.st, d.broken = st, nil
+	d.st = st
 	return nil
 }
 

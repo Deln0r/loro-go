@@ -6,10 +6,12 @@
 // loro-crdt document, which must show the Go peer's JSON (less the root
 // containers the peer only opened: an export carries no op for them, so an
 // importer cannot show them), and must agree with a fresh document that
-// imported loro's export on state, version and whole history. Exits
-// non-zero on any mismatch.
+// imported loro's export on state, version and whole history. The
+// histories a Document refuses, written to testdata/go_out/document_refused
+// (an op past what its author saw, a change that skips counters), must be
+// refused by loro-crdt too. Exits non-zero on any mismatch.
 import { LoroDoc } from "loro-crdt/nodejs";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -74,8 +76,26 @@ for (const e of entries) {
     }
   }
 }
+// The histories a Document refuses: loro-crdt must refuse each too.
+const refusedDir = join(here, "..", "go_out", "document_refused");
+let refusedNames = [];
+try {
+  refusedNames = readdirSync(refusedDir).filter((f) => f.endsWith(".bin"));
+} catch (e) {}
+if (refusedNames.length === 0) {
+  console.error(`${refusedDir} holds no refused histories`);
+  failed++;
+}
+for (const name of refusedNames) {
+  const doc = new LoroDoc();
+  try {
+    doc.import(new Uint8Array(readFileSync(join(refusedDir, name))));
+    console.error(`${name}: loro-crdt imports a history a Document refuses: ${stable(doc.toJSON())}`);
+    failed++;
+  } catch (e) {}
+}
 if (failed > 0) {
-  console.error(`${failed} mismatches in ${entries.length} exports`);
+  console.error(`${failed} mismatches in ${entries.length} exports and ${refusedNames.length} refused histories`);
   process.exit(1);
 }
-console.log(`ok: loro-crdt imports all ${entries.length} Document exports to the Go peer's state and to loro's own state, version and history; ${identical} are loro's bytes`);
+console.log(`ok: loro-crdt imports all ${entries.length} Document exports to the Go peer's state and to loro's own state, version and history; ${identical} are loro's bytes; it refuses all ${refusedNames.length} histories a Document refuses`);

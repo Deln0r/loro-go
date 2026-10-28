@@ -21,7 +21,8 @@
 //   inc       {c, v}                  acquire   {c, kind}
 //   commit    {msg?, ts?}             merge_interval {v}
 //   export    {}         the peer exported; the export commits its open edits
-//   import    {blob}     the peer imported blobs[blob]
+//   import    {blob, refused?}  the peer imported blobs[blob]; with refused,
+//                        loro-crdt refused it with that error and nothing changed
 //   check     {peers: [{json, export}]}  toJSON and the full export of every
 //                        peer; taking the exports commits every peer's edits
 //
@@ -158,6 +159,18 @@ class Script {
   import(p, blob) {
     this.docs[p].import(Buffer.from(this.blobs[blob], "base64"));
     this.actions.push({ a: "import", p, blob });
+  }
+  // importRefused imports a blob loro-crdt refuses, and records that it
+  // did: the Go side must refuse it too and change nothing.
+  importRefused(p, blob) {
+    let err;
+    try {
+      this.docs[p].import(Buffer.from(this.blobs[blob], "base64"));
+    } catch (e) {
+      err = String(e);
+    }
+    if (err === undefined) throw new Error(`${this.head.name}: loro-crdt imported a blob expected to be refused`);
+    this.actions.push({ a: "import", p, blob, refused: err.slice(0, 120) });
   }
   check() {
     const peers = this.docs.map((d) => {
@@ -563,6 +576,21 @@ add("handle_survives_import", [1, 2], (s) => {
   s.listIns(1, "l", 0, [1]);
   s.import(1, s.export(0));
   s.listIns(1, "l", 1, [2]);
+});
+
+// [import] Two writers that share a peer id: A's blob reuses B's op id 0@1
+// for other content, and loro refuses it whole. A's state and its next
+// counter stay as they were.
+add("reused_op_id_refused", [1, 1], (s) => {
+  s.textIns(0, "t", 0, "a");
+  s.commit(0);
+  s.textIns(1, "t", 0, "bc");
+  s.commit(1);
+  s.importRefused(0, s.export(1));
+  s.check();
+  s.textIns(0, "t", 1, "x");
+  // The same id with the same content is no conflict.
+  s.import(1, s.export(1));
 });
 
 writeFileSync(join(outDir, "script_named.json"), JSON.stringify(named) + "\n");

@@ -2,6 +2,9 @@ package loro
 
 import (
 	"cmp"
+	"fmt"
+	"maps"
+	"math"
 	"slices"
 	"unicode/utf8"
 
@@ -445,6 +448,45 @@ func newOpLog() *opLog {
 
 func (l *opLog) empty() bool { return len(l.vv) == 0 && len(l.pending) == 0 }
 
+// clone copies the log deep enough that importing into the copy, which
+// merges ops into the last change of a block and moves pending changes'
+// lamports, leaves the original as it was.
+func (l *opLog) clone() *opLog {
+	out := &opLog{
+		store:   newChangeStore(),
+		vv:      maps.Clone(l.vv),
+		fr:      l.fr,
+		pending: make(map[uint64]map[int64][]*storedChange, len(l.pending)),
+		arena:   l.arena,
+	}
+	if l.fr.tab != nil {
+		out.fr.tab = l.fr.tab.clone()
+	}
+	for p, blocks := range l.store.peers {
+		cp := make([]*storeBlock, len(blocks))
+		for i, b := range blocks {
+			nb := &storeBlock{size: b.size, end: b.end, changes: make([]*storedChange, len(b.changes))}
+			for j, c := range b.changes {
+				nb.changes[j] = c.clone()
+			}
+			cp[i] = nb
+		}
+		out.store.peers[p] = cp
+	}
+	for p, byCounter := range l.pending {
+		cp := make(map[int64][]*storedChange, len(byCounter))
+		for ctr, set := range byCounter {
+			cs := make([]*storedChange, len(set))
+			for i, c := range set {
+				cs[i] = c.clone()
+			}
+			cp[ctr] = cs
+		}
+		out.pending[p] = cp
+	}
+	return out
+}
+
 func (l *opLog) has(id ID) bool { return id.Counter < l.vv[id.Peer] }
 
 // lamportOf is the lamport of an applied op.
@@ -508,11 +550,25 @@ func (l *opLog) insertLocal(c *storedChange, interval int64, d *Document) {
 	l.store.insert(c, true, interval, d)
 }
 
-// insertRemote adds an imported change whose deps are all applied.
-func (l *opLog) insertRemote(c *storedChange, d *Document) {
+// insertRemote adds an imported change whose deps are all applied. A change
+// that depends on nothing but its own peer's op before it continues that
+// op's lamport; loro asserts it does ("lamport is not continuous",
+// oplog/loro_dag.rs:341), so a blob whose change claims a later lamport for
+// itself, which only the pending path lets through, is refused. So is one
+// whose lamports pass loro's u32.
+func (l *opLog) insertRemote(c *storedChange, d *Document) error {
+	if deps := c.ch.Deps; len(deps) == 1 && deps[0].Peer == c.ch.ID.Peer {
+		if prev, ok := l.lamportOf(deps[0]); ok && c.ch.Lamport != prev+1 {
+			return fmt.Errorf("loro: change %d@%d continues its peer at lamport %d, not %d", c.start(), c.ch.ID.Peer, c.ch.Lamport, prev+1)
+		}
+	}
+	if c.ch.Lamport+(c.end()-c.start()) > math.MaxUint32 {
+		return fmt.Errorf("loro: change %d@%d ends past lamport %d", c.start(), c.ch.ID.Peer, uint32(math.MaxUint32))
+	}
 	l.updateFrontiers(c.lastID(), c.ch.Deps)
 	l.vv[c.ch.ID.Peer] = c.end()
 	l.store.insert(c, true, 0, d)
+	return nil
 }
 
 // trimKnown is trim_the_known_part_of_change (oplog.rs:596): the part of c
@@ -535,8 +591,9 @@ func (l *opLog) trimKnown(c *storedChange, d *Document) *storedChange {
 // (encoding.rs:274 apply_decoded_changes_to_oplog): sorted by lamport, a
 // change whose ops are all applied is skipped, one whose deps are applied
 // goes in with its lamport recomputed and its known prefix trimmed, and the
-// rest wait. It reports whether anything was applied.
-func (l *opLog) importChanges(changes []*storedChange, d *Document) bool {
+// rest wait. It reports whether anything was applied. On an error the log
+// is half changed, and the caller restores it.
+func (l *opLog) importChanges(changes []*storedChange, d *Document) (bool, error) {
 	before := l.appliedAtoms()
 	slices.SortStableFunc(changes, func(a, b *storedChange) int { return cmp.Compare(a.ch.Lamport, b.ch.Lamport) })
 	var latest []ID
@@ -553,12 +610,18 @@ func (l *opLog) importChanges(changes []*storedChange, d *Document) bool {
 		}
 		c.setLamport(lam)
 		if c = l.trimKnown(c, d); c != nil {
-			l.insertRemote(c, d)
+			if err := l.insertRemote(c, d); err != nil {
+				return false, err
+			}
 		}
 	}
-	l.applyPending(latest, d)
-	l.parkOrApply(waiting, d)
-	return l.appliedAtoms() != before
+	if err := l.applyPending(latest, d); err != nil {
+		return false, err
+	}
+	if err := l.parkOrApply(waiting, d); err != nil {
+		return false, err
+	}
+	return l.appliedAtoms() != before, nil
 }
 
 func (l *opLog) appliedAtoms() int64 {
@@ -601,7 +664,7 @@ func (l *opLog) park(missing ID, c *storedChange) {
 // parkOrApply is extend_pending_changes_with_unknown_lamport
 // (pending_changes.rs:281): each change waits, is dropped as applied, or is
 // applied, and what it applied may release others.
-func (l *opLog) parkOrApply(changes []*storedChange, d *Document) {
+func (l *opLog) parkOrApply(changes []*storedChange, d *Document) error {
 	var applied []ID
 	for _, c := range changes {
 		done, missing, waits := l.waitsFor(c)
@@ -611,18 +674,21 @@ func (l *opLog) parkOrApply(changes []*storedChange, d *Document) {
 		case done:
 		default:
 			applied = append(applied, c.lastID())
-			l.applyRemote(c, d)
+			if err := l.applyRemote(c, d); err != nil {
+				return err
+			}
 		}
 	}
 	if len(applied) > 0 {
-		l.applyPending(applied, d)
+		return l.applyPending(applied, d)
 	}
+	return nil
 }
 
 // applyPending is try_apply_pending (pending_changes.rs:333): for each op
 // just applied, last first, the changes filed under its peer at or below its
 // counter are tried again, in counter order.
-func (l *opLog) applyPending(ids []ID, d *Document) {
+func (l *opLog) applyPending(ids []ID, d *Document) error {
 	for len(ids) > 0 {
 		id := ids[len(ids)-1]
 		ids = ids[:len(ids)-1]
@@ -654,17 +720,20 @@ func (l *opLog) applyPending(ids []ID, d *Document) {
 				case done:
 				default:
 					ids = append(ids, c.lastID())
-					l.applyRemote(c, d)
+					if err := l.applyRemote(c, d); err != nil {
+						return err
+					}
 				}
 			}
 		}
 	}
+	return nil
 }
 
 // applyRemote is apply_change_from_remote (pending_changes.rs:375): the
 // change's lamport is raised past its deps' (calc_unknown_lamport_change),
 // its known prefix trimmed, and the rest applied.
-func (l *opLog) applyRemote(c *storedChange, d *Document) {
+func (l *opLog) applyRemote(c *storedChange, d *Document) error {
 	lam := c.ch.Lamport
 	for _, dep := range c.ch.Deps {
 		if dl, ok := l.lamportOf(dep); ok {
@@ -673,8 +742,9 @@ func (l *opLog) applyRemote(c *storedChange, d *Document) {
 	}
 	c.setLamport(lam)
 	if c = l.trimKnown(c, d); c != nil {
-		l.insertRemote(c, d)
+		return l.insertRemote(c, d)
 	}
+	return nil
 }
 
 // pendingLamportEnd is the highest lamport a pending change would end at. It
@@ -708,4 +778,160 @@ func (l *opLog) exportBlocks(d *Document) [][]*storedChange {
 		}
 	}
 	return out
+}
+
+// checkKnown is loro's check_and_trim_known_part_of_changes
+// (oplog/known_history.rs:104), the part that can refuse an import. When a
+// blob brings anything new, every op id in it the document already has
+// must name the same op: the same dependencies and the same content.
+// Another op under a known id means two writers shared a peer id, and loro
+// refuses the blob ("Every op id should be unique"). Then no change may
+// skip counters of its peer while its deps are all there. changes are in
+// the order the import applies them.
+func (l *opLog) checkKnown(changes []*storedChange) error {
+	fresh := false
+	for _, c := range changes {
+		if c.end() > l.vv[c.ch.ID.Peer] {
+			fresh = true
+			break
+		}
+	}
+	if fresh {
+		for _, c := range changes {
+			if known := l.vv[c.ch.ID.Peer]; c.start() < known {
+				if err := l.checkKnownPart(c, known); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	// check_changes_do_not_skip_counters: replay the import's first pass on
+	// counter ends alone.
+	ends := map[uint64]int64{}
+	endOf := func(p uint64) int64 {
+		if e, ok := ends[p]; ok {
+			return e
+		}
+		return l.vv[p]
+	}
+	for _, c := range changes {
+		peer := c.ch.ID.Peer
+		end := endOf(peer)
+		if c.end() <= end {
+			continue
+		}
+		ready := true
+		for _, dep := range c.ch.Deps {
+			if dep.Counter >= endOf(dep.Peer) {
+				ready = false
+				break
+			}
+		}
+		if !ready {
+			continue
+		}
+		if c.start() > end {
+			return fmt.Errorf("loro: change %d@%d has its deps but not %d@%d, so it skips counters of its peer",
+				c.start(), peer, c.start()-1, peer)
+		}
+		ends[peer] = c.end()
+	}
+	return nil
+}
+
+// checkKnownPart is check_known_part_of_change: c's atoms below known
+// against the stored ones, segment by segment of the stored changes.
+func (l *opLog) checkKnownPart(c *storedChange, known int64) error {
+	peer := c.ch.ID.Peer
+	end := min(c.end(), known)
+	for ctr := c.start(); ctr < end; {
+		local := l.store.find(ID{Peer: peer, Counter: ctr})
+		if local == nil {
+			return nil
+		}
+		segEnd := min(end, local.end())
+		if !sameIDs(depsAt(c, ctr), depsAt(local, ctr)) {
+			return usedID(peer, ctr)
+		}
+		for ; ctr < segEnd; ctr++ {
+			a, ok1 := atomAt(c, ctr)
+			b, ok2 := atomAt(local, ctr)
+			if !ok1 || !ok2 || !sameAtom(a, b) {
+				return usedID(peer, ctr)
+			}
+		}
+	}
+	return nil
+}
+
+func usedID(peer uint64, ctr int64) error {
+	return fmt.Errorf("loro: op id %d@%d is already used by another op; two writers share peer id %d", ctr, peer, peer)
+}
+
+// depsAt is what the atom at ctr depends on: the change's deps for its
+// first atom, the atom before it for any other.
+func depsAt(c *storedChange, ctr int64) []ID {
+	if ctr == c.start() {
+		return c.ch.Deps
+	}
+	return []ID{{Peer: c.ch.ID.Peer, Counter: ctr - 1}}
+}
+
+// opAtom is one atom of an op as loro compares it (known_history.rs:450
+// op_eq): its container, kind and position, and what it writes: a
+// character, a list item, a map key and value, a counter step, the id a
+// delete removes, or the op's whole value for an op of one atom.
+type opAtom struct {
+	cont  contKey
+	vk    change.ValueKind
+	pos   int64
+	from  int64
+	key   string
+	value any
+}
+
+func atomAt(c *storedChange, ctr int64) (opAtom, bool) {
+	for _, op := range c.ch.Ops {
+		if ctr < op.Counter || ctr >= op.Counter+op.Len {
+			continue
+		}
+		k := ctr - op.Counter
+		a := opAtom{cont: keyOf(op), vk: op.VKind, pos: op.Pos, from: op.MoveFrom, key: op.MapKey, value: op.Value}
+		switch v := op.Value.(type) {
+		case string:
+			a.value, a.pos = string([]rune(v)[k]), op.Pos+k
+		case []any:
+			a.value, a.pos = v[k], op.Pos+k
+		case DeleteSpan:
+			start, n := v.Normalize()
+			if v.Len >= 0 {
+				a.value = ID{Peer: v.Peer, Counter: start + k}
+			} else {
+				a.value, a.pos = ID{Peer: v.Peer, Counter: start + n - 1 - k}, op.Pos-k
+			}
+		}
+		return a, true
+	}
+	return opAtom{}, false
+}
+
+func sameAtom(a, b opAtom) bool {
+	if a.cont != b.cont || a.vk != b.vk || a.pos != b.pos || a.from != b.from || a.key != b.key {
+		return false
+	}
+	switch x := a.value.(type) {
+	case float64:
+		// A counter step equals itself even as NaN (op_eq).
+		y, ok := b.value.(float64)
+		return ok && (x == y || (math.IsNaN(x) && math.IsNaN(y)))
+	case MarkInfo:
+		y, ok := b.value.(MarkInfo)
+		return ok && x.Start == y.Start && x.Len == y.Len && x.Key == y.Key && x.Info == y.Info && valueEqual(x.Value, y.Value)
+	case ListSetValue:
+		y, ok := b.value.(ListSetValue)
+		return ok && x.Elem == y.Elem && valueEqual(x.Value, y.Value)
+	case ID, TreeNode, ListElem, change.ContainerType:
+		return a.value == b.value
+	}
+	return valueEqual(a.value, b.value)
 }

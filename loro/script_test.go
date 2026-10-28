@@ -35,19 +35,21 @@ func (s *script) label() string {
 }
 
 type scriptAction struct {
-	A     string          `json:"a"`
-	P     int             `json:"p"`
-	C     string          `json:"c"`
-	Pos   int             `json:"pos"`
-	N     int             `json:"n"`
-	S     string          `json:"s"`
-	K     string          `json:"k"`
-	V     json.RawMessage `json:"v"`
-	Kind  string          `json:"kind"`
-	Msg   *string         `json:"msg"`
-	TS    *int64          `json:"ts"`
-	Blob  int             `json:"blob"`
-	Peers []struct {
+	A    string          `json:"a"`
+	P    int             `json:"p"`
+	C    string          `json:"c"`
+	Pos  int             `json:"pos"`
+	N    int             `json:"n"`
+	S    string          `json:"s"`
+	K    string          `json:"k"`
+	V    json.RawMessage `json:"v"`
+	Kind string          `json:"kind"`
+	Msg  *string         `json:"msg"`
+	TS   *int64          `json:"ts"`
+	Blob int             `json:"blob"`
+	// Refused is loro-crdt's error when it refused the import.
+	Refused string `json:"refused"`
+	Peers   []struct {
 		JSON   json.RawMessage `json:"json"`
 		Export int             `json:"export"`
 	} `json:"peers"`
@@ -404,6 +406,13 @@ func runScript(s *script, knock ruleSet, r *checkResult) {
 			_, err = d().ExportUpdates()
 		case "import":
 			err = d().Import(blobs[a.Blob])
+			if a.Refused != "" {
+				if err == nil {
+					err = fmt.Errorf("imported what loro-crdt refused (%s)", a.Refused)
+				} else {
+					err = nil
+				}
+			}
 		case "check":
 			for i, want := range a.Peers {
 				where := fmt.Sprintf("%s check at action %d peer %d", s.label(), ai, s.Peers[i])

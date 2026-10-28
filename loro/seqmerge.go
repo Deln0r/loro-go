@@ -20,7 +20,22 @@ const seqWorkLimit = 1 << 28
 // concurrent changes. Past it, versions are recomputed by walking the changes.
 const seqVersionCacheLimit = 1 << 22
 
-type seqWork struct{ steps, limit int }
+// seqWork counts the steps of one merge or one local op against limit.
+// strict, which only a Document sets, makes a position past what its
+// author saw an error rather than something to clamp: a Document holds
+// every change's whole causal past, so such a position is one loro refuses
+// too ("list diff retains 1000 items but state only has 0",
+// state/list_state.rs:585).
+type seqWork struct {
+	steps, limit int
+	strict       bool
+}
+
+// beyondView is the error a strict merge returns for a position past its
+// author's view.
+func beyondView(op Op, pos, length int64) error {
+	return fmt.Errorf("loro: op %d@%d in %s reaches position %d of the %d elements its author saw", op.Counter, op.Peer, keyOf(op), pos, length)
+}
 
 func (w *seqWork) spend(n int) error {
 	w.steps += n
@@ -371,8 +386,14 @@ func (s *seqState) move(op Op, all bool, past pastView) error {
 		return nil
 	}
 	src, err := s.nthVisible(op.MoveFrom, all, past)
-	if err != nil || src < 0 {
+	if err != nil {
 		return err
+	}
+	if src < 0 {
+		if s.work.strict {
+			return beyondView(op, op.MoveFrom+1, int64(s.live))
+		}
+		return nil
 	}
 	if n := s.nodes[src]; len(n.deleters) == 0 {
 		s.live--
@@ -422,16 +443,27 @@ func (s *seqState) nthVisible(i int64, all bool, past pastView) (int, error) {
 	return -1, s.work.spend(steps)
 }
 
+// viewError is a position past the end of its author's view, which a
+// strict merge refuses.
+type viewError struct{ pos, length int64 }
+
+func (e *viewError) Error() string {
+	return fmt.Sprintf("loro: position %d is past the %d elements its author saw", e.pos, e.length)
+}
+
 // locate returns the index of the pos-th element (counting from 1) the op's
 // author could see. A position past the end of that view, which only an input
 // missing part of its history produces, takes the last element, as loro.js
-// does; -1 means the view is empty.
+// does, or is a *viewError in a strict merge; -1 means the view is empty.
 func (s *seqState) locate(pos int64, all bool, past pastView) (int, error) {
 	if all {
 		// Everything merged so far is in view, minus what deletes removed.
 		// Start from the front, the back or the cursor, whichever is nearest
 		// in such elements: typing at the end, or trimming the front of a
 		// text that is all removed elements there, costs nothing.
+		if s.work.strict && pos > int64(s.live) {
+			return -1, &viewError{pos: pos, length: int64(s.live)}
+		}
 		if s.live == 0 {
 			return -1, nil
 		}
@@ -457,6 +489,9 @@ func (s *seqState) locate(pos int64, all bool, past pastView) (int, error) {
 		if seen++; seen == pos {
 			return i, s.work.spend(steps)
 		}
+	}
+	if s.work.strict {
+		return -1, &viewError{pos: pos, length: seen}
 	}
 	return last, s.work.spend(steps)
 }
@@ -513,6 +548,9 @@ func (s *seqState) insert(op Op, pos int64, items []any, anchor, all bool, past 
 	left := -1
 	if pos > 0 {
 		i, err := s.locate(pos, all, past)
+		if ve, ok := err.(*viewError); ok {
+			return nil, beyondView(op, ve.pos, ve.length)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -663,6 +701,7 @@ func comparePositions(a int, aok bool, b int, bok bool) int {
 // (loro-dev/loro#1149) remove the characters loro removes. It reports false,
 // changing nothing, when the view is too short for the position, which only an
 // input missing part of its history produces; the caller then reads the ids.
+// A strict merge refuses such a delete instead.
 func (s *seqState) removeAt(op Op, all bool, past pastView) (bool, error) {
 	span, ok := op.Value.(DeleteSpan)
 	if !ok {
@@ -674,6 +713,9 @@ func (s *seqState) removeAt(op Op, all bool, past pastView) (bool, error) {
 		low = op.Pos - n + 1
 	}
 	if n == 0 || low < 0 || (all && low+n > int64(s.live)) {
+		if s.work.strict {
+			return false, beyondView(op, low+n, int64(s.live))
+		}
 		return false, nil
 	}
 	// Walk the view from its low-th element, collecting n.
@@ -713,6 +755,9 @@ func (s *seqState) removeAt(op Op, all bool, past pastView) (bool, error) {
 		return false, err
 	}
 	if int64(len(targets)) < n {
+		if s.work.strict {
+			return false, beyondView(op, low+n, low+int64(len(targets)))
+		}
 		return false, nil
 	}
 	for k, nd := range targets {

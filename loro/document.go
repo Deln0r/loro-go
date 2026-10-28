@@ -3,6 +3,7 @@ package loro
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sync"
@@ -58,11 +59,6 @@ type Document struct {
 	// blockGen numbers the buffers loro decodes imported blocks into, so
 	// that text of two blocks never looks adjacent.
 	blockGen int
-
-	// broken is why the state could not be rebuilt after an import, which
-	// only a history past the merge's step limit causes. The history stays
-	// and exports; reading and editing the state report the error.
-	broken error
 
 	// knock switches off loro rules, one at a time, for tests that show a
 	// named script needs the rule. It is always empty outside tests.
@@ -153,9 +149,13 @@ func (d *Document) CommitWith(opts CommitOptions) {
 // the root containers its state holds show even if no op wrote to them. Into
 // a document with history, a snapshot is imported as the updates it holds.
 //
-// A blob that does not decode, or holds a change ExportUpdates could not
-// write back as loro reads it (see EncodeUpdates), is refused with an error
-// and nothing of it is applied; the open transaction is committed all the
+// A blob is refused with an error, and nothing of it applied, when it does
+// not decode or is a shallow snapshot; when it holds a change ExportUpdates
+// could not write back as loro reads it (see EncodeUpdates); when an op id
+// the document has is used for another op, or a change skips counters of
+// its peer, as loro refuses (oplog/known_history.rs); and when an op's
+// position lies past what its author saw, which loro's state refuses
+// (state/list_state.rs:585). The open transaction is committed all the
 // same, as loro commits it before it reads the blob.
 func (d *Document) Import(blob []byte) error {
 	d.mu.Lock()
@@ -167,16 +167,29 @@ func (d *Document) Import(blob []byte) error {
 	if err != nil {
 		return err
 	}
-	// A change the document could not export again is refused whole:
-	// EncodeUpdates' checks are what loro reads back as written, and loro's
-	// own import refuses most of what they catch.
+	var changes []*storedChange
 	for _, block := range b.blocks {
 		for _, c := range block {
+			// A change the document could not export again is refused:
+			// EncodeUpdates' checks are what loro reads back as written,
+			// and loro's own import refuses most of what they catch.
 			if err := checkChange(c.ch); err != nil {
 				return err
 			}
+			changes = append(changes, c)
 		}
 	}
+	// loro sorts a blob's changes by lamport before it checks and applies
+	// them (fast_snapshot.rs:412).
+	slices.SortStableFunc(changes, func(a, b *storedChange) int { return cmp.Compare(a.ch.Lamport, b.ch.Lamport) })
+	if err := d.log.checkKnown(changes); err != nil {
+		return err
+	}
+
+	// From here the import changes the document. If the merge refuses what
+	// it applied, everything goes back as it was: loro rolls an import back
+	// whose diff its state cannot apply.
+	saved := d.save()
 	snapshotInPlace := b.snapshot && d.canTakeSnapshot()
 	if snapshotInPlace {
 		// loro replaces the state of an empty document with the snapshot's
@@ -188,7 +201,6 @@ func (d *Document) Import(blob []byte) error {
 			d.acquired[k] = true
 		}
 	}
-	var changes []*storedChange
 	for _, block := range b.blocks {
 		for _, c := range block {
 			for _, op := range c.ch.Ops {
@@ -196,17 +208,36 @@ func (d *Document) Import(blob []byte) error {
 					d.register(keyOf(op))
 				}
 			}
-			changes = append(changes, c)
 		}
 	}
 	if b.snapshot && !snapshotInPlace {
 		changes = d.snapshotChanges(changes)
 	}
 	d.materializePending(changes)
-	if d.log.importChanges(changes, d) {
-		return d.rebuild()
+	applied, err := d.log.importChanges(changes, d)
+	if err == nil && applied {
+		err = d.rebuild()
 	}
-	return nil
+	if err != nil {
+		d.restore(saved)
+	}
+	return err
+}
+
+// savedDoc is what an import may change besides the state.
+type savedDoc struct {
+	log        *opLog
+	acquired   map[contKey]bool
+	registered map[contKey]bool
+	rootOrder  []contKey
+}
+
+func (d *Document) save() savedDoc {
+	return savedDoc{log: d.log.clone(), acquired: maps.Clone(d.acquired), registered: maps.Clone(d.registered), rootOrder: slices.Clone(d.rootOrder)}
+}
+
+func (d *Document) restore(s savedDoc) {
+	d.log, d.acquired, d.registered, d.rootOrder = s.log, s.acquired, s.registered, s.rootOrder
 }
 
 // snapshotChanges is what loro makes of a snapshot imported into a document
@@ -312,9 +343,6 @@ func exportUpdates(blocks [][]*storedChange) *Updates {
 func (d *Document) JSON() (map[string]any, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.broken != nil {
-		return nil, d.broken
-	}
 	roots, vals, err := d.visibleRoots()
 	if err != nil {
 		return nil, err
@@ -339,9 +367,6 @@ func (d *Document) register(k contKey) {
 // cannot: a reserved peer id, or a container loro counts as deleted
 // (handler.rs:431, txn.rs:751). A root container is never deleted.
 func (d *Document) editable(k contKey) error {
-	if d.broken != nil {
-		return d.broken
-	}
 	if d.peer == math.MaxUint64 {
 		return fmt.Errorf("loro: peer id %d is reserved and cannot edit", d.peer)
 	}

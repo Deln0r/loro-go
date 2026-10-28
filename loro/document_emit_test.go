@@ -12,7 +12,9 @@ import (
 // Document's export and JSON at the script's last checkpoint, with
 // loro-crdt's export of the same peer, to testdata/go_out/document.json.
 // testdata/gen/validate_document.mjs imports each Go export into loro-crdt
-// and holds it to the Go peer's JSON and to loro's own export.
+// and holds it to the Go peer's JSON and to loro's own export. The
+// histories a Document refuses (refusedBlobs) go to
+// testdata/go_out/document_refused, which loro-crdt must refuse too.
 func TestEmitDocumentExportsForJS(t *testing.T) {
 	r := &checkResult{last: map[string]peerExport{}}
 	for _, name := range []string{"script_corpus.json", "script_named.json"} {
@@ -43,6 +45,18 @@ func TestEmitDocumentExportsForJS(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "document.json"), raw, 0o644); err != nil {
 		t.Fatal(err)
+	}
+	refused := filepath.Join(dir, "document_refused")
+	if err := os.RemoveAll(refused); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(refused, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, blob := range refusedBlobs(t) {
+		if err := os.WriteFile(filepath.Join(refused, name+".bin"), blob, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Logf("wrote %d exports, %d of %d checks byte for byte", len(out), r.bytes, r.checks)
 }

@@ -1,6 +1,8 @@
 package loro
 
 import (
+	"fmt"
+
 	"github.com/Deln0r/loro-go/encoding/change"
 )
 
@@ -44,6 +46,9 @@ func (d *Document) begin() *txn {
 // state at once, and joins the transaction's ops, folded into the op before
 // it where loro's RleVec would fold it (txn.rs:811 apply_local_op).
 func (d *Document) apply(st *docState, op Op, p opProv) error {
+	if k := keyOf(op); !d.knocked(ruleDeletedRefused) && d.deleted(k) {
+		return fmt.Errorf("loro: container %s is deleted; its contents can be read but not edited", k)
+	}
 	t := d.begin()
 	op.Peer = d.peer
 	op.Counter = t.nextCounter

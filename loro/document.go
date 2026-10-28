@@ -29,11 +29,12 @@ import (
 // makes the container part of the document, so JSON shows it even before
 // anything is written to it.
 //
-// Handles exist for root Text, Map, List and Counter containers, and a Text
-// can be styled with Mark and Unmark (see ConfigTextStyle). A document
-// holding a MovableList, a Tree or containers stored in other containers
-// imports, shows them in JSON and exports them, but has no handle yet to
-// edit them.
+// Handles exist for every kind of container, root or stored in another
+// (Map.SetContainer, List.InsertContainer, MovableList.InsertContainer and
+// SetContainer, Tree.Meta, Map.EnsureMergeable, GetContainer), and a Text
+// can be styled with Mark and Unmark (see ConfigTextStyle). A container
+// stored in another is deleted once its place there is written over or
+// deleted: its contents stay readable, and edits through it are refused.
 //
 // One mutex guards the whole document. Every method of a Document and of its
 // handles takes it, so a Document may be used from several goroutines; their
@@ -366,14 +367,14 @@ func (d *Document) register(k contKey) {
 }
 
 // editable reports why the document cannot make an op in container k, if it
-// cannot: a reserved peer id, or a container loro counts as deleted
-// (handler.rs:431, txn.rs:751). A root container is never deleted.
-func (d *Document) editable(k contKey) error {
+// cannot: a reserved peer id (handler.rs:431), checked before an edit looks
+// at anything else. A deleted container is refused later, by apply, as loro
+// refuses it when the op is made (txn.rs:751): an edit that returns before
+// making one, a move to where the node is or a map write of the value
+// already there, succeeds on a deleted container.
+func (d *Document) editable(contKey) error {
 	if d.peer == math.MaxUint64 {
 		return fmt.Errorf("loro: peer id %d is reserved and cannot edit", d.peer)
-	}
-	if !k.root {
-		return fmt.Errorf("loro: container %s is not a root container", k)
 	}
 	return nil
 }
@@ -383,27 +384,36 @@ func (d *Document) editable(k contKey) error {
 type rule uint
 
 const (
-	ruleImportCommits    rule = iota // review item 3: import commits the open transaction
-	rulePendingIsolated              // item 14: pending changes do not raise local lamports
-	rulePendingTrim                  // item 14: a released change loses its known prefix
-	ruleTimestampFloor               // item 5: a change's timestamp is at least its deps'
-	ruleMergeInterval                // item 5: changes merge only within the interval
-	ruleBlockLimit                   // item 4: a full block takes no merged change
-	ruleFoldLocalOnly                // item 2: only adjacent local ops fold
-	ruleDeleteSplit                  // item 7: a text delete splits at anchors and id gaps
-	ruleMapSkipEqual                 // item 11: setting a key to its value emits nothing
-	ruleMapDeleteAbsent              // item 11: deleting an absent key still emits
-	ruleCounterInt                   // item 12: small integral increments are I64
-	ruleTypedRoots                   // item 15: of two roots of one name, the last non-empty shows
-	ruleRootsVisible                 // item 15: a root shows once a handle is taken
-	ruleHandleLive                   // item 16: a handle resolves its container on every call
-	ruleMarkSkipApplied              // item 8: a mark the range already has makes no op
-	ruleUnmarkSkipAbsent             // item 8: unmarking a key the range lacks makes no op
-	ruleMarkConfigured               // item 8: marking an unconfigured key is an error
-	ruleUnmarkReverse                // item 8: an unmark's expand rule is the key's reversed
-	ruleColonPrefix                  // item 8: "k:x" is marked with the configuration of "k"
-	ruleConfigReplaces               // item 8: ConfigTextStyle replaces the configuration
-	ruleMarkRange                    // a mark's ends go where text inserted there would go
+	ruleImportCommits       rule = iota // review item 3: import commits the open transaction
+	rulePendingIsolated                 // item 14: pending changes do not raise local lamports
+	rulePendingTrim                     // item 14: a released change loses its known prefix
+	ruleTimestampFloor                  // item 5: a change's timestamp is at least its deps'
+	ruleMergeInterval                   // item 5: changes merge only within the interval
+	ruleBlockLimit                      // item 4: a full block takes no merged change
+	ruleFoldLocalOnly                   // item 2: only adjacent local ops fold
+	ruleDeleteSplit                     // item 7: a text delete splits at anchors and id gaps
+	ruleMapSkipEqual                    // item 11: setting a key to its value emits nothing
+	ruleMapDeleteAbsent                 // item 11: deleting an absent key still emits
+	ruleCounterInt                      // item 12: small integral increments are I64
+	ruleTypedRoots                      // item 15: of two roots of one name, the last non-empty shows
+	ruleRootsVisible                    // item 15: a root shows once a handle is taken
+	ruleHandleLive                      // item 16: a handle resolves its container on every call
+	ruleMarkSkipApplied                 // item 8: a mark the range already has makes no op
+	ruleUnmarkSkipAbsent                // item 8: unmarking a key the range lacks makes no op
+	ruleMarkConfigured                  // item 8: marking an unconfigured key is an error
+	ruleUnmarkReverse                   // item 8: an unmark's expand rule is the key's reversed
+	ruleColonPrefix                     // item 8: "k:x" is marked with the configuration of "k"
+	ruleConfigReplaces                  // item 8: ConfigTextStyle replaces the configuration
+	ruleMarkRange                       // a mark's ends go where text inserted there would go
+	ruleMovableOpIndex                  // item 9: MovableList ops record op indexes, not user ones
+	ruleMovableMoveInPlace              // item 11: Move(i, i) makes no op
+	ruleMovableSetSkipEqual             // item 11: MovableList.Set of the value it has still makes an op
+	ruleTreeRearrange                   // item 10: equal neighbour indexes are spread out anew
+	ruleTreeMoveInPlace                 // item 11: a tree move to where the node is makes no op
+	ruleTreeCycle                       // item 11: a cyclic tree move is an error
+	ruleDeletedRefused                  // item 16: edits through a deleted container are refused
+	ruleMergeableID                     // item 16: a mergeable child is named after its map, key and kind
+	ruleCounterAttach                   // item 16: a new Counter child is incremented by zero, an op
 )
 
 type ruleSet uint64

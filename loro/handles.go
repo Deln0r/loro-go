@@ -490,6 +490,14 @@ func valueEqual(a, b any) bool {
 	case []byte:
 		y, ok := b.([]byte)
 		return ok && bytes.Equal(x, y)
+	case change.ContainerType:
+		// A container the op holding the value placed, named by that op's
+		// id. Such values meet only at one op id, an imported atom against
+		// the stored one (a value a user stores is never a container kind:
+		// storeValue refuses it, as loro refuses a container as a value,
+		// handler.rs:39), so the kind is all of the id that can differ.
+		y, ok := b.(change.ContainerType)
+		return ok && x == y
 	case []any:
 		y, ok := b.([]any)
 		if !ok || len(x) != len(y) {

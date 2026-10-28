@@ -76,17 +76,22 @@ func (p *mergeableParent) child(key string, v []byte) (contKey, bool) {
 	if kind > change.CCounter {
 		return contKey{}, false
 	}
+	crc := mergeableCRC(p, key, kind)
+	if v[5] != byte(crc>>16) || v[6] != byte(crc>>8) || v[7] != byte(crc) {
+		return contKey{}, false
+	}
+	return contKey{root: true, name: mergeablePrefix + p.path + ">" + escapeMergeable(key), kind: kind}, true
+}
+
+// mergeableCRC is the CRC-24 a marker binds (parent, key, kind) with.
+func mergeableCRC(p *mergeableParent, key string, kind change.ContainerType) uint32 {
 	in := []byte(mergeableCRCDomain)
 	in = binary.AppendUvarint(in, uint64(len(p.cid)))
 	in = append(in, p.cid...)
 	in = binary.AppendUvarint(in, uint64(len(key)))
 	in = append(in, key...)
 	in = append(in, byte(kind))
-	crc := crc32.ChecksumIEEE(in) & 0xffffff
-	if v[5] != byte(crc>>16) || v[6] != byte(crc>>8) || v[7] != byte(crc) {
-		return contKey{}, false
-	}
-	return contKey{root: true, name: mergeablePrefix + p.path + ">" + escapeMergeable(key), kind: kind}, true
+	return crc32.ChecksumIEEE(in) & 0xffffff
 }
 
 // isMergeableName reports whether a root container name is a mergeable

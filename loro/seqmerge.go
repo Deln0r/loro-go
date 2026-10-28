@@ -230,6 +230,7 @@ type seqNode struct {
 // the list takes that id as its own, so a set that puts a new container in an
 // element names it by the set's id, not by the element's.
 type movElem struct {
+	key         ListElem // the element's name: its creator and lamport
 	value       any
 	valueWriter writer
 	valueID     ID
@@ -363,9 +364,10 @@ func (s *seqState) apply(op Op, all bool, past pastView, byPosition bool) error 
 		}
 		for k, n := range run {
 			w := writer{op.Lamport + int64(k), op.Peer}
-			e := &movElem{value: items[k], valueWriter: w, valueID: ID{Peer: op.Peer, Counter: n.counter}, pos: n, posWriter: w}
+			key := ListElem{Peer: op.Peer, Lamport: w.lamport}
+			e := &movElem{key: key, value: items[k], valueWriter: w, valueID: ID{Peer: op.Peer, Counter: n.counter}, pos: n, posWriter: w}
 			n.elem, n.value = e, nil
-			s.elems[ListElem{Peer: op.Peer, Lamport: w.lamport}] = e
+			s.elems[key] = e
 		}
 		return nil
 	}

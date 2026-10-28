@@ -18,7 +18,10 @@ type docState struct {
 	anchored map[contKey]bool
 	// maps is each Map's winning op per key, built when first asked for.
 	maps map[contKey]map[string]Op
-	work *seqWork
+	// trees is each Tree's shape, built when first asked for and dropped
+	// when a local op changes it.
+	trees map[contKey]*treeIndex
+	work  *seqWork
 	// localOps counts the local ops applied, and localOpsNoted those the
 	// version vector has taken in (Document.noteLocalOps).
 	localOps, localOpsNoted int
@@ -30,6 +33,7 @@ func newDocState() *docState {
 		seqs:     map[contKey]*seqState{},
 		anchored: map[contKey]bool{},
 		maps:     map[contKey]map[string]Op{},
+		trees:    map[contKey]*treeIndex{},
 		work:     &seqWork{limit: seqWorkLimit, strict: true},
 	}
 }
@@ -109,6 +113,9 @@ func (s *docState) applyLocal(op Op) (err error) {
 	ci.ops = append(ci.ops, op)
 	if m := s.maps[k]; m != nil && op.Kind == change.CMap {
 		m[op.MapKey] = op
+	}
+	if op.Kind == change.CTree {
+		delete(s.trees, k)
 	}
 	return nil
 }
@@ -353,6 +360,12 @@ func (st *docState) nthLive(k contKey, i int64) (*seqNode, error) {
 func (d *Document) visibleRoots() ([]contKey, map[contKey]any, error) {
 	var cands []contKey
 	for _, k := range d.rootOrder {
+		// A mergeable child is a root container by id but shows inside its
+		// parent map only: the arena keeps it out of the top-level roots
+		// (arena.rs:800, top_level_root_c_idx).
+		if isMergeableName(k.name) {
+			continue
+		}
 		if (d.acquired[k] && !d.knocked(ruleRootsVisible)) || d.st.has(k) {
 			cands = append(cands, k)
 		}

@@ -5,6 +5,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Deln0r/loro-go/encoding/change"
@@ -42,6 +43,22 @@ type opProv struct {
 	kind       provKind
 	gen        int
 	start, end int
+	// grow, when set, holds the op's value with room to grow, so that
+	// folding the next op into it appends in place (txn.go foldOps).
+	grow *growBuf
+}
+
+// growBuf is the value of an op that ops were folded into, kept with room
+// to grow, as loro keeps a merged op's text in an append-only buffer and
+// its list items in a buffer the op owns (op.rs ValueSlice::merge). Folding
+// appends to it while the op's value is all of it, so a run of n folds
+// copies each byte or item a bounded number of times, not the whole value
+// n times. An op's value is always a prefix of its growBuf; a fold into a
+// copy of the op whose value is shorter than the buffer, because another
+// copy appended, starts a buffer of its own.
+type growBuf struct {
+	text strings.Builder
+	list []any
 }
 
 // strArena models the byte buffer loro appends local text inserts to
@@ -148,6 +165,7 @@ func sliceOp(op Op, p opProv, span, keep idRange) (provOp, bool) {
 	if !ok {
 		return provOp{op, p}, false
 	}
+	p.grow = nil
 	if p.kind == provText {
 		if s, isStr := op.Value.(string); isStr {
 			p.start += runeBytes(s, keep.start-span.start)
@@ -851,6 +869,10 @@ func (l *opLog) checkKnown(changes []*storedChange) error {
 func (l *opLog) checkKnownPart(c *storedChange, known int64) error {
 	peer := c.ch.ID.Peer
 	end := min(c.end(), known)
+	// The atoms are walked in order, each change's once, so that the
+	// comparison costs as much as the atoms, however long the ops that
+	// hold them.
+	incoming := newAtomCursor(c, c.start())
 	for ctr := c.start(); ctr < end; {
 		local := l.store.find(ID{Peer: peer, Counter: ctr})
 		if local == nil {
@@ -860,9 +882,10 @@ func (l *opLog) checkKnownPart(c *storedChange, known int64) error {
 		if !sameIDs(depsAt(c, ctr), depsAt(local, ctr)) {
 			return usedID(peer, ctr)
 		}
+		mine := newAtomCursor(local, ctr)
 		for ; ctr < segEnd; ctr++ {
-			a, ok1 := atomAt(c, ctr)
-			b, ok2 := atomAt(local, ctr)
+			a, ok1 := incoming.next()
+			b, ok2 := mine.next()
 			if !ok1 || !ok2 || !sameAtom(a, b) {
 				return usedID(peer, ctr)
 			}
@@ -897,36 +920,81 @@ type opAtom struct {
 	value any
 }
 
-func atomAt(c *storedChange, ctr int64) (opAtom, bool) {
-	for _, op := range c.ch.Ops {
-		if ctr < op.Counter || ctr >= op.Counter+op.Len {
-			continue
-		}
-		k := ctr - op.Counter
-		a := opAtom{cont: keyOf(op), vk: op.VKind, pos: op.Pos, from: op.MoveFrom, key: op.MapKey, value: op.Value}
-		// Only an insert's value is one item per atom: a map write of a
-		// string or a list is one atom whatever the value's length, and an
-		// empty one would index nothing.
-		switch v := op.Value.(type) {
-		case string:
-			if op.VKind == change.VKStr {
-				a.value, a.pos = string([]rune(v)[k]), op.Pos+k
-			}
-		case []any:
-			if isListInsert(op) {
-				a.value, a.pos = v[k], op.Pos+k
-			}
-		case DeleteSpan:
-			start, n := v.Normalize()
-			if v.Len >= 0 {
-				a.value = ID{Peer: v.Peer, Counter: start + k}
-			} else {
-				a.value, a.pos = ID{Peer: v.Peer, Counter: start + n - 1 - k}, op.Pos-k
-			}
-		}
-		return a, true
+// atomCursor walks the atoms of a change in counter order: for each id,
+// the op's container, kind and position and what the atom writes. Text is
+// read rune by rune as the cursor goes, so a walk costs as much as the
+// atoms it passes.
+type atomCursor struct {
+	ops  []Op
+	i    int    // the op the cursor is in
+	k    int64  // the atom of that op it is at
+	rest string // a text insert's runes from atom k on
+}
+
+func newAtomCursor(c *storedChange, at int64) *atomCursor {
+	cur := &atomCursor{ops: c.ch.Ops}
+	for cur.i < len(cur.ops) && at >= cur.ops[cur.i].Counter+cur.ops[cur.i].Len {
+		cur.i++
 	}
-	return opAtom{}, false
+	if cur.i < len(cur.ops) {
+		cur.enter()
+		for ; cur.k < at-cur.ops[cur.i].Counter; cur.k++ {
+			cur.skipRune()
+		}
+	}
+	return cur
+}
+
+// enter starts the cursor at the first atom of op i.
+func (cur *atomCursor) enter() {
+	cur.k, cur.rest = 0, ""
+	if op := cur.ops[cur.i]; op.VKind == change.VKStr {
+		cur.rest, _ = op.Value.(string)
+	}
+}
+
+func (cur *atomCursor) skipRune() {
+	if cur.rest != "" {
+		_, n := utf8.DecodeRuneInString(cur.rest)
+		cur.rest = cur.rest[n:]
+	}
+}
+
+// next returns the atom at the cursor and moves past it, or false past the
+// change's last atom.
+func (cur *atomCursor) next() (opAtom, bool) {
+	if cur.i >= len(cur.ops) {
+		return opAtom{}, false
+	}
+	op, k := cur.ops[cur.i], cur.k
+	a := opAtom{cont: keyOf(op), vk: op.VKind, pos: op.Pos, from: op.MoveFrom, key: op.MapKey, value: op.Value}
+	// Only an insert's value is one item per atom: a map write of a string
+	// or a list is one atom whatever the value's length.
+	switch v := op.Value.(type) {
+	case string:
+		if op.VKind == change.VKStr {
+			r, _ := utf8.DecodeRuneInString(cur.rest)
+			a.value, a.pos = string(r), op.Pos+k
+			cur.skipRune()
+		}
+	case []any:
+		if isListInsert(op) {
+			a.value, a.pos = v[k], op.Pos+k
+		}
+	case DeleteSpan:
+		start, n := v.Normalize()
+		if v.Len >= 0 {
+			a.value = ID{Peer: v.Peer, Counter: start + k}
+		} else {
+			a.value, a.pos = ID{Peer: v.Peer, Counter: start + n - 1 - k}, op.Pos-k
+		}
+	}
+	if cur.k++; cur.k >= op.Len {
+		if cur.i++; cur.i < len(cur.ops) {
+			cur.enter()
+		}
+	}
+	return a, true
 }
 
 func sameAtom(a, b opAtom) bool {

@@ -121,17 +121,39 @@ func canFold(a provOp, b Op, pb opProv, d *Document) bool {
 	return false
 }
 
-// foldOps folds b into a; canFold must hold.
+// foldOps folds b into a; canFold must hold. Text and list items are
+// appended to a's growBuf, in place while a's value is all of it, so that
+// folding n ops costs as much as their values, not n times the value
+// folded so far.
 func foldOps(a, b provOp) (Op, opProv) {
 	op := a.op
 	switch op.VKind {
 	case change.VKStr:
-		op.Value = a.op.Value.(string) + b.op.Value.(string)
+		s, _ := a.op.Value.(string)
+		t, _ := b.op.Value.(string)
+		g := a.prov.grow
+		if g == nil || g.text.Len() != len(s) {
+			g = &growBuf{}
+			g.text.Grow(len(s) + len(t))
+			g.text.WriteString(s)
+		}
+		g.text.WriteString(t)
+		op.Value = g.text.String()
+		a.prov.grow = g
 		a.prov.end = b.prov.end
 	case change.VKLoroValue:
 		x, _ := a.op.Value.([]any)
 		y, _ := b.op.Value.([]any)
-		op.Value = append(append(make([]any, 0, len(x)+len(y)), x...), y...)
+		g := a.prov.grow
+		if g == nil || len(g.list) != len(x) {
+			g = &growBuf{list: make([]any, len(x), len(x)+len(y))}
+			copy(g.list, x)
+		}
+		g.list = append(g.list, y...)
+		// The value's capacity ends with it, so that nothing appends to
+		// the buffer behind the growBuf's back.
+		op.Value = g.list[:len(g.list):len(g.list)]
+		a.prov.grow = g
 	case change.VKDeleteSeq:
 		x, _ := delSpanOf(a.op)
 		y, _ := delSpanOf(b.op)

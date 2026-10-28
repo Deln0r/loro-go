@@ -47,6 +47,10 @@ func main() {
 	state, _ := loro.MergeState(u)
 	fmt.Println(state) // map[string]any matching doc.toJSON()
 
+	// Write the decoded changes back: the same bytes loro-crdt exported.
+	again, _ := loro.EncodeUpdates(u)
+	_ = again
+
 	// Or build a document in Go and export bytes loro-crdt can import.
 	d := loro.NewDoc(1)
 	d.TextInsert("title", 0, "hello")
@@ -62,7 +66,8 @@ func main() {
 
 - Header + checksum (xxh32), `FastUpdates` and `FastSnapshot` framing
 - `serde_columnar` strategies: Rle, BoolRle, DeltaRle, DeltaOfDelta (decode and encode, byte-verified)
-- Change blocks: all eight blobs decode and re-encode byte-identically. The one exception is a map of two or more keys nested in a value: loro writes its keys in the order of its hash map and loro-go in sorted order, so those bytes can differ while they decode to the same value
+- Change blocks: all eight blobs decode and re-encode byte-identically, blob by blob, for 28 named fixtures and every history of the nine corpora. A map of two or more keys nested in a value lists its keys in the order of loro's hash map, which a decoded Go map does not keep: the value reader can record that order and the writer replay it, and without it the writer sorts the keys, which decodes to the same value
+- Encode decoded changes: `loro.EncodeUpdates` writes changes back as `FastUpdates`, following loro's block encoder register by register (peers, containers, keys, tree positions, dependencies), with commit messages, timestamps and the block grouping the decoder recorded. Of 2481 loro-crdt exports, every history of the eight corpora and the 81 `FastUpdates` fixture files, `DecodeUpdates` then `EncodeUpdates` gives back 2464 byte for byte. The other 17 hold a map of two or more keys nested in a value: they decode to the same changes, come back byte for byte once loro's key order is supplied, and loro-crdt imports them to the same state, version and history, checked on every CI run. Changes without a recorded grouping, such as ones collected from several exports, are grouped into blocks as loro's export groups them, which reproduces 2480 of the 2481; the other is an export of id ranges, whose blocks loro writes in layers
 - Containers: Map (LWW), List and Text (each insert's position is resolved against what its author had seen, its causal past from the change deps minus the deletes in that past, with rich-text mark anchors counted, so edits made after a sync, a delete or a mark land where loro puts them; inserts made concurrently at the same place are ordered by Fugue from their left and right origins, as loro orders them), MovableList (positions and elements kept apart as loro keeps them: a move adds a position for its element and deletes the old one, the element sits at its position with the latest writer and shows the value of its latest `set`), Tree (moves and deletes applied in (lamport, peer) order with cycle-closing moves skipped as loro does, siblings ordered by fractional index then (lamport, peer), per-node `meta` maps), Counter (summed increments)
 - Deletes: a text or list delete removes the elements at its position in its author's view, as loro's import does, so a delete that loro-crdt's WASM build up to 1.16.3 recorded with wrong ids (loro-dev/loro#1149) still removes the right characters; when part of the history is missing it falls back to the ids it recorded. Map key deletion (DeleteOnce), and deletes of other peers' elements
 - Blocks carrying multiple changes (per-change ids, lamports, timestamps recovered; every decoded change lamport is checked against the lamport loro-crdt itself recorded)
@@ -94,10 +99,10 @@ homeserver on every push. It is a separate Go module, so this library's own
 
 ## Cross-language fixtures
 
-`testdata/gen` drives `loro-crdt` (npm) to emit binary + JSON fixtures, `testdata/rustgen` emits `serde_columnar` golden column vectors, and `testdata/gen/validate_go.mjs` imports a loro-go-produced blob back into `loro-crdt`. The Go tests assert byte-identity and state equality against these. Regenerate with:
+`testdata/gen` drives `loro-crdt` (npm) to emit binary + JSON fixtures, `testdata/rustgen` emits `serde_columnar` golden column vectors, and `testdata/gen/validate_go.mjs` imports a loro-go-produced blob back into `loro-crdt`. `testdata/gen/gen_encode.mjs` writes the exports the encoder is held to, and `testdata/gen/validate_encode.mjs` imports every re-encoded blob that is not byte-identical next to loro's own. The Go tests assert byte-identity and state equality against these. Regenerate with:
 
 ```
-cd testdata/gen && npm install && node gen.mjs
+cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 

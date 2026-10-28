@@ -1,6 +1,7 @@
 package loro_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -121,4 +122,53 @@ func ExampleTextDelta() {
 	// "ab" map[bold:true]
 	// "cd" map[bold:true italic:true]
 	// "e" map[italic:true]
+}
+
+// ExampleEncodeUpdates decodes an export by loro-crdt and writes it back: the
+// bytes are loro's own. Changes collected from several exports have no block
+// grouping recorded, and EncodeUpdates groups them as loro's export would, in
+// one blob that loro-crdt imports.
+func ExampleEncodeUpdates() {
+	blob, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "cross_del.update.bin"))
+	if err != nil {
+		panic(err)
+	}
+	u, err := loro.DecodeUpdates(blob)
+	if err != nil {
+		panic(err)
+	}
+	out, err := loro.EncodeUpdates(u)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(bytes.Equal(out, blob))
+
+	alice := loro.NewDoc(1)
+	alice.TextInsert("notes", 0, "alice")
+	bob := loro.NewDoc(2)
+	bob.TextInsert("notes", 0, "bob")
+	var all loro.Updates
+	for _, b := range [][]byte{bob.ExportUpdates(), alice.ExportUpdates()} {
+		u, err := loro.DecodeUpdates(b)
+		if err != nil {
+			panic(err)
+		}
+		all.Changes = append(all.Changes, u.Changes...)
+	}
+	merged, err := loro.EncodeUpdates(&all)
+	if err != nil {
+		panic(err)
+	}
+	back, err := loro.DecodeUpdates(merged)
+	if err != nil {
+		panic(err)
+	}
+	state, err := loro.MergeState(back)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(back.Blocks, state["notes"])
+	// Output:
+	// true
+	// [1 1] alicebob
 }

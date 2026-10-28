@@ -63,7 +63,7 @@ The fixture suite is the ground truth. Two harnesses produce it:
 To regenerate:
 
 ```
-cd testdata/gen && npm install && node gen.mjs
+cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 
@@ -108,6 +108,8 @@ go test ./encoding/columnar/ -run='^$' -fuzz=FuzzStrategies -fuzztime=30s
 ```
 
 A new decoder path should never panic, allocate without bound, or hang on hostile input; it should return an error. If you add a decoder, add a fuzz target or extend an existing one, and bound any length or count taken from the input against the bytes that remain.
+
+`FuzzEncodeUpdates` holds the encoder to the decoder: whatever decodes and encodes without error must decode to the same changes in the same blocks, and encode to the same bytes again. If you change what the decoder shows or what the encoder writes, keep it passing.
 
 ## Code style
 

@@ -6,9 +6,9 @@ Thanks for considering a contribution. loro-go is an independent pure-Go reading
 
 loro-go implements the Loro **Fast** wire format (`FastUpdates` and `FastSnapshot`) in pure Go, with no cgo.
 
-- **In scope:** byte-compatible decode and encode of the Fast format, the `serde_columnar` strategies, change-block parsing, CRDT state reconstruction for Map / List / Text / MovableList / Tree / Counter, rich-text `toDelta`, the KV/SSTable reader, LZ4 block decompression, the cross-language fixture suite, and robustness hardening of the decoders against malformed input.
+- **In scope:** byte-compatible decode and encode of the Fast format, the `serde_columnar` strategies, change-block parsing, CRDT state reconstruction for Map / List / Text / MovableList / Tree / Counter, rich-text `toDelta`, the live `Document`, its version vector and frontiers with their encodings, exports from a version and of id ranges, the KV/SSTable reader, LZ4 block decompression, the cross-language fixture suite, and robustness hardening of the decoders against malformed input.
 - **In scope, but only in `integration/`:** thin transports that carry already-exported update blobs over an existing network protocol, each as its own Go module. `integration/matrix` is the worked example. A transport may not add a wire format, negotiate sessions, or diff versions; if it needs any of those, it is the sync protocol below and out of scope for now.
-- **Out of scope until a future dedicated phase (planned work):** a real-time sync server, the sync protocol itself (version-vector diff, partial-history export, awareness), native persistence (sqlite or otherwise), mobile bindings (gomobile), the full concurrent Peritext expand-rule semantics, and a time-travel / checkout API. PRs that try to start any of these will be politely closed. They are reserved for a future development phase, and partial implementations would create maintenance debt.
+- **Out of scope until a future dedicated phase (planned work):** a real-time sync server, the sync protocol itself (sessions, the messages peers exchange, awareness; the versions and exports it is built from are in scope above), native persistence (sqlite or otherwise), mobile bindings (gomobile), the full concurrent Peritext expand-rule semantics, and a time-travel / checkout API. PRs that try to start any of these will be politely closed. They are reserved for a future development phase, and partial implementations would create maintenance debt.
 - **Out of scope permanently:** anything outside the Loro wire format and its CRDT semantics.
 
 If you are unsure whether something is in scope, open an issue first.
@@ -63,7 +63,7 @@ The fixture suite is the ground truth. Two harnesses produce it:
 To regenerate:
 
 ```
-cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs && node gen_scripts.mjs
+cd testdata/gen && npm install && node gen.mjs && node gen_encode.mjs && node gen_scripts.mjs && node gen_versions.mjs
 cd ../rustgen && cargo run > ../columnar_golden.txt
 ```
 
@@ -110,6 +110,8 @@ go test ./encoding/columnar/ -run='^$' -fuzz=FuzzStrategies -fuzztime=30s
 A new decoder path should never panic, allocate without bound, or hang on hostile input; it should return an error. If you add a decoder, add a fuzz target or extend an existing one, and bound any length or count taken from the input against the bytes that remain.
 
 `FuzzEncodeUpdates` holds the encoder to the decoder: whatever decodes and encodes without error must decode to the same changes in the same blocks, and encode to the same bytes again. If you change what the decoder shows or what the encoder writes, keep it passing.
+
+`FuzzDecodeVersion` reads hostile bytes as a version vector and as frontiers, the way a peer's sync message brings them: either is an error, or encodes and decodes back to the same entries, and a document exports from the version vector without error.
 
 ## Code style
 

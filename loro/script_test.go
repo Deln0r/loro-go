@@ -252,13 +252,20 @@ func atomsOf(changes []Change) ([]atom, error) {
 					Key:     op.MapKey,
 					Value:   op.Value,
 				}
+				// Only a text insert's string and a list insert's items are
+				// one atom per element; a map value, a string or a list of
+				// any length, is one atom whole.
 				switch v := op.Value.(type) {
 				case string:
-					a.Value = string([]rune(v)[k])
-					a.Pos = op.Pos + k
+					if op.Kind == change.CText && op.VKind == change.VKStr {
+						a.Value = string([]rune(v)[k])
+						a.Pos = op.Pos + k
+					}
 				case []any:
-					a.Value = v[k]
-					a.Pos = op.Pos + k
+					if isListInsert(op) {
+						a.Value = v[k]
+						a.Pos = op.Pos + k
+					}
 				case DeleteSpan:
 					start, n := v.Normalize()
 					if v.Len >= 0 {

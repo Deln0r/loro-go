@@ -3,9 +3,12 @@ package loro
 import (
 	"bytes"
 	"encoding/hex"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Deln0r/loro-go/encoding/change"
 )
 
 // TestScriptStructCorpus runs the 300 scripts of script_struct_corpus.json:
@@ -337,5 +340,28 @@ func TestTreeAccessors(t *testing.T) {
 	}
 	if TreeRoot.String() != "root" || a.String() != "0@1" {
 		t.Errorf("ids render as %s and %s", TreeRoot, a)
+	}
+}
+
+// TestAtomsCompareWholeMapValues: the harness splits a text insert into
+// characters and a list insert into items, one atom each, but a map value
+// is one atom whatever it holds. Splitting it compared a string by its
+// first rune, a list by its first item, and panicked on "" and [].
+func TestAtomsCompareWholeMapValues(t *testing.T) {
+	write := func(v any) Change {
+		return Change{ID: ID{Peer: 1}, Ops: []Op{{Container: "m", IsRoot: true, Kind: KindMap, VKind: change.VKLoroValue,
+			MapKey: "k", Value: v, Peer: 1, Len: 1}}}
+	}
+	atomOf := func(v any) atom {
+		a, err := atomsOf([]Change{write(v)})
+		if err != nil || len(a) != 1 {
+			t.Fatalf("%v: %d atoms, %v", v, len(a), err)
+		}
+		return a[0]
+	}
+	for _, pair := range [][2]any{{"abc", "abd"}, {[]any{int64(1), int64(2)}, []any{int64(1), int64(3)}}, {"", "x"}, {[]any{}, []any{int64(1)}}} {
+		if reflect.DeepEqual(atomOf(pair[0]), atomOf(pair[1])) {
+			t.Errorf("map values %v and %v give the same atom", pair[0], pair[1])
+		}
 	}
 }

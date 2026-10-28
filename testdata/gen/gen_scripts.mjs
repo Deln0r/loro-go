@@ -1099,6 +1099,7 @@ console.log(`script_rich_named.json: ${richNamed.length} scripts: ${richNamed.ma
 //     A parent of null is the top level.
 
 const structKinds = ["Text", "Map", "List", "MovableList", "Tree", "Counter"];
+const mapEdgeValues = ["", [], {}, "a longer value é😀", [1, "two", [3]], { k: "", l: [] }];
 const ML = "cid:root-ml:MovableList", TR = "cid:root-tr:Tree", MP = "cid:root-m:Map", LS = "cid:root-l:List";
 const newContainer = (k) =>
   ({ Text: () => new LoroText(), Map: () => new LoroMap(), List: () => new LoroList(),
@@ -1143,7 +1144,9 @@ function structEdit(s, p, r, pool, nodes) {
     case "Map": {
       const k = pickOf(r, ["a", "b", "c"]);
       if (q < 0.35) {
-        const v = scalar(r);
+        // Every fifth action writes one of the values a map holds whole that
+        // scalar() never makes: an empty string, list or map, and longer ones.
+        const v = s.actions.length % 5 === 0 ? mapEdgeValues[(s.actions.length / 5) % mapEdgeValues.length] : scalar(r);
         s.x(p, cid, "map_set", { k, v: tag(v) }, (h) => { h.set(k, v); });
       } else if (q < 0.45) s.x(p, cid, "map_del", { k }, (h) => { h.delete(k); });
       else if (q < 0.75) child("map", { k }, (h, kind) => h.setContainer(k, newContainer(kind)));

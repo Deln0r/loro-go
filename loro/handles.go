@@ -32,12 +32,17 @@ func (d *Document) handle(name string, kind change.ContainerType) handle {
 	return handle{d: d, k: k, st: d.st}
 }
 
-// state is the container's document state. The caller holds the lock.
+// state is the container's document state, with the step budget of the
+// call about to run on it reset: a budget bounds one operation, so reads
+// that walk a long text never use up what a later edit needs. The caller
+// holds the lock.
 func (h handle) state() *docState {
+	st := h.d.st
 	if h.d.knocked(ruleHandleLive) {
-		return h.st
+		st = h.st
 	}
-	return h.d.st
+	st.work.steps = 0
+	return st
 }
 
 // op is a new local op in the handle's container.
@@ -46,7 +51,13 @@ func (h handle) op(vk change.ValueKind) Op {
 }
 
 func outOfRange(pos, n, length int) error {
-	return fmt.Errorf("loro: range %d..%d is out of bounds for length %d", pos, pos+n, length)
+	return fmt.Errorf("loro: %d elements from position %d are out of bounds for length %d", n, pos, length)
+}
+
+// inRange is loro's checked_range_end (handler.rs:92): n elements from pos
+// lie within length, compared so that no sum can overflow.
+func inRange(pos, n, length int) bool {
+	return pos >= 0 && n >= 0 && pos <= length && n <= length-pos
 }
 
 // Text is a handle on a Text container. Positions are counted in Unicode
@@ -101,7 +112,7 @@ func (t *Text) Delete(pos, n int) error {
 	}
 	st := t.h.state()
 	length := st.textLen(t.h.k)
-	if pos < 0 || n < 0 || int64(pos)+int64(n) > length {
+	if !inRange(pos, n, int(length)) {
 		return outOfRange(pos, n, int(length))
 	}
 	ranges, err := st.textDeleteRanges(t.h.k, int64(pos), int64(n))
@@ -142,14 +153,25 @@ func (t *Text) Len() int {
 }
 
 // Delta returns the text split into runs by the styles over it, as
-// TextDelta does.
+// TextDelta does. The attribute values are copies.
 func (t *Text) Delta() ([]DeltaOp, error) {
 	t.h.d.mu.Lock()
 	defer t.h.d.mu.Unlock()
-	if s := t.h.state().seqs[t.h.k]; s != nil {
-		return s.delta()
+	s := t.h.state().seqs[t.h.k]
+	if s == nil {
+		return nil, nil
 	}
-	return nil, nil
+	delta, err := s.delta()
+	if err != nil {
+		return nil, err
+	}
+	// The attribute values are the marks' own; hand out copies.
+	for i := range delta {
+		if delta[i].Attributes != nil {
+			delta[i].Attributes = copyValue(delta[i].Attributes).(map[string]any)
+		}
+	}
+	return delta, nil
 }
 
 // Map is a handle on a Map container.
@@ -266,7 +288,7 @@ func (l *List) Delete(pos, n int) error {
 	}
 	st := l.h.state()
 	length := listLen(st, l.h.k)
-	if pos < 0 || n < 0 || pos+n > length {
+	if !inRange(pos, n, length) {
 		return outOfRange(pos, n, length)
 	}
 	s := st.seqs[l.h.k]

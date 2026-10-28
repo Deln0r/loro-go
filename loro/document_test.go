@@ -1,6 +1,8 @@
 package loro
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -271,5 +273,142 @@ func TestDocumentScriptValues(t *testing.T) {
 		if fmt.Sprintf("%#v", got) != fmt.Sprintf("%#v", want) {
 			t.Errorf("%s: got %#v, want %#v", raw, got, want)
 		}
+	}
+}
+
+// TestTextDeltaIsACopy changes a style value Delta handed out, and the
+// document does not change: neither a later Delta nor the export.
+func TestTextDeltaIsACopy(t *testing.T) {
+	var blob []byte
+	for _, c := range loadCorpus(t, "rich_corpus.json") {
+		if c.Seed == 6 {
+			blob, _ = base64.StdEncoding.DecodeString(c.Update)
+		}
+	}
+	d := NewDocument(9)
+	if err := d.Import(blob); err != nil {
+		t.Fatal(err)
+	}
+	before, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := d.Text("t")
+	delta, err := text.Delta()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := json.Marshal(delta)
+	changed := false
+	for _, run := range delta {
+		for _, v := range run.Attributes {
+			if m, ok := v.(map[string]any); ok {
+				m["k"] = "changed"
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		t.Fatal("rich_corpus seed 6 has no object style value")
+	}
+	again, _ := text.Delta()
+	second, _ := json.Marshal(again)
+	if string(first) != string(second) {
+		t.Errorf("changing Delta's result changed the document:\n %s\n %s", first, second)
+	}
+	after, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("changing Delta's result changed the export")
+	}
+}
+
+// TestDeleteRangeDoesNotOverflow deletes ranges whose end overflows an int:
+// loro checks pos <= len and n <= len-pos (handler.rs:92), so each is an
+// error that changes nothing and takes no counter.
+func TestDeleteRangeDoesNotOverflow(t *testing.T) {
+	d := NewDocument(1)
+	list, text := d.List("l"), d.Text("t")
+	if err := list.Insert(0, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := text.Insert(0, "ab"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := d.List("empty")
+	for name, f := range map[string]func() error{
+		"list from 1, MaxInt items": func() error { return list.Delete(1, math.MaxInt) },
+		"list from MaxInt, 1 item":  func() error { return list.Delete(math.MaxInt, 1) },
+		"empty list from MaxInt":    func() error { return empty.Delete(math.MaxInt, 1) },
+		"empty list from 0, MaxInt": func() error { return empty.Delete(0, math.MaxInt) },
+		"text from 1, MaxInt chars": func() error { return text.Delete(1, math.MaxInt) },
+		"text from MaxInt, 1 char":  func() error { return text.Delete(math.MaxInt, 1) },
+		"text from MaxInt, MaxInt":  func() error { return text.Delete(math.MaxInt, math.MaxInt) },
+		"list from -1, 1 item":      func() error { return list.Delete(-1, 1) },
+	} {
+		var err error
+		func() {
+			defer func() {
+				if p := recover(); p != nil {
+					err = fmt.Errorf("panic: %v", p)
+				}
+			}()
+			err = f()
+		}()
+		if err == nil || !strings.HasPrefix(err.Error(), "loro: ") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	after, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("a refused delete changed the history")
+	}
+	if got := fmt.Sprintf("%d %s", list.Len(), text.String()); got != "2 ab" {
+		t.Errorf("state %s", got)
+	}
+	// The next op takes the next counter, 4: none went to a refused delete.
+	if err := list.Insert(0, "c"); err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	next := d.tx.nextCounter
+	d.mu.Unlock()
+	if next != 5 {
+		t.Errorf("next counter %d, want 5", next)
+	}
+}
+
+// TestReadsDoNotSpendTheEditBudget reads a text many times through Delta,
+// each read walking all of it, and then edits it. Each operation has the
+// whole step budget: reads do not use up what the edit needs, as nothing
+// limits loro's edit after reads.
+func TestReadsDoNotSpendTheEditBudget(t *testing.T) {
+	d := NewDocument(1)
+	text := d.Text("t")
+	if err := text.Insert(0, strings.Repeat("x", 300)); err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	d.st.work.limit = 2000
+	d.mu.Unlock()
+	for i := 0; i < 20; i++ {
+		if _, err := text.Delta(); err != nil {
+			t.Fatalf("delta %d: %v", i, err)
+		}
+	}
+	if err := text.Delete(0, 10); err != nil {
+		t.Fatalf("delete after reads: %v", err)
+	}
+	if text.Len() != 290 {
+		t.Errorf("length %d", text.Len())
 	}
 }

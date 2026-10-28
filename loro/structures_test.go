@@ -125,6 +125,8 @@ func TestFractionalIndex(t *testing.T) {
 		// Indexes the crate never makes, which it panics on.
 		{"empty lower", got(fiNew([]byte{}, h("80"))), "none"},
 		{"empty upper", got(fiNew(h("80"), []byte{})), "none"},
+		{"after empty", got(fiNew([]byte{}, nil)), "none"},
+		{"before empty", got(fiNew(nil, []byte{})), "none"},
 		{"before zeros", got(fiNew(nil, h("0000"))), "none"},
 		{"after FFs", got(fiNew(h("FFFF"), nil)), "none"},
 		{"between, no room after", got(fiNew(h("01FF"), h("0280"))), "none"},

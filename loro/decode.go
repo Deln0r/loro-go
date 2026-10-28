@@ -139,12 +139,23 @@ type Change struct {
 	// dep is left out. That includes the author's own previous op, which is
 	// listed only when nothing else already covers it.
 	Deps []ID
-	Ops  []Op
+	// CommitMsg is the commit message the author attached to the change,
+	// empty when there is none.
+	CommitMsg string
+	Ops       []Op
 }
 
 // Updates is a decoded FastUpdates blob.
 type Updates struct {
 	Changes []Change
+	// Blocks is how the blob grouped Changes into change blocks: the number
+	// of changes in each block, in the order the blocks appear, Changes being
+	// listed block by block. A block holds consecutive changes of one peer.
+	// Where loro starts a new block depends on how its own document stored
+	// the changes in memory, which the changes do not show, so EncodeUpdates
+	// keeps these blocks to write the blob back as it was. Nil lets
+	// EncodeUpdates group the changes itself.
+	Blocks []int
 }
 
 // DecodeUpdates decodes a loro-crdt FastUpdates export into semantic changes.
@@ -177,6 +188,7 @@ func DecodeUpdates(blob []byte) (*Updates, error) {
 			return nil, err
 		}
 		u.Changes = append(u.Changes, chs...)
+		u.Blocks = append(u.Blocks, len(chs))
 	}
 	return u, nil
 }
@@ -292,6 +304,7 @@ func decodeBlock(blk *change.Block, budget *nameBudget) ([]Change, error) {
 			ID:        ID{Peer: hdr.Peers[0], Counter: int64(blk.CounterStart) + starts[i]},
 			Lamport:   lamportOf(i),
 			Timestamp: cm.Timestamps[i],
+			CommitMsg: cm.CommitMsgs[i],
 		}
 	}
 	if err := decodeDeps(hdr, changes); err != nil {

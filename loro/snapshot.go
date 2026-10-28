@@ -56,6 +56,7 @@ func DecodeSnapshot(blob []byte) (*Updates, error) {
 			return nil, err
 		}
 		u.Changes = append(u.Changes, chs...)
+		u.Blocks = append(u.Blocks, len(chs))
 	}
 	return u, nil
 }

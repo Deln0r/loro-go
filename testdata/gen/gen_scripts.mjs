@@ -3,9 +3,10 @@
 // full export, so the Go test can run the same script with Documents and hold
 // them to loro-crdt.
 //
-//   ../fixtures/script_corpus.json   300 random scripts
-//   ../fixtures/script_named.json    one small script per rule of loro's
-//   ../fixtures/shallow_snapshot.bin a shallow snapshot, which loro-go refuses
+//   ../fixtures/script_corpus.json        300 random scripts, 1 to 3 peers
+//   ../fixtures/script_crowd_corpus.json  60 random scripts, 4 to 12 peers
+//   ../fixtures/script_named.json         small scripts, one or more per rule
+//   ../fixtures/shallow_snapshot.bin      a shallow snapshot, which loro-go refuses
 //
 // A script names its peers by peer id and lists actions; "p" is the index of
 // the peer acting. Text positions are Unicode code points ("pos", "n"), the
@@ -593,8 +594,112 @@ add("reused_op_id_refused", [1, 1], (s) => {
   s.import(1, s.export(1));
 });
 
+// [frontiers] Many peers in one frontier: loro writes a change's deps in
+// the order of its hash map, which here holds 9, 17 and 33 peers, filled
+// in different orders and then cut back as changes on top of them arrive.
+const frontierScript = (name, peers, order, rounds) => add(name, [1000, ...peers], (s) => {
+  const blobs = peers.map((p, i) => {
+    s.mapSet(i + 1, "m", String(p), 0);
+    return s.export(i + 1);
+  });
+  for (const i of order) s.import(0, blobs[i]);
+  s.mapSet(0, "m", "result", 1);
+  s.commit(0);
+  for (let round = 0; round < rounds; round++) {
+    // Some peers take the hub's history and write on top of it; the hub
+    // takes them back, so their ids replace the hub's own in its
+    // frontiers, and the others' stay.
+    const hub = s.export(0);
+    const back = [];
+    for (let k = round; k < peers.length; k += 2 + round) {
+      s.import(k + 1, hub);
+      s.mapSet(k + 1, "m", String(peers[k]), round + 1);
+      back.push(s.export(k + 1));
+    }
+    for (const b of back.reverse()) s.import(0, b);
+    s.mapSet(0, "m", "round", round + 1);
+    s.commit(0);
+  }
+  s.check();
+});
+{
+  const nine = [12, 29, 46, 47, 64, 81, 98, 115, 132];
+  frontierScript("frontiers_9_peers", nine, nine.map((_, i) => i), 2);
+  frontierScript("frontiers_9_peers_reversed", nine, nine.map((_, i) => 8 - i), 2);
+  const seventeen = Array.from({ length: 17 }, (_, i) => 3 + 7 * i);
+  frontierScript("frontiers_17_peers", seventeen, [16, 0, 15, 1, 14, 2, 13, 3, 12, 4, 11, 5, 10, 6, 9, 7, 8], 3);
+  const r = rng(33);
+  const thirtyThree = Array.from({ length: 33 }, () => 1 + Math.floor(r() * 2 ** 40));
+  const order = thirtyThree.map((_, i) => i).sort(() => r() - 0.5);
+  frontierScript("frontiers_33_peers", thirtyThree, order, 3);
+}
+
 writeFileSync(join(outDir, "script_named.json"), JSON.stringify(named) + "\n");
 console.log(`script_named.json: ${named.length} scripts: ${named.map((n) => n.name).join(", ")}`);
+
+// ---------------------------------------------------------------------------
+// Crowd scripts: 4 to 12 peers, so that frontiers hold many peers and loro's
+// hash map grows, rehashes and drops entries as random syncs move them. A
+// sync here gathers the exports of several peers into one.
+
+function crowdScript(seed) {
+  const r = rng(seed * 3266489917);
+  const n = 4 + (seed % 9);
+  const ids = Array.from({ length: n }, () => (r() < 0.5 ? 1 + Math.floor(r() * 200) : 1 + Math.floor(r() * 2 ** 40)));
+  const peers = [...new Set(ids)];
+  while (peers.length < n) peers.push(1000 + peers.length);
+  const s = new Script({ seed }, peers);
+  const saved = s.docs.map(() => []);
+  const held = [];
+  for (let step = 30 + Math.floor(r() * 30); step > 0; step--) {
+    const p = Math.floor(r() * n);
+    const pick = r();
+    if (pick < 0.25) editText(s, p, r);
+    else if (pick < 0.45) editMap(s, p, r);
+    else if (pick < 0.55) editList(s, p, r);
+    else if (pick < 0.6) s.inc(p, "n", Math.floor(r() * 21) - 10);
+    else if (pick < 0.68) s.commit(p, r() < 0.3 ? { message: pickOf(r, ["m1", "m2"]) } : undefined);
+    else {
+      const q = r();
+      if (q < 0.55) {
+        // Gather: p takes the exports of up to half the others.
+        for (let k = 1 + Math.floor(r() * Math.max(1, n / 2)); k > 0; k--) {
+          const src = (p + 1 + Math.floor(r() * (n - 1))) % n;
+          s.import(p, s.export(src, { mode: "update", from: s.docs[p].version() }));
+        }
+        if (r() < 0.3) s.check();
+      } else if (q < 0.7) {
+        saved[p].push(s.docs[p].version());
+      } else if (q < 0.85 && saved[p].length > 0) {
+        held.push([(p + 1 + Math.floor(r() * (n - 1))) % n, s.export(p, { mode: "update", from: pickOf(r, saved[p]) })]);
+      } else if (held.length > 0) {
+        const [to, blob] = held.splice(Math.floor(r() * held.length), 1)[0];
+        s.import(to, blob);
+      } else {
+        s.import((p + 1) % n, s.export(p));
+      }
+    }
+  }
+  for (const [to, blob] of held) s.import(to, blob);
+  s.check();
+  return s.out();
+}
+
+const crowd = [];
+for (let seed = 1; seed <= 60; seed++) crowd.push(crowdScript(seed));
+writeFileSync(join(outDir, "script_crowd_corpus.json"), JSON.stringify(crowd) + "\n");
+{
+  let actions = 0, checks = 0, peers = 0, imports = 0;
+  for (const c of crowd) {
+    actions += c.actions.length;
+    peers += c.peers.length;
+    for (const a of c.actions) {
+      if (a.a === "check") checks++;
+      if (a.a === "import") imports++;
+    }
+  }
+  console.log(`script_crowd_corpus.json: ${crowd.length} scripts, ${peers} peers, ${actions} actions, ${imports} imports, ${checks} checkpoints`);
+}
 
 // A shallow snapshot, which loro-go refuses: its history starts past the
 // beginning.

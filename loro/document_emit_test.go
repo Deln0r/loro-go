@@ -17,7 +17,7 @@ import (
 // testdata/go_out/document_refused, which loro-crdt must refuse too.
 func TestEmitDocumentExportsForJS(t *testing.T) {
 	r := &checkResult{last: map[string]peerExport{}}
-	for _, name := range []string{"script_corpus.json", "script_named.json"} {
+	for _, name := range []string{"script_corpus.json", "script_crowd_corpus.json", "script_named.json"} {
 		scripts := loadScripts(t, name)
 		for i := range scripts {
 			runScript(&scripts[i], 0, r)

@@ -545,6 +545,15 @@ func TestScriptCorpus(t *testing.T) {
 	reportScripts(t, "script_corpus.json", len(scripts), r)
 }
 
+// TestScriptCrowdCorpus runs the 60 scripts of script_crowd_corpus.json,
+// by 4 to 12 peers that gather each other's exports, so frontiers hold many
+// peers, and holds every Document to loro-crdt as TestScriptCorpus does.
+func TestScriptCrowdCorpus(t *testing.T) {
+	scripts := loadScripts(t, "script_crowd_corpus.json")
+	r := runScripts(t, scripts, 0)
+	reportScripts(t, "script_crowd_corpus.json", len(scripts), r)
+}
+
 func reportScripts(t *testing.T, name string, n int, r *checkResult) {
 	t.Helper()
 	for i, f := range r.failures {

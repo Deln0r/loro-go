@@ -265,3 +265,35 @@ func TestNestedMapKeysAreArenaIndexes(t *testing.T) {
 		t.Error("a map written without a key arena did not fail")
 	}
 }
+
+// TestContainerValueIsOneByte pins the wire form of a child container stored
+// as a value: the container kind byte, then the kind as one byte, which loro
+// reads with read_u8 and writes with write_u8. The child's id is not on the
+// wire. A list holding a Text and then the number 5 is list, two items, kind
+// 9 kind 2, i64 5. Reading the kind as a LEB128 varint, as this reader once
+// did, agrees for the six kinds loro has and takes the next byte along for a
+// kind of 0x80 or above.
+func TestContainerValueIsOneByte(t *testing.T) {
+	for _, c := range []struct {
+		wire []byte
+		want []any
+	}{
+		{[]byte{byte(lvList), 0x02, byte(lvContainer), 0x02, byte(lvI64), 0x05}, []any{CText, int64(5)}},
+		{[]byte{byte(lvList), 0x02, byte(lvContainer), 0x85, byte(lvI64), 0x05}, []any{ContainerType(0x85), int64(5)}},
+	} {
+		got, err := NewValueReader(c.wire, nil).LoroValue()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("read % x as %#v, want %#v", c.wire, got, c.want)
+		}
+		var w ValueWriter
+		if err := w.LoroValue(c.want); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(w.Bytes(), c.wire) {
+			t.Errorf("wrote % x, want % x", w.Bytes(), c.wire)
+		}
+	}
+}

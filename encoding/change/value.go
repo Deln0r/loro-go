@@ -224,7 +224,11 @@ func (v *ValueReader) loroValue(depth int) (any, error) {
 		}
 		return out, nil
 	case lvContainer:
-		ct, err := v.U64()
+		// A child container placed in a map, a list or a MovableList: one
+		// byte of container kind, as loro reads it (read_u8). The child's id
+		// is not written; it is the id of the op, or of the list item, that
+		// holds this value.
+		ct, err := v.r.Byte()
 		if err != nil {
 			return nil, err
 		}
@@ -283,6 +287,7 @@ func (w *ValueWriter) Binary(b []byte) {
 // A map's keys are registered and written in sorted order. loro writes them in
 // the order of its hash map, so a map of two or more keys nested in a value
 // can come out in different bytes from loro's, which decode to the same value.
+// A ContainerType is a child container, written as its kind byte.
 func (w *ValueWriter) LoroValue(v any) error {
 	switch x := v.(type) {
 	case nil:
@@ -305,6 +310,8 @@ func (w *ValueWriter) LoroValue(v any) error {
 	case []byte:
 		w.buf = append(w.buf, byte(lvBinary))
 		w.Binary(x)
+	case ContainerType:
+		w.buf = append(w.buf, byte(lvContainer), byte(x))
 	case []any:
 		w.buf = append(w.buf, byte(lvList))
 		w.U64(uint64(len(x)))

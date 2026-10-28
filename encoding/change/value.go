@@ -59,6 +59,9 @@ type ValueReader struct {
 	r         *postcard.Reader
 	keys      []string
 	keyBudget int // key bytes nested maps may still reference
+
+	recordOrder bool
+	orders      [][]string
 }
 
 // NewValueReader returns a ValueReader over the raw values blob of a block
@@ -78,6 +81,19 @@ const (
 	keyBudgetBase    = 64 << 20
 	keyBudgetPerByte = 256
 )
+
+// RecordKeyOrder makes the reader keep the order in which the stream lists
+// the keys of every map nested in a value; KeyOrders returns them. A decoded
+// map does not keep that order, and loro writes it in the order of its hash
+// map, so it is the one thing a re-encoder needs from the original bytes to
+// write them again exactly (see ValueWriter.KeyOrder).
+func (v *ValueReader) RecordKeyOrder() { v.recordOrder = true }
+
+// KeyOrders returns the key order of every map nested in the values read so
+// far, one slice per map, in the order the maps begin in the stream: a map
+// comes before the maps nested in it. It is nil unless RecordKeyOrder was
+// called first.
+func (v *ValueReader) KeyOrders() [][]string { return v.orders }
 
 // Empty reports whether the whole values blob has been consumed.
 func (v *ValueReader) Empty() bool { return v.r.Empty() }
@@ -204,6 +220,11 @@ func (v *ValueReader) loroValue(depth int) (any, error) {
 			return nil, fmt.Errorf("loro/change: map length %d exceeds remaining %d", n, v.r.Remaining())
 		}
 		out := make(map[string]any, min(n, maxLoroValuePrealloc))
+		slot := -1
+		if v.recordOrder {
+			slot = len(v.orders)
+			v.orders = append(v.orders, make([]string, 0, min(n, maxLoroValuePrealloc)))
+		}
 		for i := uint64(0); i < n; i++ {
 			ki, err := v.U64()
 			if err != nil {
@@ -215,6 +236,9 @@ func (v *ValueReader) loroValue(depth int) (any, error) {
 			k := v.keys[ki]
 			if v.keyBudget -= len(k); v.keyBudget < 0 {
 				return nil, errors.New("loro/change: nested map keys reference more key bytes than the values blob allows")
+			}
+			if slot >= 0 {
+				v.orders[slot] = append(v.orders[slot], k)
 			}
 			val, err := v.loroValue(depth + 1)
 			if err != nil {
@@ -259,6 +283,12 @@ type ValueWriter struct {
 	// map nested in a value names its keys by index; with Key nil, writing
 	// one is an error.
 	Key func(string) uint64
+
+	// KeyOrder, when set, gives the order in which to write the keys of a map
+	// nested in a value. It is called once per map, a map before the maps
+	// nested in it, and must return each of the map's keys exactly once. With
+	// KeyOrder nil the keys are written sorted.
+	KeyOrder func(map[string]any) []string
 }
 
 // Bytes returns the accumulated value stream.
@@ -284,10 +314,11 @@ func (w *ValueWriter) Binary(b []byte) {
 }
 
 // LoroValue writes one self-describing nested value (kind byte + content).
-// A map's keys are registered and written in sorted order. loro writes them in
-// the order of its hash map, so a map of two or more keys nested in a value
-// can come out in different bytes from loro's, which decode to the same value.
-// A ContainerType is a child container, written as its kind byte.
+// A map's keys are registered and written in sorted order unless KeyOrder says
+// otherwise. loro writes them in the order of its hash map, so a map of two or
+// more keys nested in a value can come out in different bytes from loro's,
+// which decode to the same value. A ContainerType is a child container,
+// written as its kind byte.
 func (w *ValueWriter) LoroValue(v any) error {
 	switch x := v.(type) {
 	case nil:
@@ -324,9 +355,13 @@ func (w *ValueWriter) LoroValue(v any) error {
 		if w.Key == nil {
 			return fmt.Errorf("loro/change: a map value needs a key arena")
 		}
+		order, err := w.mapKeys(x)
+		if err != nil {
+			return err
+		}
 		w.buf = append(w.buf, byte(lvMap))
 		w.U64(uint64(len(x)))
-		for _, k := range slices.Sorted(maps.Keys(x)) {
+		for _, k := range order {
 			w.U64(w.Key(k))
 			if err := w.LoroValue(x[k]); err != nil {
 				return err
@@ -336,6 +371,26 @@ func (w *ValueWriter) LoroValue(v any) error {
 		return fmt.Errorf("loro/change: cannot encode LoroValue of type %T", v)
 	}
 	return nil
+}
+
+// mapKeys returns the keys of m in the order to write them: KeyOrder's, after
+// checking it names every key once, or sorted.
+func (w *ValueWriter) mapKeys(m map[string]any) ([]string, error) {
+	if w.KeyOrder == nil {
+		return slices.Sorted(maps.Keys(m)), nil
+	}
+	order := w.KeyOrder(m)
+	if len(order) != len(m) {
+		return nil, fmt.Errorf("loro/change: key order names %d keys for a map of %d", len(order), len(m))
+	}
+	seen := make(map[string]bool, len(order))
+	for _, k := range order {
+		if _, ok := m[k]; !ok || seen[k] {
+			return nil, fmt.Errorf("loro/change: key order names %q, which the map does not hold once", k)
+		}
+		seen[k] = true
+	}
+	return order, nil
 }
 
 // Mark writes a MarkStart value (inverse of ReadMark).

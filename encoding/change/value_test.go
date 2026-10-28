@@ -94,6 +94,7 @@ func TestLoroValueNestedRoundTrip(t *testing.T) {
 		{"map with list", map[string]any{"xs": []any{int64(1), int64(2)}}},
 		{"map of several keys", map[string]any{"z": int64(1), "a": "two", "m": nil}},
 		{"maps inside maps and lists", map[string]any{"k": []any{map[string]any{"q": "s", "k": int64(2)}}}},
+		{"child containers", map[string]any{"t": CText, "xs": []any{CMovableList, CTree}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -294,6 +295,57 @@ func TestContainerValueIsOneByte(t *testing.T) {
 		}
 		if !bytes.Equal(w.Bytes(), c.wire) {
 			t.Errorf("wrote % x, want % x", w.Bytes(), c.wire)
+		}
+	}
+}
+
+// TestKeyOrderReproducesTheStream reads maps whose keys the stream lists out
+// of sorted order, as loro's hash map lists them, and writes them back with
+// the order the reader recorded: the bytes come back exactly. Without the
+// recorded order they come back sorted, and an order that does not name every
+// key of its map once is refused.
+func TestKeyOrderReproducesTheStream(t *testing.T) {
+	keys := []string{"b", "a", "c"}
+	// {"b": {"c": 1, "a": 2}, "a": 3}: the outer map lists b before a, the
+	// inner one c before a, and the inner map begins before the outer key a.
+	wire := []byte{
+		byte(lvMap), 0x02,
+		0x00, byte(lvMap), 0x02, 0x02, byte(lvI64), 0x01, 0x01, byte(lvI64), 0x02,
+		0x01, byte(lvI64), 0x03,
+	}
+	vr := NewValueReader(wire, keys)
+	vr.RecordKeyOrder()
+	val, err := vr.LoroValue()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orders := vr.KeyOrders()
+	if want := [][]string{{"b", "a"}, {"c", "a"}}; !reflect.DeepEqual(orders, want) {
+		t.Fatalf("recorded %q, want %q", orders, want)
+	}
+
+	a := testArena{keys: slices.Clone(keys)}
+	next := 0
+	w := ValueWriter{Key: a.key, KeyOrder: func(map[string]any) []string { next++; return orders[next-1] }}
+	if err := w.LoroValue(val); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(w.Bytes(), wire) {
+		t.Errorf("with the recorded order wrote % x, want % x", w.Bytes(), wire)
+	}
+
+	sorted := ValueWriter{Key: a.key}
+	if err := sorted.LoroValue(val); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(sorted.Bytes(), wire) {
+		t.Error("sorted keys wrote the stream's own order")
+	}
+
+	for _, bad := range [][]string{{"b"}, {"b", "b"}, {"b", "x"}} {
+		w := ValueWriter{Key: a.key, KeyOrder: func(map[string]any) []string { return bad }}
+		if err := w.LoroValue(map[string]any{"a": nil, "b": nil}); err == nil {
+			t.Errorf("key order %q was accepted for keys a, b", bad)
 		}
 	}
 }

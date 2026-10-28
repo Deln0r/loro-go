@@ -664,6 +664,21 @@ func setOp(lamport int64, v any) Op {
 	return rootOp(change.CMovableList, "ml", change.VKListSet, ListSetValue{Elem: ListElem{Peer: 2, Lamport: lamport}, Value: v})
 }
 
+// nestedOp writes 1 under "k" in the Map created by op id.
+func nestedOp(id string) Op {
+	o := mapWrite("k", int64(1))
+	o.IsRoot, o.Container = false, id
+	return o
+}
+
+// textDel deletes from root Text "t" at pos the span of peer 2 starting at
+// counter ctr, n atoms long (negative n: backwards).
+func textDel(pos, ctr, n int64) Op {
+	o := rootOp(change.CText, "t", change.VKDeleteSeq, DeleteSpan{Peer: 2, Counter: ctr, Len: n})
+	o.Pos, o.Len = pos, max(n, -n)
+	return o
+}
+
 func withLen(o Op, n int64) Op {
 	o.Len = n
 	return o
@@ -730,6 +745,26 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a mark's end of length 2", updatesOf(solo(withLen(rootOp(change.CText, "t", change.VKNull, nil), 2)))},
 		{"a move of length 2", updatesOf(solo(withLen(moveOp(0, 0, 0), 2)))},
 		{"a set of length 2", updatesOf(solo(withLen(setOp(0, "x"), 2)))},
+
+		// An id inside a value wider than loro's field, which loro truncates:
+		// a set naming the element of lamport 2^32 set the element of lamport
+		// 0, and tree node 4294967296@1 imported as 0@1.
+		{"a set naming lamport 2^32", updatesOf(solo(setOp(1<<32, "x")))},
+		{"a set naming lamport -1", updatesOf(solo(setOp(-1, "x")))},
+		{"a move naming lamport 2^32", updatesOf(solo(moveOp(0, 0, 1<<32)))},
+		{"a move from index 2^32", updatesOf(solo(moveOp(1<<32, 0, 0)))},
+		{"a tree node at counter 2^32", updatesOf(solo(treeOp("4294967296@1", "")))},
+		{"a tree node at counter -1", updatesOf(solo(treeOp("-1@1", "")))},
+		{"a tree parent at counter 2^31", updatesOf(solo(treeOp("0@1", "2147483648@1")))},
+		{"a child container at counter 2^31", updatesOf(solo(nestedOp("2147483648@1")))},
+		{"a child container at counter -1", updatesOf(solo(nestedOp("-1@1")))},
+		{"a tree node without a peer", updatesOf(solo(treeOp("0@?", "")))},
+		{"a nested container named like a root", updatesOf(solo(nestedOp("meta")))},
+		{"a tree op at a fractional index that is not hex", updatesOf(solo(rootOp(change.CTree, "tr", change.VKRawTreeMove, TreeNode{ID: "0@1", FI: "zz"})))},
+		// Already refused before: a delete's span is checked against the i32
+		// counter range by checkDeleteSpan.
+		{"a delete from counter 2^31", updatesOf(solo(textDel(0, 1<<31, 1)))},
+		{"a delete past counter 2^31-1", updatesOf(solo(textDel(0, math.MaxInt32, 2)))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {
@@ -747,6 +782,11 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a fractional counter step", updatesOf(solo(rootOp(change.CCounter, "c", change.VKF64, 0.5)))},
 		{"a map delete", updatesOf(solo(rootOp(change.CMap, "m", change.VKDeleteOnce, nil)))},
 		{"a mark's end", updatesOf(solo(rootOp(change.CText, "t", change.VKNull, nil)))},
+		{"a set naming lamport 2^32-1", updatesOf(solo(setOp(math.MaxUint32, "x")))},
+		{"a tree node at counter 2^31-1", updatesOf(solo(treeOp("2147483647@1", "")))},
+		{"a tree delete", updatesOf(solo(treeOp("0@1", deletedTreeRoot)))},
+		{"a child container at counter 2^31-1", updatesOf(solo(nestedOp("2147483647@1")))},
+		{"a delete of counter 2^31-1", updatesOf(solo(textDel(0, math.MaxInt32, 1)))},
 	}
 	for _, c := range accepted {
 		if _, err := EncodeUpdates(c.u); err != nil {

@@ -272,9 +272,7 @@ func encodeBlock(chs []Change, keyOrder func(map[string]any) []string) ([]byte, 
 	e.vw.KeyOrder = keyOrder
 	peer := chs[0].ID.Peer
 	e.peer(peer)
-	if err := e.positions(chs); err != nil {
-		return nil, err
-	}
+	e.positions(chs)
 
 	hdr := &change.ChangeHeader{}
 	meta := &change.ChangeMeta{}
@@ -346,17 +344,14 @@ func encodeBlock(chs []Change, keyOrder func(map[string]any) []string) ([]byte, 
 // positions registers the fractional index of every tree create and move in
 // the block, sorted and without duplicates, as loro collects them into a
 // BTreeSet. A delete has none.
-func (e *blockEncoder) positions(chs []Change) error {
+func (e *blockEncoder) positions(chs []Change) {
 	for _, ch := range chs {
 		for _, op := range ch.Ops {
 			n, ok := op.Value.(TreeNode)
 			if op.VKind != change.VKRawTreeMove || !ok || isTreeDelete(n) {
 				continue
 			}
-			fi, err := hex.DecodeString(n.FI)
-			if err != nil {
-				return fmt.Errorf("loro: tree op %d@%d has fractional index %q: %w", op.Counter, op.Peer, n.FI, err)
-			}
+			fi, _ := hex.DecodeString(n.FI) // checkOp read it
 			if _, ok := e.posIdx[string(fi)]; !ok {
 				e.posIdx[string(fi)] = 0
 				e.pos = append(e.pos, fi)
@@ -367,7 +362,6 @@ func (e *blockEncoder) positions(chs []Change) error {
 	for i, p := range e.pos {
 		e.posIdx[string(p)] = i
 	}
-	return nil
 }
 
 func isTreeDelete(n TreeNode) bool { return n.HasParent && n.Parent == deletedTreeRoot }
@@ -448,6 +442,66 @@ func checkOp(op Op) error {
 	if !slices.Contains(kinds, op.VKind) {
 		return fmt.Errorf("loro: op %d@%d writes value kind %d into a %v, which loro does not read", op.Counter, op.Peer, op.VKind, op.Kind)
 	}
+	// What the value names: the element a move or a set addresses by peer
+	// and lamport, the node and parent of a tree op, the container a nested
+	// op is in. loro reads each into a field of fixed width and truncates
+	// what does not fit: a set naming lamport 2^32 set the element of
+	// lamport 0, and tree node 4294967296@1 imported as 0@1 (read_usize then
+	// "as u32" or "as i32" in encoding/value.rs and decode_op). A lamport is
+	// a u32, a counter an i32, and a move's source index a u32.
+	if !op.IsRoot {
+		if _, err := parseStoredID(op.Container); err != nil {
+			return fmt.Errorf("loro: op %d@%d is in container %w", op.Counter, op.Peer, err)
+		}
+	}
+	bad := func() error {
+		return fmt.Errorf("loro: op %d@%d of value kind %d carries %T", op.Counter, op.Peer, op.VKind, op.Value)
+	}
+	switch op.VKind {
+	case change.VKMarkStart:
+		m, ok := op.Value.(MarkInfo)
+		if !ok {
+			return bad()
+		}
+		if m.Start != op.Pos {
+			return fmt.Errorf("loro: mark %d@%d starts at %d but its op is at %d", op.Counter, op.Peer, m.Start, op.Pos)
+		}
+	case change.VKListMove:
+		el, ok := op.Value.(ListElem)
+		if !ok {
+			return bad()
+		}
+		if el.Lamport < 0 || el.Lamport > math.MaxUint32 || op.MoveFrom < 0 || op.MoveFrom > math.MaxUint32 {
+			return fmt.Errorf("loro: move %d@%d names lamport %d and index %d; loro reads both as u32", op.Counter, op.Peer, el.Lamport, op.MoveFrom)
+		}
+	case change.VKListSet:
+		v, ok := op.Value.(ListSetValue)
+		if !ok {
+			return bad()
+		}
+		if v.Elem.Lamport < 0 || v.Elem.Lamport > math.MaxUint32 {
+			return fmt.Errorf("loro: set %d@%d names lamport %d; loro reads it as a u32", op.Counter, op.Peer, v.Elem.Lamport)
+		}
+	case change.VKRawTreeMove:
+		n, ok := op.Value.(TreeNode)
+		if !ok {
+			return bad()
+		}
+		if _, err := parseStoredID(n.ID); err != nil {
+			return fmt.Errorf("loro: tree op %d@%d moves node %w", op.Counter, op.Peer, err)
+		}
+		if n.HasParent {
+			if _, err := parseStoredID(n.Parent); err != nil {
+				return fmt.Errorf("loro: tree op %d@%d moves under parent %w", op.Counter, op.Peer, err)
+			}
+		}
+		if !isTreeDelete(n) {
+			if _, err := hex.DecodeString(n.FI); err != nil {
+				return fmt.Errorf("loro: tree op %d@%d has fractional index %q: %w", op.Counter, op.Peer, n.FI, err)
+			}
+		}
+	}
+
 	// An insert is as long as what it inserts and a delete as what it
 	// removes. Every other op is one atom (content_len in op/content.rs and
 	// list_op.rs): a longer one would claim counters loro's import does not
@@ -472,10 +526,7 @@ func checkOp(op Op) error {
 func (e *blockEncoder) op(op Op) error {
 	c := contID{root: op.IsRoot, kind: op.Kind, name: op.Container}
 	if !op.IsRoot {
-		id, err := parseID(op.Container)
-		if err != nil {
-			return fmt.Errorf("loro: op %d@%d names container %q: %w", op.Counter, op.Peer, op.Container, err)
-		}
+		id, _ := parseID(op.Container) // checkOp read it
 		c = contID{kind: op.Kind, peer: id.Peer, counter: id.Counter}
 	}
 	e.ops.ContainerIdx = append(e.ops.ContainerIdx, e.container(c))
@@ -487,71 +538,57 @@ func (e *blockEncoder) op(op Op) error {
 	e.ops.ValueKind = append(e.ops.ValueKind, op.VKind)
 	e.ops.Len = append(e.ops.Len, op.Len)
 
-	bad := func() error {
-		return fmt.Errorf("loro: op %d@%d of kind %d carries %T", op.Counter, op.Peer, op.VKind, op.Value)
-	}
+	// checkOp asserted each value's type below.
 	switch op.VKind {
 	case change.VKDeleteSeq:
-		d := op.Value.(DeleteSpan) // checkOp made sure
+		d := op.Value.(DeleteSpan)
 		e.dels = append(e.dels, change.DeleteID{PeerIdx: e.peer(d.Peer), Counter: d.Counter, Len: d.Len})
 		return nil
 	case change.VKMarkStart:
-		m, ok := op.Value.(MarkInfo)
-		if !ok {
-			return bad()
-		}
-		if m.Start != op.Pos {
-			return fmt.Errorf("loro: mark %d@%d starts at %d but its op is at %d", op.Counter, op.Peer, m.Start, op.Pos)
-		}
+		m := op.Value.(MarkInfo)
 		return e.vw.Mark(change.Mark{Info: m.Info, Len: m.Len, KeyIdx: e.key(m.Key), Value: m.Value})
 	case change.VKListMove:
-		el, ok := op.Value.(ListElem)
-		if !ok {
-			return bad()
-		}
+		el := op.Value.(ListElem)
 		e.vw.ListMove(change.ListMove{From: op.MoveFrom, FromIdx: e.peer(el.Peer), Lamport: el.Lamport})
 		return nil
 	case change.VKListSet:
-		s, ok := op.Value.(ListSetValue)
-		if !ok {
-			return bad()
-		}
-		return e.vw.ListSet(change.ListSet{PeerIdx: e.peer(s.Elem.Peer), Lamport: s.Elem.Lamport, Value: s.Value})
+		v := op.Value.(ListSetValue)
+		return e.vw.ListSet(change.ListSet{PeerIdx: e.peer(v.Elem.Peer), Lamport: v.Elem.Lamport, Value: v.Value})
 	case change.VKRawTreeMove:
-		n, ok := op.Value.(TreeNode)
-		if !ok {
-			return bad()
-		}
-		return e.treeMove(op, n)
+		e.treeMove(op.Value.(TreeNode))
+		return nil
 	}
 	return e.vw.OpContent(op.VKind, op.Value)
 }
 
 // treeMove writes a tree create, move or delete. A delete is a move under
 // loro's deleted root and carries position 0 (block_encode.rs, encode_tree_op),
-// whatever its FI says.
-func (e *blockEncoder) treeMove(op Op, n TreeNode) error {
-	subject, err := parseID(n.ID)
-	if err != nil {
-		return fmt.Errorf("loro: tree op %d@%d names node %q: %w", op.Counter, op.Peer, n.ID, err)
-	}
+// whatever its FI says. checkOp read the ids and the fractional index.
+func (e *blockEncoder) treeMove(n TreeNode) {
+	subject, _ := parseID(n.ID)
 	m := change.RawTreeMove{SubjectPeerIdx: e.peer(subject.Peer), SubjectCounter: subject.Counter, ParentNull: !n.HasParent}
 	if n.HasParent {
-		parent, err := parseID(n.Parent)
-		if err != nil {
-			return fmt.Errorf("loro: tree op %d@%d names parent %q: %w", op.Counter, op.Peer, n.Parent, err)
-		}
+		parent, _ := parseID(n.Parent)
 		m.ParentPeerIdx, m.ParentCounter = e.peer(parent.Peer), parent.Counter
 	}
 	if !isTreeDelete(n) {
-		fi, err := hex.DecodeString(n.FI)
-		if err != nil {
-			return fmt.Errorf("loro: tree op %d@%d has fractional index %q: %w", op.Counter, op.Peer, n.FI, err)
-		}
+		fi, _ := hex.DecodeString(n.FI)
 		m.PositionIdx = int64(e.posIdx[string(fi)])
 	}
 	e.vw.RawTreeMove(m)
-	return nil
+}
+
+// parseStoredID reads a "counter@peer" id that loro stores with an i32
+// counter: a tree node, a tree parent, a container created by an op.
+func parseStoredID(s string) (ID, error) {
+	id, err := parseID(s)
+	if err != nil {
+		return ID{}, fmt.Errorf("%q: %w", s, err)
+	}
+	if id.Counter < 0 || id.Counter > math.MaxInt32 {
+		return ID{}, fmt.Errorf("%q, whose counter is outside loro's i32", s)
+	}
+	return id, nil
 }
 
 // parseID reads a "counter@peer" id, as fmtID writes it.

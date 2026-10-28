@@ -26,7 +26,7 @@ func TestFileRoundTrip(t *testing.T) {
 		"unicode_text", "map_mixed", "text_cjk_del", "counter",
 		"tree_simple", "tree_meta", "tree_wide", "mlist",
 		"richtext", "rt_one", "rt_two", "rt_overlap",
-		"rt_struct",
+		"rt_struct", "nested_values", "encode_in_range",
 		"nested_in_list", "nested_in_movable", "nested_tree_meta", "mergeable_nested",
 	} {
 		orig, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name+".update.bin"))
@@ -104,16 +104,30 @@ func roundTripBlock(t *testing.T, name string, raw []byte) []byte {
 			t.Errorf("%s change_meta: % x != % x", name, reCM, blk.ChangeMeta)
 		}
 
+		// A map nested in a value lists its keys in loro's hash order, which
+		// the decoded Go map does not keep; the reader records it and the
+		// writer replays it, so the values come back byte for byte as well.
 		vr := NewValueReader(blk.Values, keys)
-		vw := ValueWriter{Key: keyIn(keys)}
-		for i := 0; i < ops.N(); i++ {
-			val, err := vr.OpContent(ops.ValueKind[i])
-			if err != nil {
+		vr.RecordKeyOrder()
+		vals := make([]any, ops.N())
+		for i := range vals {
+			if vals[i], err = vr.OpContent(ops.ValueKind[i]); err != nil {
 				t.Fatal(err)
 			}
+		}
+		orders := vr.KeyOrders()
+		vw := ValueWriter{Key: keyIn(keys), KeyOrder: func(map[string]any) []string {
+			o := orders[0]
+			orders = orders[1:]
+			return o
+		}}
+		for i, val := range vals {
 			if err := vw.OpContent(ops.ValueKind[i], val); err != nil {
 				t.Fatal(err)
 			}
+		}
+		if !bytes.Equal(vw.Bytes(), blk.Values) {
+			t.Errorf("%s values: % x != % x", name, vw.Bytes(), blk.Values)
 		}
 
 		pos, err := DecodePositions(blk.Positions)
@@ -195,13 +209,15 @@ func TestValuesRoundTrip(t *testing.T) {
 // the random corpora, which hold the op kinds the named fixtures barely touch:
 // MovableList moves and sets, tree moves and deletes, marks, backwards
 // deletes, style values that are objects of one key, child containers stored
-// as map, list and MovableList values, and mergeable children's binary
-// markers. Each blob and each file must come back byte-identical.
+// as map, list and MovableList values, mergeable children's binary markers,
+// and in the encoder corpus commit messages, timestamps, maps of several keys
+// nested in values, and peers in several blocks. Each blob and each file must
+// come back byte-identical.
 func TestCorpusRoundTrip(t *testing.T) {
 	for _, name := range []string{
 		"seq_single_corpus.json", "seq_concurrent_corpus.json", "ordering_corpus.json",
 		"movable_single_corpus.json", "movable_concurrent_corpus.json", "tree_corpus.json",
-		"rich_corpus.json", "nested_corpus.json",
+		"rich_corpus.json", "nested_corpus.json", "encode_corpus.json",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "fixtures", name))
 		if err != nil {

@@ -183,8 +183,10 @@ func (d *Document) Import(blob []byte) error {
 		}
 	}
 	// loro sorts a blob's changes by lamport before it checks and applies
-	// them (fast_snapshot.rs:412).
-	slices.SortStableFunc(changes, func(a, b *storedChange) int { return cmp.Compare(a.ch.Lamport, b.ch.Lamport) })
+	// them (fast_snapshot.rs:412), with Rust's unstable sort: the order of
+	// changes of equal lamport is where their peers land in the hash maps
+	// of the version vector and the frontiers.
+	sortByLamport(changes, d)
 	if err := d.log.checkKnown(changes); err != nil {
 		return err
 	}

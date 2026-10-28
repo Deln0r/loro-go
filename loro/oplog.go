@@ -1,7 +1,6 @@
 package loro
 
 import (
-	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -595,7 +594,7 @@ func (l *opLog) trimKnown(c *storedChange, d *Document) *storedChange {
 // is half changed, and the caller restores it.
 func (l *opLog) importChanges(changes []*storedChange, d *Document) (bool, error) {
 	before := l.appliedAtoms()
-	slices.SortStableFunc(changes, func(a, b *storedChange) int { return cmp.Compare(a.ch.Lamport, b.ch.Lamport) })
+	sortByLamport(changes, d)
 	var latest []ID
 	var waiting []*storedChange
 	for _, c := range changes {

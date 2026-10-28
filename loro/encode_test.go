@@ -14,18 +14,18 @@ import (
 func TestEncodeFromScratchByteIdentical(t *testing.T) {
 	cases := []struct {
 		name  string
-		build func(*Doc)
+		build func(*testDoc)
 	}{
-		{"text_hi", func(d *Doc) { d.TextInsert("t", 0, "hi") }},
-		{"map_kv", func(d *Doc) { d.MapSet("m", "k", "v"); d.MapSet("m", "n", int64(42)) }},
-		{"list_abc", func(d *Doc) { d.ListInsert("l", 0, []any{"a", "b", "c"}) }},
+		{"text_hi", func(d *testDoc) { d.TextInsert("t", 0, "hi") }},
+		{"map_kv", func(d *testDoc) { d.MapSet("m", "k", "v"); d.MapSet("m", "n", int64(42)) }},
+		{"list_abc", func(d *testDoc) { d.ListInsert("l", 0, []any{"a", "b", "c"}) }},
 	}
 	for _, c := range cases {
 		want, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", c.name+".update.bin"))
 		if err != nil {
 			t.Skipf("fixture %s missing: %v", c.name, err)
 		}
-		d := NewDoc(1)
+		d := newTestDoc(1)
 		c.build(d)
 		got := d.ExportUpdates()
 		if !bytes.Equal(got, want) {
@@ -37,7 +37,7 @@ func TestEncodeFromScratchByteIdentical(t *testing.T) {
 // TestEncodeRoundTripThroughDecode builds a novel doc, exports, and decodes it
 // back, asserting the state round-trips (covers values not in any fixture).
 func TestEncodeRoundTripThroughDecode(t *testing.T) {
-	d := NewDoc(7)
+	d := newTestDoc(7)
 	d.TextInsert("greeting", 0, "world")
 	d.MapSet("cfg", "enabled", true)
 	d.MapSet("cfg", "ratio", 0.5)

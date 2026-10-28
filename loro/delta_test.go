@@ -176,7 +176,7 @@ func TestStyleValuesCompareByContent(t *testing.T) {
 // 20 GB here, where this allocates a few megabytes.
 func TestTextDeltaOfALongInsertIsLinear(t *testing.T) {
 	const n = 200_000
-	d := NewDoc(1)
+	d := newTestDoc(1)
 	d.TextInsert("t", 0, strings.Repeat("a", n))
 	u, err := DecodeUpdates(d.ExportUpdates())
 	if err != nil {

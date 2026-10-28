@@ -16,7 +16,7 @@ import (
 func TestImportFoldsInLinearWork(t *testing.T) {
 	const n = 200000
 	blob := func(m int) []byte {
-		doc := NewDoc(1)
+		doc := newTestDoc(1)
 		for i := 0; i < m; i++ {
 			doc.TextInsert("t", i, "x")
 		}

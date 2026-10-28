@@ -9,7 +9,7 @@ import (
 // TestEmitForJSImport writes a Go-built blob to testdata/go_out so the JS
 // cross-validator (testdata/gen/validate_go.mjs) can import it into loro-crdt.
 func TestEmitForJSImport(t *testing.T) {
-	d := NewDoc(42)
+	d := newTestDoc(42)
 	d.TextInsert("title", 0, "from-go")
 	d.MapSet("meta", "n", int64(7))
 	d.MapSet("meta", "ok", true)

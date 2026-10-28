@@ -67,26 +67,28 @@ func run(homeserver, password string) error {
 	// Offline. Each peer edits its own replica; neither has seen the other's
 	// bytes. Same containers, concurrent edits, different peer ids.
 	fmt.Println("-- offline edits (peers cannot see each other) --")
-	aliceDoc := loro.NewDoc(1)
-	aliceDoc.TextInsert("notes", 0, "alice wrote this. ")
-	aliceDoc.MapSet("meta", "author", "alice")
+	aliceBlob, err := edit(1, "alice wrote this. ", "author", "alice")
+	if err != nil {
+		return err
+	}
 	fmt.Println("  alice: notes += \"alice wrote this. \", meta.author = alice")
 
-	bobDoc := loro.NewDoc(2)
-	bobDoc.TextInsert("notes", 0, "bob wrote this. ")
-	bobDoc.MapSet("meta", "reviewed", int64(1))
+	bobBlob, err := edit(2, "bob wrote this. ", "reviewed", int64(1))
+	if err != nil {
+		return err
+	}
 	fmt.Println("  bob:   notes += \"bob wrote this. \",   meta.reviewed = 1")
 
 	// Reconnect. Bob publishes first, so nothing depends on alice's edit
 	// arriving before bob's.
 	fmt.Println("\n-- reconnect and publish --")
-	bobEvt, err := loromatrix.Publish(ctx, bob, room.RoomID, bobDoc.ExportUpdates())
+	bobEvt, err := loromatrix.Publish(ctx, bob, room.RoomID, bobBlob)
 	if err != nil {
 		return fmt.Errorf("bob publish: %w", err)
 	}
 	fmt.Printf("  bob   -> %s (%s)\n", bobEvt, loromatrix.EventType)
 
-	aliceEvt, err := loromatrix.Publish(ctx, alice, room.RoomID, aliceDoc.ExportUpdates())
+	aliceEvt, err := loromatrix.Publish(ctx, alice, room.RoomID, aliceBlob)
 	if err != nil {
 		return fmt.Errorf("alice publish: %w", err)
 	}
@@ -152,4 +154,17 @@ func replayState(ctx context.Context, cli *mautrix.Client, room id.RoomID, who s
 	}
 	fmt.Printf("  %s replayed %d change(s) from the room\n", who, len(u.Changes))
 	return loromatrix.State(u)
+}
+
+// edit makes one peer's offline edit, a line of notes and a meta entry, and
+// exports it as the blob that peer publishes.
+func edit(peer uint64, notes, key string, value any) ([]byte, error) {
+	d := loro.NewDocument(peer)
+	if err := d.Text("notes").Insert(0, notes); err != nil {
+		return nil, err
+	}
+	if err := d.Map("meta").Set(key, value); err != nil {
+		return nil, err
+	}
+	return d.ExportUpdates()
 }

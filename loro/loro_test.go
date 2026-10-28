@@ -31,36 +31,6 @@ func normalize(v any) any {
 	}
 }
 
-func TestBuildStateMatchesToJSON(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "fixtures")
-	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del", "delete_backwards"} {
-		blob, err := os.ReadFile(filepath.Join(dir, name+".update.bin"))
-		if err != nil {
-			t.Fatalf("fixture %s missing: %v", name, err)
-		}
-		u, err := DecodeUpdates(blob)
-		if err != nil {
-			t.Fatalf("%s decode: %v", name, err)
-		}
-		state, err := BuildState(u)
-		if err != nil {
-			t.Fatalf("%s build: %v", name, err)
-		}
-
-		wantBytes, err := os.ReadFile(filepath.Join(dir, name+".json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var want any
-		if err := json.Unmarshal(wantBytes, &want); err != nil {
-			t.Fatal(err)
-		}
-		if got := normalize(state); !reflect.DeepEqual(got, want) {
-			t.Errorf("%s state mismatch:\n got  %#v\n want %#v", name, got, want)
-		}
-	}
-}
-
 func TestDecodeSnapshotMatchesToJSON(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
 	for _, name := range []string{"text_hi", "map_kv", "list_abc", "map_float", "text_del", "list_del", "map_del", "two_changes", "cross_del", "counter", "unicode_text", "map_mixed", "text_cjk_del", "delete_backwards"} {
@@ -72,7 +42,7 @@ func TestDecodeSnapshotMatchesToJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s decode snapshot: %v", name, err)
 		}
-		state, err := BuildState(u)
+		state, err := MergeState(u)
 		if err != nil {
 			t.Fatalf("%s build: %v", name, err)
 		}
@@ -166,7 +136,7 @@ func TestDecodeUpdatesMetadata(t *testing.T) {
 
 // TestNestedValuesFromSnapshot reads objects nested in values from a snapshot,
 // whose oplog blocks name a nested map's keys by index in the key arena as
-// update blocks do. BuildState has no MovableList, so MergeState reads it.
+// update blocks do.
 func TestNestedValuesFromSnapshot(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "fixtures")
 	blob, err := os.ReadFile(filepath.Join(dir, "nested_values.snapshot.bin"))

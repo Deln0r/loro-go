@@ -250,9 +250,14 @@ func newTestClient(t *testing.T, f *fakeHomeserver) *mautrix.Client {
 // transport is exercised against genuine bytes rather than a hand-made stub.
 func sampleBlob(t *testing.T, peer uint64, text string) []byte {
 	t.Helper()
-	d := loro.NewDoc(peer)
-	d.TextInsert("title", 0, text)
-	blob := d.ExportUpdates()
+	d := loro.NewDocument(peer)
+	if err := d.Text("title").Insert(0, text); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(blob) == 0 {
 		t.Fatal("ExportUpdates returned no bytes")
 	}
@@ -421,19 +426,28 @@ func TestTwoPeersConvergeOffline(t *testing.T) {
 	bob := newTestClient(t, f)
 
 	// Offline: each peer edits its own copy, neither has seen the other.
-	aliceDoc := loro.NewDoc(1)
-	aliceDoc.TextInsert("notes", 0, "alice was here")
-	aliceDoc.MapSet("meta", "author", "alice")
-
-	bobDoc := loro.NewDoc(2)
-	bobDoc.TextInsert("notes", 0, "bob was here")
-	bobDoc.MapSet("meta", "reviewed", int64(1))
+	edit := func(peer uint64, notes, key string, value any) []byte {
+		d := loro.NewDocument(peer)
+		if err := d.Text("notes").Insert(0, notes); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.Map("meta").Set(key, value); err != nil {
+			t.Fatal(err)
+		}
+		blob, err := d.ExportUpdates()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return blob
+	}
+	aliceBlob := edit(1, "alice was here", "author", "alice")
+	bobBlob := edit(2, "bob was here", "reviewed", int64(1))
 
 	// Reconnect, in an order chosen to be awkward: bob publishes first.
-	if _, err := Publish(ctx, bob, room, bobDoc.ExportUpdates()); err != nil {
+	if _, err := Publish(ctx, bob, room, bobBlob); err != nil {
 		t.Fatalf("bob publish: %v", err)
 	}
-	if _, err := Publish(ctx, alice, room, aliceDoc.ExportUpdates()); err != nil {
+	if _, err := Publish(ctx, alice, room, aliceBlob); err != nil {
 		t.Fatalf("alice publish: %v", err)
 	}
 

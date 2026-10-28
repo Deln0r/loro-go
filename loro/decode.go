@@ -1,6 +1,3 @@
-// Package loro is the public entry point of the pure-Go Loro port: it decodes
-// loro-crdt FastUpdates blobs into semantic changes and reconstructs document
-// state. The wire codec lives under encoding/.
 package loro
 
 import (

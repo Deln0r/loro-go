@@ -14,9 +14,15 @@ import (
 // crash here would take the whole replay down, which is what decoding events
 // one at a time exists to prevent.
 func FuzzCollectRaw(f *testing.F) {
-	d := loro.NewDoc(1)
-	d.TextInsert("title", 0, "hello")
-	payload := base64.StdEncoding.EncodeToString(d.ExportUpdates())
+	d := loro.NewDocument(1)
+	if err := d.Text("title").Insert(0, "hello"); err != nil {
+		f.Fatal(err)
+	}
+	blob, err := d.ExportUpdates()
+	if err != nil {
+		f.Fatal(err)
+	}
+	payload := base64.StdEncoding.EncodeToString(blob)
 	valid, _ := json.Marshal(map[string]any{
 		"type": EventType, "event_id": "$ok", "content": map[string]any{"format": Format, "payload": payload},
 	})

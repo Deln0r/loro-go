@@ -9,13 +9,20 @@ import (
 	"github.com/Deln0r/loro-go/loro"
 )
 
-// Example builds a document in Go, exports it as a FastUpdates blob that
-// loro-crdt can import, then decodes and reconstructs the state again.
+// Example edits a document in Go and exports it as a FastUpdates blob that
+// loro-crdt can import, then reads the blob back without a document.
 func Example() {
-	d := loro.NewDoc(1)
-	d.TextInsert("title", 0, "hello")
-	d.MapSet("meta", "n", int64(7))
-	blob := d.ExportUpdates()
+	d := loro.NewDocument(1)
+	if err := d.Text("title").Insert(0, "hello"); err != nil {
+		panic(err)
+	}
+	if err := d.Map("meta").Set("n", 7); err != nil {
+		panic(err)
+	}
+	blob, err := d.ExportUpdates()
+	if err != nil {
+		panic(err)
+	}
 
 	u, err := loro.DecodeUpdates(blob)
 	if err != nil {
@@ -34,11 +41,17 @@ func Example() {
 // Updates; the order they are collected in does not change the result, and
 // loro-crdt shows the same text after importing the two blobs.
 func ExampleMergeState() {
-	alice := loro.NewDoc(1)
-	alice.TextInsert("notes", 0, "alice")
-	bob := loro.NewDoc(2)
-	bob.TextInsert("notes", 0, "bob")
-
+	export := func(peer uint64, text string) []byte {
+		d := loro.NewDocument(peer)
+		if err := d.Text("notes").Insert(0, text); err != nil {
+			panic(err)
+		}
+		blob, err := d.ExportUpdates()
+		if err != nil {
+			panic(err)
+		}
+		return blob
+	}
 	merge := func(blobs ...[]byte) any {
 		var all loro.Updates
 		for _, blob := range blobs {
@@ -54,7 +67,7 @@ func ExampleMergeState() {
 		}
 		return state["notes"]
 	}
-	a, b := alice.ExportUpdates(), bob.ExportUpdates()
+	a, b := export(1, "alice"), export(2, "bob")
 	fmt.Println(merge(a, b))
 	fmt.Println(merge(b, a))
 	// Output:
@@ -62,22 +75,22 @@ func ExampleMergeState() {
 	// alicebob
 }
 
-// ExampleDoc_ListInsert builds a list. Positions count the items already in
-// it, as in loro-crdt's LoroList.insert.
-func ExampleDoc_ListInsert() {
-	d := loro.NewDoc(7)
-	d.ListInsert("todo", 0, []any{"milk", "eggs"})
-	d.ListInsert("todo", 1, []any{"bread"})
-
-	u, err := loro.DecodeUpdates(d.ExportUpdates())
+// ExampleList_Insert builds a list. Positions count the items already in it,
+// as in loro-crdt's LoroList.insert.
+func ExampleList_Insert() {
+	d := loro.NewDocument(7)
+	todo := d.List("todo")
+	if err := todo.Insert(0, "milk", "eggs"); err != nil {
+		panic(err)
+	}
+	if err := todo.Insert(1, "bread"); err != nil {
+		panic(err)
+	}
+	items, err := todo.JSON()
 	if err != nil {
 		panic(err)
 	}
-	state, err := loro.MergeState(u)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(state["todo"])
+	fmt.Println(items)
 	// Output: [milk bread eggs]
 }
 
@@ -143,12 +156,19 @@ func ExampleEncodeUpdates() {
 	}
 	fmt.Println(bytes.Equal(out, blob))
 
-	alice := loro.NewDoc(1)
-	alice.TextInsert("notes", 0, "alice")
-	bob := loro.NewDoc(2)
-	bob.TextInsert("notes", 0, "bob")
 	var all loro.Updates
-	for _, b := range [][]byte{bob.ExportUpdates(), alice.ExportUpdates()} {
+	for _, p := range []struct {
+		peer uint64
+		text string
+	}{{2, "bob"}, {1, "alice"}} {
+		d := loro.NewDocument(p.peer)
+		if err := d.Text("notes").Insert(0, p.text); err != nil {
+			panic(err)
+		}
+		b, err := d.ExportUpdates()
+		if err != nil {
+			panic(err)
+		}
 		u, err := loro.DecodeUpdates(b)
 		if err != nil {
 			panic(err)

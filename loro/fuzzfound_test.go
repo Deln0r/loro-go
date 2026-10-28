@@ -250,7 +250,7 @@ func TestRepeatedMovesToTheFrontAreCounted(t *testing.T) {
 // instead. The same ops under a short name decode.
 func TestLongNamesAreBudgeted(t *testing.T) {
 	build := func(name string) []byte {
-		d := NewDoc(1)
+		d := newTestDoc(1)
 		for i := 0; i < 200_000; i++ {
 			d.MapSet(name, "k", nil)
 		}

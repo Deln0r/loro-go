@@ -6,7 +6,7 @@ module github.com/Deln0r/loro-go/integration/matrix
 go 1.26
 
 require (
-	github.com/Deln0r/loro-go v0.1.0
+	github.com/Deln0r/loro-go v1.0.0
 	maunium.net/go/mautrix v0.30.0
 )
 

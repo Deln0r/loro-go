@@ -1,186 +1,43 @@
+// Package loro reads, edits and writes Loro CRDT documents in pure Go, in the
+// Fast wire format of loro-crdt 1.17.1, byte for byte.
+//
+// Document is a live Loro peer. It imports FastUpdates and FastSnapshot blobs
+// exported by loro-crdt or by another Document, edits Text, Map, List,
+// MovableList, Tree and Counter containers through handles, commits, and
+// exports its history, whole or from another peer's version, as FastUpdates
+// blobs that loro-crdt imports:
+//
+//	d := loro.NewDocument(1)
+//	if err := d.Import(blob); err != nil { // blob = doc.export({mode: "update"})
+//		return err
+//	}
+//	if err := d.Text("title").Insert(0, "hello "); err != nil {
+//		return err
+//	}
+//	d.CommitWith(loro.CommitOptions{Message: "edit from Go"})
+//	out, err := d.ExportUpdates() // loro-crdt's doc.import(out) takes it
+//
+// Without a document, DecodeUpdates and DecodeSnapshot read a blob into its
+// changes and ops, MergeState computes the state those changes give as
+// loro's toJSON shows it, TextDelta gives a Text's styled runs as loro's
+// toDelta does, and EncodeUpdates writes changes back as a FastUpdates blob.
+//
+// Text positions count Unicode code points, where loro-crdt's JavaScript API
+// counts UTF-16 code units, so a position taken from JavaScript has to be
+// converted first. List and MovableList positions count items, as in loro.
+//
+// # Values
+//
+// A map value, a list or MovableList item and a mark's value are nil, bool,
+// int64, float64, string, []byte, []any or map[string]any, the last two
+// holding values of the same kinds, nested up to 128 levels. Other integer
+// types are stored as int64, an unsigned one past math.MaxInt64 being an
+// error, and float32 as float64. A float64 stays a float
+// even when it is whole: loro-crdt's JavaScript binding turns a whole number
+// within ±2^53 into an integer, which a caller converting JavaScript values
+// has to do itself. A container is never a value; Map.SetContainer and its
+// siblings store one.
+//
+// The wire codec, the header, the columnar strategies, change blocks, the
+// snapshot's SSTable and LZ4, is in the packages under encoding/.
 package loro
-
-import (
-	"fmt"
-	"slices"
-
-	"github.com/Deln0r/loro-go/encoding/change"
-)
-
-// BuildState reconstructs the document state from decoded updates, mirroring
-// loro's doc.toJSON(): a map of root-container name to its value (Text -> string,
-// Map -> map, List -> []any). This applies ops in change/op order; it does NOT
-// yet implement the full CRDT merge (Fugue ordering, LWW conflict resolution),
-// so it is correct only for non-concurrent histories such as a single change.
-//
-// It cannot place a container inside another one: it returns an error for an
-// op in a nested container, mergeable children included, and for a value that
-// creates a child container, rather than show the child as its bare kind code.
-//
-// Deprecated: use MergeState, which merges concurrent edits as loro does,
-// reads MovableList, Tree and nested containers, and gives the same state as
-// BuildState on every one-author fixture BuildState is tested on. BuildState
-// applies each op where it lands, in arrival order, so it has nothing to put
-// where a child container sits: the child's value is the merge of every op
-// written into it, which is the work MergeState does.
-func BuildState(u *Updates) (map[string]any, error) {
-	state := map[string]any{}
-	for _, ch := range u.Changes {
-		for _, op := range ch.Ops {
-			if err := unnested(op); err != nil {
-				return nil, err
-			}
-			switch op.Kind {
-			case change.CText:
-				cur, _ := state[op.Container].(string)
-				if op.VKind == change.VKDeleteSeq {
-					from, n := deleteRange(op)
-					state[op.Container] = deleteString(cur, from, n)
-					continue
-				}
-				ins, ok := op.Value.(string)
-				if !ok {
-					return nil, fmt.Errorf("loro: text op value is %T, want string", op.Value)
-				}
-				state[op.Container] = insertString(cur, int(op.Pos), ins)
-			case change.CMap:
-				m, ok := state[op.Container].(map[string]any)
-				if !ok {
-					m = map[string]any{}
-					state[op.Container] = m
-				}
-				if op.VKind == change.VKDeleteOnce {
-					delete(m, op.MapKey)
-					continue
-				}
-				m[op.MapKey] = op.Value
-			case change.CList:
-				cur, _ := state[op.Container].([]any)
-				if op.VKind == change.VKDeleteSeq {
-					from, n := deleteRange(op)
-					state[op.Container] = deleteList(cur, from, n)
-					continue
-				}
-				elems, ok := op.Value.([]any)
-				if !ok {
-					return nil, fmt.Errorf("loro: list op value is %T, want []any", op.Value)
-				}
-				state[op.Container] = insertList(cur, int(op.Pos), elems)
-			case change.CCounter:
-				inc, ok := counterIncrement(op)
-				if !ok {
-					return nil, fmt.Errorf("loro: counter op value is %T, want int64 or float64", op.Value)
-				}
-				cur := 0.0
-				switch x := state[op.Container].(type) {
-				case int64:
-					cur = float64(x)
-				case float64:
-					cur = x
-				}
-				state[op.Container] = numFromF64(cur + inc)
-			default:
-				return nil, fmt.Errorf("loro: unsupported container kind %v", op.Kind)
-			}
-		}
-	}
-	return state, nil
-}
-
-// unnested returns an error for an op BuildState cannot place: one written
-// into a container nested in another, which includes a mergeable child (a
-// root by name only), and one whose value creates a child container, either a
-// container value or a mergeable child's marker.
-func unnested(op Op) error {
-	k := keyOf(op)
-	if !op.IsRoot || isMergeableName(op.Container) {
-		return fmt.Errorf("loro: BuildState cannot place the nested container %s; use MergeState", k)
-	}
-	child := false
-	switch v := op.Value.(type) {
-	case change.ContainerType:
-		child = true
-	case []any:
-		child = slices.ContainsFunc(v, func(e any) bool {
-			_, ok := e.(change.ContainerType)
-			return ok
-		})
-	case []byte:
-		if op.Kind == change.CMap {
-			_, child = newMergeableParent(k).child(op.MapKey, v)
-		}
-	}
-	if child {
-		return fmt.Errorf("loro: BuildState cannot resolve the container op %d@%d creates in %s; use MergeState", op.Counter, op.Peer, k)
-	}
-	return nil
-}
-
-// deleteRange returns where a positional delete starts and how many elements
-// it removes. A delete that ran backwards (negative span length, two
-// backspaces folded into one op) is recorded at the position of the LAST
-// element it removed, so it covers [pos-n+1, pos+1).
-func deleteRange(op Op) (from, n int) {
-	if d, ok := op.Value.(DeleteSpan); ok && d.Len < 0 {
-		return int(op.Pos + d.Len + 1), int(-d.Len)
-	}
-	return int(op.Pos), int(op.Len)
-}
-
-// insertString inserts ins at rune position pos.
-func insertString(s string, pos int, ins string) string {
-	r := []rune(s)
-	if pos < 0 {
-		pos = 0
-	}
-	if pos > len(r) {
-		pos = len(r)
-	}
-	return string(r[:pos]) + ins + string(r[pos:])
-}
-
-// deleteString removes n runes starting at rune position pos.
-func deleteString(s string, pos, n int) string {
-	r := []rune(s)
-	if pos < 0 {
-		pos = 0
-	}
-	if pos > len(r) {
-		pos = len(r)
-	}
-	end := pos + n
-	if end > len(r) {
-		end = len(r)
-	}
-	return string(r[:pos]) + string(r[end:])
-}
-
-// deleteList removes n elements starting at index pos.
-func deleteList(lst []any, pos, n int) []any {
-	if pos < 0 {
-		pos = 0
-	}
-	if pos > len(lst) {
-		pos = len(lst)
-	}
-	end := pos + n
-	if end > len(lst) {
-		end = len(lst)
-	}
-	return append(lst[:pos], lst[end:]...)
-}
-
-// insertList inserts elems at index pos.
-func insertList(lst []any, pos int, elems []any) []any {
-	if pos < 0 {
-		pos = 0
-	}
-	if pos > len(lst) {
-		pos = len(lst)
-	}
-	out := make([]any, 0, len(lst)+len(elems))
-	out = append(out, lst[:pos]...)
-	out = append(out, elems...)
-	out = append(out, lst[pos:]...)
-	return out
-}

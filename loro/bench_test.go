@@ -8,8 +8,8 @@ import (
 // buildBenchDoc constructs a representative document: a text grown from many
 // single-character inserts, a map with many keys, and a list with many items.
 // It exercises all three column-heavy container types in one blob.
-func buildBenchDoc() *Doc {
-	d := NewDoc(1)
+func buildBenchDoc() *testDoc {
+	d := newTestDoc(1)
 	for i := 0; i < 1000; i++ {
 		d.TextInsert("t", i, "x")
 	}

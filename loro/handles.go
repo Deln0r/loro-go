@@ -184,7 +184,8 @@ type Map struct{ h handle }
 func (d *Document) Map(name string) *Map { return &Map{d.handle(name, change.CMap)} }
 
 // Set sets key to v. Setting a key to the value it has already makes no op,
-// as in loro (handler.rs:4486). v must be a value storeValue accepts.
+// as in loro (handler.rs:4486). v is one of the values the package
+// documentation lists.
 func (m *Map) Set(key string, v any) error {
 	d := m.h.d
 	d.mu.Lock()
@@ -243,8 +244,8 @@ type List struct{ h handle }
 func (d *Document) List(name string) *List { return &List{d.handle(name, change.CList)} }
 
 // Insert inserts items at index pos, one op per item as loro's insert makes
-// them; consecutive ones fold into one op. Each item must be a value
-// storeValue accepts.
+// them; consecutive ones fold into one op. Each item is one of the values the
+// package documentation lists.
 func (l *List) Insert(pos int, items ...any) error {
 	d := l.h.d
 	d.mu.Lock()

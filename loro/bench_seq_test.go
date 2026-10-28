@@ -25,7 +25,7 @@ func benchMerge(b *testing.B, blob []byte) {
 // BenchmarkMergeTypingAtEnd is the common editing pattern: one character at a
 // time, always at the end of the text.
 func BenchmarkMergeTypingAtEnd(b *testing.B) {
-	d := NewDoc(1)
+	d := newTestDoc(1)
 	for i := 0; i < 20000; i++ {
 		d.TextInsert("t", i, "x")
 	}
@@ -35,7 +35,7 @@ func BenchmarkMergeTypingAtEnd(b *testing.B) {
 // BenchmarkMergeTypingAnywhere inserts single characters at random positions.
 func BenchmarkMergeTypingAnywhere(b *testing.B) {
 	r := rand.New(rand.NewSource(1))
-	d := NewDoc(1)
+	d := newTestDoc(1)
 	for i := 0; i < 5000; i++ {
 		d.TextInsert("t", r.Intn(i+1), "x")
 	}

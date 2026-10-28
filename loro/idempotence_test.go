@@ -40,7 +40,7 @@ func mergedJSON(t *testing.T, blobs ...[]byte) string {
 // update it had already seen and the text came back mangled
 // ("hello" -> "hellooloolloolooellooloollooloo...").
 func TestMergeIsIdempotent(t *testing.T) {
-	d := NewDoc(1)
+	d := newTestDoc(1)
 	d.TextInsert("notes", 0, "hello")
 	d.MapSet("meta", "k", "v")
 	d.ListInsert("items", 0, []any{int64(1), int64(2)})
@@ -63,11 +63,11 @@ func TestMergeIsIdempotent(t *testing.T) {
 // something too coarse (a container name, a position) would pass the
 // single-peer test above and lose data here.
 func TestMergeIsIdempotentAcrossPeers(t *testing.T) {
-	a := NewDoc(1)
+	a := newTestDoc(1)
 	a.TextInsert("notes", 0, "alice")
 	aBlob := a.ExportUpdates()
 
-	b := NewDoc(2)
+	b := newTestDoc(2)
 	b.TextInsert("notes", 0, "bob")
 	bBlob := b.ExportUpdates()
 

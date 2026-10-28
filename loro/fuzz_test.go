@@ -53,8 +53,8 @@ func reseal(data []byte) []byte {
 
 // FuzzDecodeUpdates asserts the FastUpdates decoder never panics on arbitrary
 // bytes: malformed input must return an error, not crash, allocate without
-// bound, or hang. When decode succeeds, state reconstruction must not panic
-// either, so both BuildState and MergeState are exercised on the result.
+// bound, or hang. When decode succeeds, MergeState must not panic on the
+// result either.
 func FuzzDecodeUpdates(f *testing.F) {
 	seedFuzz(f, ".update.bin")
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -62,7 +62,6 @@ func FuzzDecodeUpdates(f *testing.F) {
 		if err != nil {
 			return
 		}
-		_, _ = BuildState(u)
 		_, _ = MergeState(u)
 	})
 }
@@ -76,7 +75,6 @@ func FuzzDecodeSnapshot(f *testing.F) {
 		if err != nil {
 			return
 		}
-		_, _ = BuildState(u)
 		_, _ = MergeState(u)
 	})
 }
@@ -98,7 +96,6 @@ func FuzzDecodeBlock(f *testing.F) {
 			return
 		}
 		u := &Updates{Changes: chs}
-		_, _ = BuildState(u)
 		_, _ = MergeState(u)
 	})
 }

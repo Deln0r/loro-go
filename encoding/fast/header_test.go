@@ -33,7 +33,7 @@ func TestParseHeaderFastUpdates(t *testing.T) {
 }
 
 // TestChecksumAllFixtures proves the xxh32 impl + checksum scheme byte-for-byte
-// against every real loro-crdt 1.12.5 fixture (closes WIRE_REFERENCE GAP #6).
+// against every real loro-crdt 1.12.5 fixture, not against worked examples.
 func TestChecksumAllFixtures(t *testing.T) {
 	for _, name := range []string{
 		"text_hi.update.bin", "text_hi.snapshot.bin",

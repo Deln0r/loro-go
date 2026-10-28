@@ -50,9 +50,9 @@ func numFromF64(f float64) any {
 	return f
 }
 
-// MergeState reconstructs document state with CRDT semantics, so it is correct
-// for CONCURRENT / multi-peer histories (unlike BuildState which applies in
-// order). Map containers resolve by last-writer-wins on (lamport, peer); Text,
+// MergeState reconstructs document state with CRDT semantics, as loro-crdt's
+// toJSON shows it after importing the same changes, concurrent ones by several
+// peers included, in any order. Map containers resolve by last-writer-wins on (lamport, peer); Text,
 // List and MovableList are merged the way loro merges them; Tree replays moves
 // with cycle-closing ones skipped.
 //

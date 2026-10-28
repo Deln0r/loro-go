@@ -1,6 +1,6 @@
 name: Fuzz nightly
 
-# The per-push job in ci.yml is a smoke test: twelve targets, fifteen to thirty
+# The per-push job in ci.yml is a smoke test: thirteen targets, fifteen to thirty
 # seconds each, starting from an empty corpus every time. It catches a decoder that
 # breaks outright and nothing subtler.
 #
@@ -35,6 +35,8 @@ jobs:
             target: FuzzEncodeUpdates
           - pkg: ./loro/
             target: FuzzDocumentImport
+          - pkg: ./loro/
+            target: FuzzDecodeVersion
           - pkg: ./encoding/columnar/
             target: FuzzStrategies
           - pkg: ./encoding/change/

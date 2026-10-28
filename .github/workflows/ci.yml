@@ -50,6 +50,8 @@ jobs:
         run: go test ./loro/ -run TestEmitEncodedForJS -v
       - name: export every Document of the edit scripts
         run: go test ./loro/ -run TestEmitDocumentExportsForJS -v
+      - name: export the version corpus from every version it records
+        run: go test ./loro/ -run TestEmitVersionExportsForJS -v
       - name: install loro-crdt
         run: npm ci
         working-directory: testdata/gen
@@ -59,6 +61,8 @@ jobs:
         run: node testdata/gen/validate_encode.mjs
       - name: import the Documents' exports into loro-crdt
         run: node testdata/gen/validate_document.mjs
+      - name: import the exports from versions into loro-crdt documents at those versions
+        run: node testdata/gen/validate_versions.mjs
 
   matrix-integration:
     runs-on: ubuntu-latest
@@ -130,7 +134,7 @@ jobs:
       # corpus: with the default budget the run froze for 24s and 15s; with a 3s
       # budget neither run froze at all. Minimization that matters happens in the
       # nightly job, which has the time for it.
-      - name: fuzz smoke (below-checksum decoders on malformed input, encoder round trip, Document import)
+      - name: fuzz smoke (below-checksum decoders on malformed input, encoder round trip, Document import, versions)
         run: |
           set -e
           go test ./loro/ -run='^$' -fuzz='^FuzzDecodeBlock$' -fuzztime=30s -fuzzminimizetime=3s
@@ -138,6 +142,7 @@ jobs:
           go test ./loro/ -run='^$' -fuzz='^FuzzDecodeSnapshot$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./loro/ -run='^$' -fuzz='^FuzzEncodeUpdates$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./loro/ -run='^$' -fuzz='^FuzzDocumentImport$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./loro/ -run='^$' -fuzz='^FuzzDecodeVersion$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./encoding/columnar/ -run='^$' -fuzz='^FuzzStrategies$' -fuzztime=20s -fuzzminimizetime=3s
           go test ./encoding/change/ -run='^$' -fuzz='^FuzzBlobDecoders$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./encoding/change/ -run='^$' -fuzz='^FuzzDecodeHeader$' -fuzztime=15s -fuzzminimizetime=3s

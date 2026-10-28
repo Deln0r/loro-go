@@ -53,9 +53,31 @@ func FuzzDocumentImport(f *testing.F) {
 			if err != nil {
 				t.Fatalf("export after a successful import: %v", err)
 			}
-			if err := NewDocument(10).Import(out); err != nil {
+			if err := NewDocument(10).Import(out); err != nil && !lamportsTie(out) {
 				t.Fatalf("a Document refuses another's export: %v", err)
 			}
 		}
 	})
+}
+
+// lamportsTie reports whether a blob holds a change that starts at or below
+// the last lamport of the change of its peer before it. A hostile history
+// can make one, with changes that do not depend on the op before them of
+// their own peer; the import that reads it back sorts its changes by
+// lamport with Rust's unstable sort, which can put the later one first and
+// then refuses it as skipping counters. loro-crdt refuses its own export of
+// such a history the same way (testdata/fuzz/FuzzDocumentImport/efd0bbfe5db39d04).
+func lamportsTie(blob []byte) bool {
+	u, err := DecodeUpdates(blob)
+	if err != nil {
+		return false
+	}
+	last := map[uint64]int64{}
+	for _, c := range u.Changes {
+		if end, ok := last[c.ID.Peer]; ok && c.Lamport < end {
+			return true
+		}
+		last[c.ID.Peer] = c.Lamport + changeEnd(c) - c.ID.Counter
+	}
+	return false
 }

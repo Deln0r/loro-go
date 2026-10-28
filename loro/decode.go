@@ -15,29 +15,29 @@ import (
 )
 
 // fmtID formats a (peerIdx, counter) op id as "counter@peer", matching loro toJSON.
-func fmtID(peers []uint64, peerIdx, counter int64) string {
+func fmtID(peers []uint64, peerIdx, counter int64) (string, error) {
 	if peerIdx < 0 || peerIdx >= int64(len(peers)) {
-		return fmt.Sprintf("%d@?", counter)
+		return "", fmt.Errorf("loro: peer index %d out of range", peerIdx)
 	}
-	return fmt.Sprintf("%d@%d", counter, peers[peerIdx])
+	return fmt.Sprintf("%d@%d", counter, peers[peerIdx]), nil
 }
 
 // fiHex renders the fractional index at idx as hex, matching loro's toJSON,
 // which uses UPPERCASE hex. Every fixture before tree_wide happened to have an
 // index of "80", so the case never showed until indices grew letter digits.
-func fiHex(positions [][]byte, idx int64) string {
+func fiHex(positions [][]byte, idx int64) (string, error) {
 	if idx < 0 || idx >= int64(len(positions)) {
-		return ""
+		return "", fmt.Errorf("loro: position index %d out of range", idx)
 	}
-	return strings.ToUpper(hex.EncodeToString(positions[idx]))
+	return strings.ToUpper(hex.EncodeToString(positions[idx])), nil
 }
 
-// markKey resolves a mark's style-key index against the key pool.
-func markKey(keys []string, idx int64) string {
-	if idx >= 0 && idx < int64(len(keys)) {
-		return keys[idx]
+// keyAt resolves an index into the block's key arena.
+func keyAt(keys []string, idx int64) (string, error) {
+	if idx < 0 || idx >= int64(len(keys)) {
+		return "", fmt.Errorf("loro: key index %d out of range", idx)
 	}
-	return ""
+	return keys[idx], nil
 }
 
 // ID identifies an operation/change by its originating peer and counter.
@@ -326,15 +326,20 @@ func decodeBlock(blk *change.Block, budget *nameBudget) ([]Change, error) {
 			return nil, fmt.Errorf("loro: container index %d out of range", ci)
 		}
 		c := conts[ci]
-		name := ""
+		// Every index into the block's arenas must land in them: loro refuses
+		// the import otherwise (DecodeDataCorruptionError in
+		// EncodedContainer::as_container_id and decode_op).
+		var name string
+		var err error
 		if c.IsRoot {
-			if c.KeyOrCounter >= 0 && c.KeyOrCounter < int64(len(keys)) {
-				name = keys[c.KeyOrCounter]
-			}
+			name, err = keyAt(keys, c.KeyOrCounter)
 		} else {
 			// A nested container (e.g. a tree node's meta map) is addressed by its
 			// creating id; name it "counter@peer" so it matches the owning node id.
-			name = fmtID(hdr.Peers, int64(c.PeerIdx), c.KeyOrCounter)
+			name, err = fmtID(hdr.Peers, int64(c.PeerIdx), c.KeyOrCounter)
+		}
+		if err != nil {
+			return nil, err
 		}
 		val, err := vr.OpContent(ops.ValueKind[i])
 		if err != nil {
@@ -370,25 +375,32 @@ func decodeBlock(blk *change.Block, budget *nameBudget) ([]Change, error) {
 			op.Value = span
 		}
 		if c.Kind == change.CMap {
-			if p := ops.Prop[i]; p >= 0 && p < int64(len(keys)) {
-				op.MapKey = keys[p]
+			if op.MapKey, err = keyAt(keys, ops.Prop[i]); err != nil {
+				return nil, err
 			}
 		} else {
 			op.Pos = ops.Prop[i]
 		}
 		switch tv := val.(type) {
 		case change.RawTreeMove:
-			node := TreeNode{ID: fmtID(hdr.Peers, tv.SubjectPeerIdx, tv.SubjectCounter)}
+			node := TreeNode{}
+			if node.ID, err = fmtID(hdr.Peers, tv.SubjectPeerIdx, tv.SubjectCounter); err != nil {
+				return nil, err
+			}
 			if !tv.ParentNull {
 				node.HasParent = true
-				node.Parent = fmtID(hdr.Peers, tv.ParentPeerIdx, tv.ParentCounter)
+				if node.Parent, err = fmtID(hdr.Peers, tv.ParentPeerIdx, tv.ParentCounter); err != nil {
+					return nil, err
+				}
 			}
 			// A delete has no position. loro writes index 0 for it
 			// (encode_tree_op in block_encode.rs) and its decoder returns the
 			// delete before it looks the index up (decode_op), so the position
 			// at that index belongs to some other op of the block.
 			if !isTreeDelete(node) {
-				node.FI = fiHex(positions, tv.PositionIdx)
+				if node.FI, err = fiHex(positions, tv.PositionIdx); err != nil {
+					return nil, err
+				}
 			}
 			op.Value = node
 		case change.ListMove:
@@ -403,7 +415,11 @@ func decodeBlock(blk *change.Block, budget *nameBudget) ([]Change, error) {
 			}
 			op.Value = ListSetValue{Elem: ListElem{Peer: hdr.Peers[tv.PeerIdx], Lamport: tv.Lamport}, Value: tv.Value}
 		case change.Mark:
-			op.Value = MarkInfo{Start: op.Pos, Len: tv.Len, Info: tv.Info, Key: markKey(keys, tv.KeyIdx), Value: tv.Value}
+			key, err := keyAt(keys, tv.KeyIdx)
+			if err != nil {
+				return nil, err
+			}
+			op.Value = MarkInfo{Start: op.Pos, Len: tv.Len, Info: tv.Info, Key: key, Value: tv.Value}
 		}
 		named := len(op.Container) + len(op.MapKey)
 		if mi, ok := op.Value.(MarkInfo); ok {

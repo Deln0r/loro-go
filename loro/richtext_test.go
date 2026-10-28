@@ -2,6 +2,7 @@ package loro
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -181,4 +182,107 @@ func fmtAttrs(a map[string]any) string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// TestNaNValuesAreEqual: loro compares doubles with every NaN equal
+// (loro-common/src/value.rs:42). loro-crdt 1.17.1 writes 5 ops for: set
+// m.x = NaN twice, set m.y = {a: [NaN]} twice, insert "a" and mark it bold
+// NaN twice; the repeats are no-ops, and a repeated mark is a no-op even
+// after the configuration drops the key. Re-importing the export into a
+// document that has it is accepted.
+func TestNaNValuesAreEqual(t *testing.T) {
+	d := NewDocument(1)
+	m := d.Map("m")
+	for range 2 {
+		if err := m.Set("x", math.NaN()); err != nil {
+			t.Fatal(err)
+		}
+		d.Commit()
+	}
+	for range 2 {
+		if err := m.Set("y", map[string]any{"a": []any{math.NaN()}}); err != nil {
+			t.Fatal(err)
+		}
+		d.Commit()
+	}
+	txt := d.Text("t")
+	if err := txt.Insert(0, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := txt.Mark(0, 1, "bold", math.NaN()); err != nil {
+		t.Fatal(err)
+	}
+	d.Commit()
+	if err := d.ConfigTextStyle(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := txt.Mark(0, 1, "bold", math.NaN()); err != nil {
+		t.Fatalf("repeated NaN mark with the key unconfigured: %v", err)
+	}
+	d.Commit()
+	blob, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := DecodeUpdates(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := 0
+	for _, c := range u.Changes {
+		ops += len(c.Ops)
+	}
+	if ops != 5 {
+		t.Errorf("%d ops, loro-crdt writes 5", ops)
+	}
+	e := NewDocument(2)
+	if err := e.Import(blob); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Import(blob); err != nil {
+		t.Errorf("re-import of ops holding NaN: %v", err)
+	}
+}
+
+// TestSelfReferencingValueIsRefused: a list or map that holds itself is
+// refused with an error by every method that stores a value, rather than
+// recursing until the stack overflows.
+func TestSelfReferencingValueIsRefused(t *testing.T) {
+	d := NewDocument(1)
+	if err := d.Text("t").Insert(0, "a"); err != nil {
+		t.Fatal(err)
+	}
+	selfMap := map[string]any{}
+	selfMap["self"] = selfMap
+	selfList := []any{nil}
+	selfList[0] = selfList
+	for _, v := range []any{selfMap, selfList} {
+		if err := d.Text("t").Mark(0, 1, "bold", v); err == nil {
+			t.Error("Mark stored a value that holds itself")
+		}
+		if err := d.Map("m").Set("k", v); err == nil {
+			t.Error("Map.Set stored a value that holds itself")
+		}
+		if err := d.List("l").Insert(0, v); err == nil {
+			t.Error("List.Insert stored a value that holds itself")
+		}
+	}
+	deep := any("leaf")
+	for range maxStoredValueDepth {
+		deep = []any{deep}
+	}
+	if err := d.Map("m").Set("deep", deep); err != nil {
+		t.Fatalf("a value %d levels deep: %v", maxStoredValueDepth, err)
+	}
+	// The deepest value stored is one the decoder reads back.
+	blob, err := d.ExportUpdates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewDocument(2).Import(blob); err != nil {
+		t.Errorf("the deepest stored value does not read back: %v", err)
+	}
+	if err := d.Map("m").Set("deeper", []any{deep}); err == nil {
+		t.Error("a value one level past the limit was stored")
+	}
 }

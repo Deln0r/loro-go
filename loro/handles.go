@@ -397,8 +397,20 @@ func (c *Counter) Value() float64 {
 // float64. A float64 stays a float even when whole: loro-crdt's JavaScript
 // binding turns a whole number within ±2^53 into an integer, which a caller
 // converting JavaScript values has to do itself. A container cannot be
-// stored as a value.
-func storeValue(v any) (any, error) {
+// stored as a value. A value nested deeper than maxStoredValueDepth is
+// refused: the decoder refuses to read one (encoding/change, LoroValue), and
+// a list or map that holds itself would otherwise recurse until the stack
+// overflows.
+func storeValue(v any) (any, error) { return storeValueAt(v, 0) }
+
+// maxStoredValueDepth is the deepest nesting the value decoder in
+// encoding/change reads back.
+const maxStoredValueDepth = 128
+
+func storeValueAt(v any, depth int) (any, error) {
+	if depth > maxStoredValueDepth {
+		return nil, fmt.Errorf("loro: value nested deeper than %d levels", maxStoredValueDepth)
+	}
 	switch x := v.(type) {
 	case nil, bool, string, int64, float64:
 		return x, nil
@@ -433,7 +445,7 @@ func storeValue(v any) (any, error) {
 	case []any:
 		out := make([]any, len(x))
 		for i, e := range x {
-			c, err := storeValue(e)
+			c, err := storeValueAt(e, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -443,7 +455,7 @@ func storeValue(v any) (any, error) {
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			c, err := storeValue(e)
+			c, err := storeValueAt(e, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -455,8 +467,10 @@ func storeValue(v any) (any, error) {
 }
 
 // valueEqual is LoroValue equality: same kind and same contents, floats
-// compared as numbers (so -0 equals 0 and NaN equals nothing), a byte
-// string by its bytes.
+// compared as numbers with every NaN equal to every other (so -0 equals 0),
+// as loro's PartialEq does (loro-common/src/value.rs:42), a byte string by
+// its bytes. A repeated set or mark of NaN is therefore a no-op, and a
+// re-imported op holding NaN matches the known one.
 func valueEqual(a, b any) bool {
 	switch x := a.(type) {
 	case nil:
@@ -469,7 +483,7 @@ func valueEqual(a, b any) bool {
 		return ok && x == y
 	case float64:
 		y, ok := b.(float64)
-		return ok && x == y
+		return ok && (x == y || x != x && y != y)
 	case string:
 		y, ok := b.(string)
 		return ok && x == y

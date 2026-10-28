@@ -221,3 +221,22 @@ func TestBlobEncodersReproduceFixtureBytes(t *testing.T) {
 	}
 	t.Logf("round-tripped %d positions blobs and %d delete_start_ids blobs", sawPositions, sawDeletes)
 }
+
+// TestDecodeContainersRefusesNonBoolRoot: loro reads a container's is_root
+// with postcard, which takes a bool only as 0 or 1, and refuses the import
+// otherwise ("Found a bool that wasn't 0 or 1", measured with loro-crdt
+// 1.17.1 on a blob the Document fuzzer made).
+func TestDecodeContainersRefusesNonBoolRoot(t *testing.T) {
+	row := func(isRoot byte) []byte { return []byte{0x01, 0x04, isRoot, 0x02, 0x00, 0x00} }
+	for _, b := range []byte{0, 1} {
+		c, err := DecodeContainers(row(b))
+		if err != nil || len(c) != 1 || c[0].IsRoot != (b == 1) {
+			t.Errorf("is_root %d: %v, %v", b, c, err)
+		}
+	}
+	for _, b := range []byte{2, 0x30, 0xFF} {
+		if _, err := DecodeContainers(row(b)); err == nil {
+			t.Errorf("is_root %d: no error", b)
+		}
+	}
+}

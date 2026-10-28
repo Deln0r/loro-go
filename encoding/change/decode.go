@@ -1,6 +1,8 @@
 package change
 
 import (
+	"fmt"
+
 	"github.com/Deln0r/loro-go/encoding/columnar"
 	"github.com/Deln0r/loro-go/encoding/postcard"
 )
@@ -71,6 +73,12 @@ func DecodeContainers(cids []byte) ([]Container, error) {
 		isRoot, err := r.Byte()
 		if err != nil {
 			return nil, err
+		}
+		if isRoot > 1 {
+			// serde_columnar reads is_root with postcard, which takes a bool
+			// only as 0 or 1 ("Found a bool that wasn't 0 or 1"); loro-crdt
+			// refuses the whole import.
+			return nil, fmt.Errorf("%w: container is_root byte %d is not 0 or 1", ErrBlock, isRoot)
 		}
 		kind, err := r.Byte()
 		if err != nil {

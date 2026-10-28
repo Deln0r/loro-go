@@ -627,6 +627,48 @@ func textIns(pos int64, s string) Op {
 
 func updatesOf(chs ...Change) *Updates { return &Updates{Changes: chs} }
 
+// mapWrite writes v under key in root Map "m".
+func mapWrite(key string, v any) Op {
+	o := rootOp(change.CMap, "m", change.VKLoroValue, v)
+	o.MapKey = key
+	return o
+}
+
+// treeOp moves node id under parent ("" for none) at position 80 of root
+// Tree "tr".
+func treeOp(id, parent string) Op {
+	n := TreeNode{ID: id, FI: "80"}
+	if parent != "" {
+		n.HasParent, n.Parent = true, parent
+	}
+	return rootOp(change.CTree, "tr", change.VKRawTreeMove, n)
+}
+
+// markOp marks [pos, pos+n) of root Text "t" with key.
+func markOp(pos, n int64, key string, v any) Op {
+	o := rootOp(change.CText, "t", change.VKMarkStart, MarkInfo{Start: pos, Len: n, Key: key, Value: v})
+	o.Pos = pos
+	return o
+}
+
+// moveOp moves the element of peer 2 at lamport from index from to index to
+// of root MovableList "ml".
+func moveOp(from, to, lamport int64) Op {
+	o := rootOp(change.CMovableList, "ml", change.VKListMove, ListElem{Peer: 2, Lamport: lamport})
+	o.MoveFrom, o.Pos = from, to
+	return o
+}
+
+// setOp sets the element of peer 2 at lamport in root MovableList "ml".
+func setOp(lamport int64, v any) Op {
+	return rootOp(change.CMovableList, "ml", change.VKListSet, ListSetValue{Elem: ListElem{Peer: 2, Lamport: lamport}, Value: v})
+}
+
+func withLen(o Op, n int64) Op {
+	o.Len = n
+	return o
+}
+
 func withDeps(ch Change, deps ...ID) Change {
 	ch.Deps = deps
 	return ch
@@ -676,6 +718,18 @@ func TestEncodeUpdatesRefusesWhatLoroCannotRead(t *testing.T) {
 		{"a value in a Tree", updatesOf(solo(rootOp(change.CTree, "tr", change.VKLoroValue, int64(1))))},
 		{"a value in a Counter", updatesOf(solo(rootOp(change.CCounter, "c", change.VKLoroValue, int64(1))))},
 		{"a container of unknown kind", updatesOf(solo(rootOp(change.ContainerType(7), "u", change.VKLoroValue, int64(1))))},
+
+		// An op that is one atom, written longer. A map write of length 2
+		// claimed counters 0 and 1; loro-crdt imported it and its version
+		// was {1: 1}, so a peer would ask again for an op it already has.
+		{"a map write of length 2", updatesOf(solo(withLen(mapWrite("k", int64(1)), 2)))},
+		{"a map delete of length 2", updatesOf(solo(withLen(rootOp(change.CMap, "m", change.VKDeleteOnce, nil), 2)))},
+		{"a tree op of length 2", updatesOf(solo(withLen(treeOp("0@1", ""), 2)))},
+		{"a counter step of length 2", updatesOf(solo(withLen(rootOp(change.CCounter, "c", change.VKI64, int64(1)), 2)))},
+		{"a mark of length 2", updatesOf(solo(withLen(markOp(0, 1, "b", true), 2)))},
+		{"a mark's end of length 2", updatesOf(solo(withLen(rootOp(change.CText, "t", change.VKNull, nil), 2)))},
+		{"a move of length 2", updatesOf(solo(withLen(moveOp(0, 0, 0), 2)))},
+		{"a set of length 2", updatesOf(solo(withLen(setOp(0, "x"), 2)))},
 	}
 	for _, c := range refused {
 		if _, err := EncodeUpdates(c.u); err == nil {

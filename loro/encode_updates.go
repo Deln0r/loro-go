@@ -448,6 +448,22 @@ func checkOp(op Op) error {
 	if !slices.Contains(kinds, op.VKind) {
 		return fmt.Errorf("loro: op %d@%d writes value kind %d into a %v, which loro does not read", op.Counter, op.Peer, op.VKind, op.Kind)
 	}
+	// An insert is as long as what it inserts and a delete as what it
+	// removes. Every other op is one atom (content_len in op/content.rs and
+	// list_op.rs): a longer one would claim counters loro's import does not
+	// give it, so the receiver's version would stop short of the blob's.
+	switch {
+	case op.VKind == change.VKDeleteSeq:
+		d, ok := op.Value.(DeleteSpan)
+		if !ok {
+			return fmt.Errorf("loro: delete %d@%d carries %T", op.Counter, op.Peer, op.Value)
+		}
+		return checkDeleteSpan(op, d)
+	case op.VKind == change.VKStr, op.VKind == change.VKLoroValue && op.Kind != change.CMap:
+		return checkInsertAtoms(op)
+	case op.Len != 1:
+		return fmt.Errorf("loro: op %d@%d has length %d; a %v op of value kind %d is one atom", op.Counter, op.Peer, op.Len, op.Kind, op.VKind)
+	}
 	return nil
 }
 
@@ -470,22 +486,13 @@ func (e *blockEncoder) op(op Op) error {
 	e.ops.Prop = append(e.ops.Prop, prop)
 	e.ops.ValueKind = append(e.ops.ValueKind, op.VKind)
 	e.ops.Len = append(e.ops.Len, op.Len)
-	if err := checkInsertAtoms(op); err != nil {
-		return err
-	}
 
 	bad := func() error {
 		return fmt.Errorf("loro: op %d@%d of kind %d carries %T", op.Counter, op.Peer, op.VKind, op.Value)
 	}
 	switch op.VKind {
 	case change.VKDeleteSeq:
-		d, ok := op.Value.(DeleteSpan)
-		if !ok {
-			return bad()
-		}
-		if err := checkDeleteSpan(op, d); err != nil {
-			return err
-		}
+		d := op.Value.(DeleteSpan) // checkOp made sure
 		e.dels = append(e.dels, change.DeleteID{PeerIdx: e.peer(d.Peer), Counter: d.Counter, Len: d.Len})
 		return nil
 	case change.VKMarkStart:

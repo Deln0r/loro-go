@@ -43,11 +43,18 @@ jobs:
           node-version: 22
       - name: emit a blob from the Go encoder
         run: go test ./loro/ -run TestEmitForJSImport -v
+      # EncodeUpdates gives back loro's bytes except where a map of two or
+      # more keys is nested in a value; those blobs are written next to
+      # loro's for loro-crdt to import both and compare.
+      - name: re-encode the loro-crdt exports loro-go does not give back byte for byte
+        run: go test ./loro/ -run TestEmitEncodedForJS -v
       - name: install loro-crdt
         run: npm ci
         working-directory: testdata/gen
       - name: import the Go blob into loro-crdt
         run: node testdata/gen/validate_go.mjs
+      - name: import the re-encoded blobs into loro-crdt
+        run: node testdata/gen/validate_encode.mjs
 
   matrix-integration:
     runs-on: ubuntu-latest
@@ -119,12 +126,13 @@ jobs:
       # corpus: with the default budget the run froze for 24s and 15s; with a 3s
       # budget neither run froze at all. Minimization that matters happens in the
       # nightly job, which has the time for it.
-      - name: fuzz smoke (below-checksum decoders on malformed input)
+      - name: fuzz smoke (below-checksum decoders on malformed input, encoder round trip)
         run: |
           set -e
           go test ./loro/ -run='^$' -fuzz='^FuzzDecodeBlock$' -fuzztime=30s -fuzzminimizetime=3s
           go test ./loro/ -run='^$' -fuzz='^FuzzDecodeUpdates$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./loro/ -run='^$' -fuzz='^FuzzDecodeSnapshot$' -fuzztime=15s -fuzzminimizetime=3s
+          go test ./loro/ -run='^$' -fuzz='^FuzzEncodeUpdates$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./encoding/columnar/ -run='^$' -fuzz='^FuzzStrategies$' -fuzztime=20s -fuzzminimizetime=3s
           go test ./encoding/change/ -run='^$' -fuzz='^FuzzBlobDecoders$' -fuzztime=15s -fuzzminimizetime=3s
           go test ./encoding/change/ -run='^$' -fuzz='^FuzzDecodeHeader$' -fuzztime=15s -fuzzminimizetime=3s
